@@ -1,4 +1,4 @@
-# Engineering Calculator — application bureau autonome
+# Wattman — Engineering Calculator
 
 La version principale est maintenant une application Electron Windows. Elle
 conserve les pages et calculs existants, utilise des fichiers projet JSON et
