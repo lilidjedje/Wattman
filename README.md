@@ -4,33 +4,40 @@ La version principale est maintenant une application Electron Windows. Elle
 conserve les pages et calculs existants, utilise des fichiers projet JSON et
 ne démarre aucun serveur HTTP.
 
-## Prérequis
+## Installer et lancer l'application sur un autre PC Windows
 
-Python 3.11+ et Node.js/npm sont nécessaires. Installe les dépendances depuis
-la racine du dépôt :
+Installe d'abord **Git**, **Python 3.11 ou plus récent** et **Node.js** (qui
+inclut npm). Puis ouvre PowerShell et exécute :
 
 ```powershell
+git clone https://github.com/lilidjedje/Wattman.git
+cd Wattman
 python -m pip install -r requirements.txt
 npm ci
-```
-
-## Lancer et générer le `.exe`
-
-```powershell
 npm start
 ```
 
-Pour produire l'installateur Windows :
+Ces étapes installent les dépendances et lancent l'application depuis les
+sources. Elles sont à refaire sur chaque nouveau PC.
+
+## Générer l'installateur Windows
 
 ```powershell
 python -m pip install pyinstaller
 npm run dist
 ```
 
-Le résultat est créé dans `dist/Engineering Calculator-Setup-2.0.0.exe`.
+L'installateur est créé dans `dist/Engineering Calculator-Setup-2.0.0.exe`.
+Tu peux le transférer sur le PC cible et l'exécuter pour installer
+l'application, sans y lancer `npm start`.
 Les raccourcis `Ctrl+S` et `Ctrl+O` enregistrent et ouvrent l'intégralité d'un
 projet au format JSON. La page « Analyse de logs » pilote directement
 l'ESP32-C3 multi INA226, sans Raspberry Pi, via son adresse IP.
+
+> **Important :** GitHub contient le code source et les fichiers nécessaires
+> au build, mais pas les bases de mesures, les projets de test, les données
+> importées ni les exécutables générés. Transfère séparément les projets ou
+> données que tu veux retrouver sur le nouvel ordinateur.
 
 ### Connexion ESP32-C3 / multi-INA226
 
