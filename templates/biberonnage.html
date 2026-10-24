@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biberonnage - Consommations sur 90 jours</title>
+    <style>
+        :root { --navy: #1f4e78; --sky: #d9eaf7; --green: #e2f0d9; --yellow: #fff200; --peach: #fce4d6; --line: #b7c9d6; }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; padding: 24px; font-family: "Segoe UI", Tahoma, sans-serif; color: #1f2937; background: #edf3f7; }
+        .header { max-width: 1800px; margin: 0 auto 18px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
+        .header > .previous-button { justify-self: start; }
+        .header > h1 { justify-self: center; text-align: center; }
+        .header > .retractable-menu { justify-self: end; }
+        h1 { margin: 0; color: var(--navy); font-size: 1.7rem; }
+
+        .retractable-menu { position: relative; display: inline-block; }
+        .retractable-menu details { background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        .retractable-menu summary { padding: 10px 18px; font-weight: 700; cursor: pointer; color: var(--navy); list-style: none; display: flex; align-items: center; gap: 8px; background: #ffffff; border-radius: 8px; }
+        .menu-content { position: absolute; right: 0; top: 110%; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); z-index: 100; min-width: 220px; }
+        
+        .btn-menu { border: 0; border-radius: 5px; padding: 9px 14px; color: white; font: inherit; font-weight: 700; cursor: pointer; text-align: left; width: 100%; display: flex; align-items: center; gap: 8px; }
+        .btn-reset { background: #b45309; } .btn-save { background: #087f5b; } .btn-back { background: #64748b; } .btn-mode { background: #667eea; } .btn-home { background: #1e293b; }
+        .saved { min-height: 1.25em; color: #087f5b; font-size: .9rem; font-weight: 700; display: block; text-align: right; }
+
+        .table-shell { max-width: 1800px; margin: 0 auto; overflow: auto; border: 1px solid #94a3b8; box-shadow: 0 8px 20px rgba(15, 23, 42, .12); background: white; max-height: calc(100vh - 190px); }
+        table { border-collapse: collapse; min-width: 7900px; width: max-content; }
+        th, td { border: 1px solid var(--line); height: 29px; padding: 3px 5px; text-align: center; font-size: .76rem; white-space: nowrap; }
+        thead th { position: sticky; top: 0; z-index: 4; background: var(--navy); color: white; font-weight: 700; }
+        th.time-col { min-width: 66px; }
+        th.subday { background: #183854; color: #e2e8f0; font-weight: 600; }
+        .sticky-label { position: sticky; left: 0; z-index: 5; min-width: 275px; width: 275px; text-align: left; background: #f8fafc; border-right: 2px solid #64748b; font-weight: 700; }
+        thead .sticky-label { z-index: 7; background: var(--navy); color: white; }
+        .group-technical .sticky-label { background: var(--sky); }
+        .group-safety .sticky-label { background: var(--green); }
+        .group-test .sticky-label { background: var(--yellow); }
+        .group-delivery .sticky-label { background: var(--peach); }
+        .section td { height: 25px; background: #dbeafe; color: #1e3a5f; font-size: .75rem; font-weight: 800; letter-spacing: .02em; text-align: left; }
+        .editable { width: 58px; padding: 3px; border: 1px solid transparent; background: transparent; text-align: right; color: #111827; font: inherit; }
+        .editable:hover, .editable:focus { border-color: #2563eb; background: white; outline: none; }
+        .editable.modified { background: #fff7cc; border-color: #d97706; color: #92400e; font-weight: 700; }
+        .results-actions { max-width: 1800px; margin: 18px auto 0; display: flex; justify-content: flex-end; gap: 12px; }
+        .results-button { border: 0; border-radius: 7px; padding: 11px 18px; background: #2563eb; color: white; font: inherit; font-weight: 800; cursor: pointer; }
+        .results-button:hover { background: #1d4ed8; }
+        .previous-button { border: 0; border-radius: 7px; padding: 11px 18px; background: #64748b; color: white; font: inherit; font-weight: 800; cursor: pointer; }
+        .biberonnage-page tbody td:not(.sticky-label) { color: #111827; background: #ffffff; }
+        .biberonnage-page tbody tr:not(.section) td:nth-child(4n + 2) { background: #e3f2fb; }
+        .biberonnage-page tbody tr:not(.section) td:nth-child(4n + 3) { background: #e8f5e9; }
+        .biberonnage-page tbody tr:not(.section) td:nth-child(4n + 4) { background: #fff6cf; }
+        .biberonnage-page tbody tr:not(.section) td:nth-child(4n + 5) { background: #f2e8f5; }
+        .biberonnage-page thead th:nth-child(4n + 2) { background: #285a78; }
+        .biberonnage-page thead th:nth-child(4n + 3) { background: #416a47; }
+        .biberonnage-page thead th:nth-child(4n + 4) { color: #211a08; background: #d6aa2c; }
+        .biberonnage-page thead th:nth-child(4n + 5) { background: #664e70; }
+        .biberonnage-page .section td { color: #fff8df; background: #4b390f; border-top: 2px solid #c79516; }
+        @media (max-width: 760px) {
+            .header { grid-template-columns: 1fr auto; }
+            .header > h1 { grid-column: 1 / -1; grid-row: 1; }
+            .header > .previous-button { grid-column: 1; grid-row: 2; }
+            .header > .retractable-menu { grid-column: 2; grid-row: 2; }
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="biberonnage-page preserve-table-colors">
+    <header class="header">
+        <button class="previous-button" type="button" id="previous-step">← Retour</button>
+        <h1>Biberonnage</h1>
+
+        <div class="retractable-menu">
+            <details id="actions-details">
+                <summary> Sommaire / Actions</summary>
+                <div class="menu-content">
+                    <span class="saved" id="saved" aria-live="polite"></span>
+                    <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer</button>
+                    <button class="btn-menu btn-reset" type="button" id="reset"> Valeurs initiales</button>
+                    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
+                    <button class="btn-menu btn-back" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                    <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
+                    <button class="btn-menu btn-home" type="button" onclick="window.location.href='/'"> Accueil</button>
+                </div>
+            </details>
+        </div>
+    </header>
+
+    <main class="table-shell">
+        <table id="biberonnage-table">
+            <thead>
+                <tr id="header-row">
+                    <th class="sticky-label">Temps (autre)<br><small>Temps - Jours</small></th>
+                </tr>
+            </thead>
+            <tbody id="body"></tbody>
+        </table>
+    </main>
+
+    <div class="results-actions">
+        <button class="results-button" type="button" onclick="window.location.href='/biberonnage/resultats'"> Voir le résultat</button>
+    </div>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const storageKey = 'biberonnage90Days';
+
+        const timeColumns = [
+            { key: '30s', label: '30s', daysElapsed: 30 / 86400 },
+            { key: '1min', label: '1 min', daysElapsed: 60 / 86400 },
+            { key: '2min', label: '2 min', daysElapsed: 120 / 86400 },
+            { key: '5min', label: '5 min', daysElapsed: 300 / 86400 },
+            { key: '7min', label: '7min', daysElapsed: 420 / 86400 },
+            { key: '1h', label: '1h', daysElapsed: 1 / 24 },
+            { key: '8h', label: '8h', daysElapsed: 8 / 24 },
+            ...Array.from({ length: 90 }, (_, index) => ({
+                key: `day-${index + 1}`,
+                label: `Jour ${index + 1}`,
+                day: index + 1,
+                daysElapsed: index + 1
+            }))
+        ];
+
+        const rows = [
+            { section: 'Réveils et transitions techniques' },
+            { label: 'Endormissement ECUs', group: 'technical', values: { 1: 2000, 2: 2000 } },
+            { label: 'Secure Reboot PCU', group: 'technical', values: { 1: 3300 } },
+            { label: 'Secure Reboot CDC', group: 'technical', values: { 1: 2, 2: 2 } },
+            { label: 'PCU Garage mode (Google)', group: 'technical', values: { 3: 2000, 4: 2000, 5: 2000 } },
+            { label: 'CDC Garage mode (Google)', group: 'technical', values: { 3: 2000, 4: 2000, 5: 2000 } },
+            { label: '8ères heures', group: 'technical', values: { 1: 0 } },
+            { label: 'FOTA', group: 'technical', values: {} },
+            { label: 'CDC Suspend to RAM', group: 'technical', values: '5' },
+            { label: 'Suspend to RAM PCU', group: 'technical', values: '1' },
+            { label: 'CONNECTIVITÉ', group: 'safety', values: '6' },
+            { label: 'Suspend to RAM Smart Antenna', group: 'safety', values: '0' },
+            { section: 'Fonctions véhicule et Customer' },
+            { label: 'TEST', group: 'test', values: '0,00' },
+            { label: 'HFM / KAM', group: 'safety', values: (col) => col.day && col.day <= 3 ? '9,00' : '4,2' },
+            { label: 'Cell balancing', group: 'safety', values: (col) => col.day === 1 ? '0,08' : '0,075' },
+            { label: 'Réveils techniques périodiques Customer', group: 'safety', values: '0,00' },
+            { label: 'Veille CUSTOMER', group: 'test', values: '0,00' },
+            { label: 'BLM', group: 'safety', values: '0,7' },
+            { label: 'AID', group: 'safety', values: '0,2' },
+            { label: 'Tachy', group: 'safety', values: '14,00' },
+            { label: 'Alarme', group: 'safety', values: '11,50' },
+            { label: 'TWT', group: 'safety', values: '0,022' },
+            { section: 'Livraison et décharge batterie' },
+            { label: 'Réveils techniques périodiques Delivery', group: 'delivery', values: '9,118' },
+            { label: 'Veille DELIVERY', group: 'delivery', values: '3,46' },
+            { label: 'Transport 10 jours', group: 'delivery', values: '0,72' },
+            { label: 'Auto décharge L2 (Pb) [0,08% / jour]', group: 'delivery', values: '0,002750' },
+            { label: 'Auto décharge L2 (Pb) [0,08% / jour]', group: 'delivery', values: '0,0002750' }
+        ];
+
+        const stored = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        const ecuSheet = excelData['ECU List'] || Object.values(excelData)[0] || { data: [] };
+        const normalizeEcuName = (name) => String(name || '').trim().toLocaleLowerCase();
+        const sleepCurrentByEcuName = new Map((ecuSheet.data || []).map((ecu) => [
+            normalizeEcuName(ecu['ECU Name']),
+            ecu['Sleep Current (mA)'] === null || ecu['Sleep Current (mA)'] === undefined || ecu['Sleep Current (mA)'] === '' ? 0 : ecu['Sleep Current (mA)']
+        ]));
+
+        const header = document.getElementById('header-row');
+        timeColumns.forEach(column => {
+            const cell = document.createElement('th');
+            cell.className = column.day ? 'time-col' : 'time-col subday';
+            cell.textContent = column.label;
+            header.appendChild(cell);
+        });
+
+        function defaultValue(row, column) {
+            if (column.day === 1) return sleepCurrentByEcuName.get(normalizeEcuName(row.label)) ?? 0;
+            if (typeof row.values === 'function') return row.values(column);
+            if (typeof row.values === 'string') return row.values;
+            if (column.day && row.values[column.day] !== undefined) return row.values[column.day];
+            return row.values[column.key] ?? '';
+        }
+
+        function cellKey(rowIndex, columnKey) { return `${rowIndex}:${columnKey}`; }
+
+        function render() {
+            const body = document.getElementById('body');
+            body.replaceChildren();
+
+            rows.forEach((row, rowIndex) => {
+                const tr = document.createElement('tr');
+                if (row.section) {
+                    tr.className = 'section';
+                    const td = document.createElement('td');
+                    td.colSpan = timeColumns.length + 1;
+                    td.textContent = row.section;
+                    tr.appendChild(td);
+                    body.appendChild(tr);
+                    return;
+                }
+
+                tr.className = `group-${row.group}`;
+                const label = document.createElement('td');
+                label.className = 'sticky-label';
+                label.textContent = row.label;
+                tr.appendChild(label);
+
+                timeColumns.forEach(column => {
+                    const td = document.createElement('td');
+                    const key = cellKey(rowIndex, column.key);
+                    const initial = defaultValue(row, column);
+
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.inputMode = 'decimal';
+                    input.className = 'editable';
+                    input.value = stored[key] ?? initial;
+
+                    if (stored[key] !== undefined && stored[key] !== initial) {
+                        input.classList.add('modified');
+                    }
+
+                    input.addEventListener('input', () => {
+                        if (input.value === initial) {
+                            delete stored[key];
+                            input.classList.remove('modified');
+                        } else {
+                            stored[key] = input.value;
+                            input.classList.add('modified');
+                        }
+                        save(false);
+                    });
+
+                    td.appendChild(input);
+                    tr.appendChild(td);
+                });
+
+                body.appendChild(tr);
+            });
+        }
+
+        function save(showMessage) {
+            sessionStorage.setItem(storageKey, JSON.stringify(stored));
+            if (showMessage) {
+                document.getElementById('saved').textContent = 'Configuration enregistrée.';
+                setTimeout(() => document.getElementById('saved').textContent = '', 2500);
+            }
+        }
+
+        ProjectStorage.bindSaveButton('project-save', 'saved');
+        document.getElementById('reset').addEventListener('click', () => {
+            if (!confirm('Restaurer toutes les valeurs initiales du tableau ?')) return;
+            sessionStorage.removeItem(storageKey);
+            Object.keys(stored).forEach(key => delete stored[key]);
+            render();
+            document.getElementById('saved').textContent = 'Valeurs initiales restaurées.';
+        });
+
+        render();
+
+        document.getElementById('previous-step').addEventListener('click', async () => {
+            save(false);
+            try { await ProjectStorage.saveActiveProject(); } catch (error) { console.error(error); }
+            window.location.href = '/battery_menu';
+        });
+
+        document.addEventListener('click', function(e) {
+            const details = document.getElementById('actions-details');
+            if (details && !details.contains(e.target)) {
+                details.removeAttribute('open');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+VERSION ""
+
+
+NS_ : 
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_:
+
+
+BO_ 259 ACQ_STATS_B: 4 Vector__XXX
+ SG_ lost_count_B : 16|16@1+ (1,0) [0|65535] "ticks" Vector__XXX
+ SG_ freq_reelle_Hz_B : 0|16@1+ (1,0) [0|5000] "Hz" Vector__XXX
+
+BO_ 258 CURRENT_MEAS_B: 4 Vector__XXX
+ SG_ courant_B : 0|32@1- (1,0) [-1000|1000] "A" Vector__XXX
+
+BO_ 257 ACQ_STATS_A: 4 Vector__XXX
+ SG_ lost_count_A : 16|16@1+ (1,0) [0|65535] "ticks" Vector__XXX
+ SG_ freq_reelle_Hz_A : 0|16@1+ (1,0) [0|5000] "Hz" Vector__XXX
+
+BO_ 256 CURRENT_MEAS_A: 4 Vector__XXX
+ SG_ courant_A : 0|32@1- (1,0) [-1000|1000] "A" Vector__XXX
+
+BO_ 261 TIME_SYNC: 4 Vector__XXX
+ SG_ unix_timestamp_s : 0|32@1+ (1,0) [0|4294967295] "s" Vector__XXX
+
+
+
+CM_ "
+
+";
+BA_DEF_ BO_  "NmAsrMessage" ENUM  "No","Yes";
+BA_DEF_ BU_  "NmAsrCanMsgReducedTime" INT 0 0;
+BA_DEF_ BU_  "NmAsrCanMsgCycleOffset" INT 0 0;
+BA_DEF_  "NmAsrRepeatMessageTime" INT 0 0;
+BA_DEF_  "NmAsrWaitBusSleepTime" INT 0 0;
+BA_DEF_  "NmAsrTimeoutTime" INT 0 0;
+BA_DEF_  "NmAsrCanMsgCycleTime" INT 0 0;
+BA_DEF_  "NmAsrMessageCount" INT 0 256;
+BA_DEF_ BU_  "GenNodSleepTime" INT 0 1000000;
+BA_DEF_ BU_  "NmAsrNodeIdentifier" HEX 0 255;
+BA_DEF_  "NmAsrBaseAddress" HEX 0 0;
+BA_DEF_DEF_  "NmAsrMessage" "No";
+BA_DEF_DEF_  "NmAsrCanMsgReducedTime" 0;
+BA_DEF_DEF_  "NmAsrCanMsgCycleOffset" 0;
+BA_DEF_DEF_  "NmAsrRepeatMessageTime" 3200;
+BA_DEF_DEF_  "NmAsrWaitBusSleepTime" 1500;
+BA_DEF_DEF_  "NmAsrTimeoutTime" 2000;
+BA_DEF_DEF_  "NmAsrCanMsgCycleTime" 640;
+BA_DEF_DEF_  "NmAsrMessageCount" 64;
+BA_DEF_DEF_  "GenNodSleepTime" 4000;
+BA_DEF_DEF_  "NmAsrNodeIdentifier" 0;
+BA_DEF_DEF_  "NmAsrBaseAddress" 0;
+SIG_VALTYPE_ 258 courant_B : 1;
+SIG_VALTYPE_ 256 courant_A : 1;
+

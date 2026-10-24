@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biberonnage - Analyses et résultats</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --navy: #1f4e78; --green: #a9d08e; --blue: #bdd7ee; --pink: #ff99ff;
+            --peach: #fce4d6; --line: #b7c9d6; --red: #c00000;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; padding: 20px; font-family: "Segoe UI", Tahoma, sans-serif; color: #1f2937; background: #edf3f7; }
+        .page-header, .toolbar, .analysis, .creator { max-width: 1800px; margin-left: auto; margin-right: auto; }
+        .page-header { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+        h1, h2, h3 { color: var(--navy); }
+        h1 { margin: 0; font-size: 1.7rem; }
+        .subtitle { margin: 4px 0 0; color: #475569; }
+        .actions, .toolbar, .analysis-heading { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .toolbar { justify-content: flex-end; margin-bottom: 16px; }
+        button { border: 0; border-radius: 7px; padding: 9px 15px; color: white; font: inherit; font-weight: 750; cursor: pointer; }
+        .btn-back { background: #64748b; } .btn-menu { background: #334155; } .btn-add { background: #087f5b; }
+        .btn-create { background: #2563eb; } .btn-cancel { background: #64748b; } .btn-delete { background: #b91c1c; margin-left: auto; }
+        button:hover { filter: brightness(.92); }
+
+        .creator { display: none; margin-bottom: 22px; padding: 18px; background: white; border: 2px solid #087f5b; border-radius: 10px; box-shadow: 0 5px 18px rgba(15,23,42,.12); }
+        .creator.open { display: block; }
+        .creator h2 { margin: 0 0 14px; font-size: 1.25rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+        .form-field { display: flex; flex-direction: column; gap: 5px; font-size: .85rem; font-weight: 700; }
+        .form-field input { width: 100%; padding: 8px; border: 1px solid #94a3b8; border-radius: 5px; font: inherit; }
+        .selection-box { margin-top: 15px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #f8fafc; }
+        .selection-box h3 { margin: 0 0 4px; font-size: 1rem; }
+        .selection-help { margin: 0 0 10px; color: #64748b; font-size: .84rem; }
+        .check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 7px 14px; }
+        .check-item { display: flex; align-items: center; gap: 7px; font-size: .84rem; }
+        .check-item.required { color: #92400e; font-weight: 800; }
+        .creator-actions { margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px; }
+
+        .analysis { margin-bottom: 34px; padding-top: 5px; }
+        .analysis + .analysis { border-top: 4px solid #94a3b8; padding-top: 28px; }
+        .analysis-heading { margin-bottom: 12px; }
+        .analysis-heading h2 { margin: 0; font-size: 1.45rem; }
+        .analysis-note { color: #64748b; font-size: .86rem; }
+        .config-cards { margin-bottom: 14px; display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+        .loss-table, .threshold-table { border-collapse: collapse; border: 2px solid #000; background: white; font-size: .86rem; box-shadow: 0 2px 6px rgba(0,0,0,.08); }
+        .loss-table { width: min(710px, 100%); table-layout: fixed; font-size: 1rem; }
+        .loss-table th, .loss-table td, .threshold-table th, .threshold-table td { border: 1px solid #000; height: 29px; padding: 4px 8px; text-align: center; }
+        .loss-table th { color: #17191b; background: #f1f3f5; font-size: 1rem; }
+        .loss-table tbody td { color: #17191b; background: #fff; font-weight: 750; }
+        .loss-label { text-align: center !important; }
+        .small-input { width: 67px; border: 0; outline: 0; text-align: center; background: transparent; font: inherit; font-weight: 800; }
+        .loss-table .small-input { width: 100%; }
+        .loss-table tbody td.loss-orange { background: #ffc000; font-weight: 800; }
+        .threshold-table { width: min(490px, 100%); table-layout: fixed; }
+        .threshold-header { color: #17191b; background: #f4c8ad; font-size: .95rem; }
+        .threshold-label { width: 73%; color: #17191b; background: #f7f7f7; text-align: left !important; white-space: nowrap; font-weight: 750; }
+        .threshold-yellow { width: 27%; color: #17191b; background: #ffff00; }
+        .red-input { color: var(--red); }
+
+        details.data-choice { margin: 0 0 14px; background: white; border: 1px solid #cbd5e1; border-radius: 7px; }
+        details.data-choice summary { cursor: pointer; padding: 9px 12px; color: var(--navy); font-weight: 800; }
+        details.data-choice .check-grid { padding: 0 12px 12px; }
+        .table-container { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 7px 22px rgba(15,23,42,.12); border: 1px solid var(--line); }
+        table.analysis-table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: .79rem; text-align: center; }
+        table.analysis-table th, table.analysis-table td { border: 1px solid #cbd5e1; padding: 5px 6px; white-space: nowrap; height: 30px; }
+        .title-cell { text-align: left !important; padding-left: 12px !important; font-size: 1rem; font-weight: 850; background: #f8fafc; }
+        .cell-duration { background: var(--green); font-weight: 850; font-size: 1.1rem; min-width: 86px; }
+        .cell-ef { background: var(--blue); font-weight: 850; font-size: 1rem; min-width: 125px; }
+        .label-col { min-width: 250px; text-align: left !important; padding-left: 10px !important; font-weight: 650; }
+        .day-header { min-width: 54px; background: #f1f5f9; color: #334155; }
+        .pink-cell { background: var(--pink); font-weight: 800; }
+        .soc-reset { background: var(--peach); color: var(--red); font-weight: 800; }
+        .total-cell { min-width: 80px; color: var(--red); font-weight: 850; }
+
+        .dashboard { margin-top: 18px; display: grid; grid-template-columns: 2fr 1.25fr 1.15fr; gap: 18px; }
+        .dash-card { min-width: 0; padding: 14px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+        .dash-card h3 { margin: 0 0 10px; font-size: 1rem; }
+        .chart-box { position: relative; width: 100%; height: 250px; }
+        .summary-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+        .summary-table th, .summary-table td { border: 1px solid #cbd5e1; padding: 7px; text-align: center; }
+        .summary-table th { background: var(--green); }
+        .summary-table td:first-child { text-align: left; font-weight: 650; }
+        .cost-cell { background: #fff200; font-size: 1rem; font-weight: 850; }
+        .bib-count { color: var(--navy); font-size: 1rem; font-weight: 850; text-align: center !important; }
+        .retractable-menu { position: relative; display: inline-block; }
+        .retractable-menu details { background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+        .retractable-menu summary { padding: 10px 18px; color: var(--navy); background: white; border-radius: 8px; font-weight: 800; cursor: pointer; list-style: none; }
+        .menu-content { position: absolute; right: 0; top: 110%; z-index: 100; min-width: 230px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,.16); }
+        .menu-content button { width: 100%; text-align: left; }
+        .menu-save { background: #087f5b; } .menu-reset { background: #b45309; } .menu-autonomy { background: #64748b; } .menu-mode { background: #667eea; } .menu-home { background: #1e293b; }
+        .save-status { min-height: 1.2em; color: #087f5b; font-size: .82rem; font-weight: 750; text-align: right; }
+        .bottom-nav { max-width: 1800px; margin: 4px auto 0; display: flex; justify-content: flex-start; }
+        .previous-step { background: #64748b; }
+        @media (max-width: 1200px) { .dashboard { grid-template-columns: 1fr; } }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="preserve-table-colors">
+    <header class="page-header">
+        <div>
+            <h1> Analyses de biberonnage</h1>
+        </div>
+        <div class="retractable-menu">
+            <details id="actions-details">
+                <summary> Sommaire / Actions</summary>
+                <div class="menu-content">
+                    <span class="save-status" id="project-save-status" aria-live="polite"></span>
+                    <button class="menu-save" id="project-save" type="button"> Enregistrer</button>
+                    <button class="menu-reset" id="reset-results" type="button"> Valeurs initiales</button>
+                    <hr style="border:0;border-top:1px solid #e2e8f0;margin:4px 0;">
+                    <button class="menu-autonomy" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                    <button class="menu-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
+                    <button class="menu-home" type="button" onclick="window.location.href='/'"> Accueil</button>
+                </div>
+            </details>
+        </div>
+    </header>
+
+    <div class="toolbar">
+        <button class="btn-add" id="show-creator" type="button">＋ Ajouter une analyse de biberonnage</button>
+    </div>
+
+    <section class="creator" id="analysis-creator">
+        <h2>Nouvelle analyse de biberonnage</h2>
+        <div class="form-grid">
+            <label class="form-field">Nom de l’analyse<input id="new-name" type="text" placeholder="Ex. TT Opt sans connectivité"></label>
+            <label class="form-field">Capacité LAB (Ah)<input id="new-capacity" type="number" min="1" step="0.1"></label>
+            <label class="form-field">SOC de départ (%)<input id="new-start-soc" type="number" min="0" max="100" step="0.1"></label>
+            <label class="form-field">SOC de demande EF (%)<input id="new-demand-soc" type="number" min="0" max="100" step="0.1"></label>
+            <label class="form-field">SOC cible EF (%)<input id="new-target-soc" type="number" min="0" max="100" step="0.1"></label>
+            <label class="form-field">Conso bib ligne 1 (A)<input id="new-conso-l1" type="number" min="0" step="0.01"></label>
+            <label class="form-field">Durée bib ligne 1 (min)<input id="new-duration-l1" type="number" min="1" step="1"></label>
+            <label class="form-field">Conso bib ligne 2 (A)<input id="new-conso-l2" type="number" min="0" step="0.01"></label>
+            <label class="form-field">Durée bib ligne 2 (min)<input id="new-duration-l2" type="number" min="1" step="1"></label>
+        </div>
+        <div class="selection-box">
+            <h3>Données incluses dans la somme de consommation</h3>
+            <p class="selection-help">Cochez les lignes à additionner avant la conversion en Ah. Auto décharge L2 est obligatoire.</p>
+            <div class="check-grid" id="new-row-choices"></div>
+        </div>
+        <div class="creator-actions">
+            <button class="btn-cancel" id="cancel-creator" type="button">Annuler</button>
+            <button class="btn-create" id="create-analysis" type="button">Créer l’analyse</button>
+        </div>
+    </section>
+
+    <main id="analysis-list"></main>
+    <div class="bottom-nav"><button class="previous-step" id="previous-step" type="button">← Étape précédente</button></div>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const DATA_KEY = 'biberonnage90Days';
+        const PARAMS_KEY = 'biberonnageParams';
+        const BUILTIN_KEY = 'biberonnageBuiltinAnalyses';
+        const CUSTOM_KEY = 'biberonnageCustomAnalyses';
+        const BIB_FREQUENCY_DAYS = 7;
+        const ACCEPTANCE_CHARGE_AMPS = 3;
+        const BIB_TIME_L1_MINUTES = 120;
+        const BIB_TIME_L2_MINUTES = 90;
+        const RECUP_ENERGY_L1 = ACCEPTANCE_CHARGE_AMPS * BIB_TIME_L1_MINUTES / 60;
+        const RECUP_ENERGY_L2 = ACCEPTANCE_CHARGE_AMPS * BIB_TIME_L2_MINUTES / 60;
+        const AUTO_DISCHARGE_ROW = 28;
+
+        const stored = JSON.parse(sessionStorage.getItem(DATA_KEY) || '{}');
+        const batteryConfig = JSON.parse(sessionStorage.getItem('batteryConfiguration') || '{}');
+        const savedBibParams = JSON.parse(sessionStorage.getItem(PARAMS_KEY) || '{}');
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        const ecuSheet = excelData['ECU List'] || Object.values(excelData)[0] || { data: [] };
+        const normalize = value => String(value || '').trim().toLocaleLowerCase();
+        const sleepCurrentByEcuName = new Map((ecuSheet.data || []).map(ecu => [
+            normalize(ecu['ECU Name']),
+            ecu['Sleep Current (mA)'] === null || ecu['Sleep Current (mA)'] === undefined || ecu['Sleep Current (mA)'] === '' ? 0 : ecu['Sleep Current (mA)']
+        ]));
+
+        const timeColumns = [
+            { key: '0', label: '0,00', daysElapsed: 0 },
+            { key: '30s', label: '0,003472222', daysElapsed: 30 / 86400 },
+            { key: '1min', label: '0,0035', daysElapsed: 60 / 86400 },
+            { key: '2min', label: '0,0049', daysElapsed: 120 / 86400 },
+            { key: '5min', label: '0,0049', daysElapsed: 300 / 86400 },
+            { key: '7min', label: '0,0833', daysElapsed: 420 / 86400 },
+            { key: '1h', label: '0,0833', daysElapsed: 1 / 24 },
+            { key: '8h', label: '0,0833', daysElapsed: 8 / 24 },
+            ...Array.from({ length: 30 }, (_, index) => ({ key: `day-${index + 1}`, label: `${index + 1}`, day: index + 1, dayNum: index + 1, daysElapsed: index + 1 }))
+        ];
+
+        const sourceRows = [
+            { rowIndex: 1, label: 'Endormissement ECUs', values: { 1: 2000, 2: 2000 } },
+            { rowIndex: 2, label: 'Secure Reboot PCU', values: { 1: 3300 } },
+            { rowIndex: 3, label: 'Secure Reboot CDC', values: { 1: 2, 2: 2 } },
+            { rowIndex: 4, label: 'PCU Garage mode (Google)', values: { 3: 2000, 4: 2000, 5: 2000 } },
+            { rowIndex: 5, label: 'CDC Garage mode (Google)', values: { 3: 2000, 4: 2000, 5: 2000 } },
+            { rowIndex: 6, label: '8ères heures', values: { 1: 0 } },
+            { rowIndex: 7, label: 'FOTA', values: {} },
+            { rowIndex: 8, label: 'CDC Suspend to RAM', values: '5' },
+            { rowIndex: 9, label: 'Suspend to RAM PCU', values: '1' },
+            { rowIndex: 10, label: 'CONNECTIVITÉ', values: '6' },
+            { rowIndex: 11, label: 'Suspend to RAM Smart Antenna', values: '0' },
+            { rowIndex: 13, label: 'TEST', values: '0,00' },
+            { rowIndex: 14, label: 'HFM / KAM', values: col => col.day && col.day <= 3 ? '9,00' : '4,2' },
+            { rowIndex: 15, label: 'Cell balancing', values: col => col.day === 1 ? '0,08' : '0,075' },
+            { rowIndex: 16, label: 'Réveils techniques périodiques Customer', values: '0,00' },
+            { rowIndex: 17, label: 'Veille CUSTOMER', values: '0,00' },
+            { rowIndex: 18, label: 'BLM', values: '0,7' },
+            { rowIndex: 19, label: 'AID', values: '0,2' },
+            { rowIndex: 20, label: 'Tachy', values: '14,00' },
+            { rowIndex: 21, label: 'Alarme', values: '11,50' },
+            { rowIndex: 22, label: 'TWT', values: '0,022' },
+            { rowIndex: 24, label: 'Réveils techniques périodiques Delivery', values: '9,118' },
+            { rowIndex: 25, label: 'Veille DELIVERY', values: '3,46' },
+            { rowIndex: 26, label: 'Transport 10 jours', values: '0,72' },
+            { rowIndex: 27, label: 'Auto décharge L2 (Pb) — ligne 1', values: '0,002750' },
+            { rowIndex: 28, label: 'Auto décharge L2 (Pb)', values: '0,0002750', required: true }
+        ];
+        const rowsByIndex = new Map(sourceRows.map(row => [row.rowIndex, row]));
+
+        const numberValue = (value, fallback = 0) => {
+            const parsed = parseFloat(String(value ?? '').replace(',', '.'));
+            return Number.isFinite(parsed) ? parsed : fallback;
+        };
+        const esc = value => String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+        const fmt = (value, digits = 2) => Number(value).toFixed(digits).replace('.', ',');
+        const uniqueRows = values => [...new Set(values.map(Number).filter(index => rowsByIndex.has(index)).concat(AUTO_DISCHARGE_ROW))];
+
+        function defaultValue(row, column) {
+            if (column.day === 1) return sleepCurrentByEcuName.get(normalize(row.label)) ?? 0;
+            if (typeof row.values === 'function') return row.values(column);
+            if (typeof row.values === 'string') return row.values;
+            if (column.day && row.values[column.day] !== undefined) return row.values[column.day];
+            return row.values[column.key] ?? '';
+        }
+
+        function currentFor(rowIndex, column) {
+            const row = rowsByIndex.get(rowIndex);
+            if (!row) return 0;
+            const key = `${rowIndex}:${column.key}`;
+            return numberValue(stored[key] !== undefined ? stored[key] : defaultValue(row, column));
+        }
+
+        const initialConfig = {
+            capacityAh: numberValue(batteryConfig.capacityAh, 60),
+            startingSoc: numberValue(savedBibParams.startingSoc ?? batteryConfig.startingSoc, 90),
+            efDemandSoc: numberValue(savedBibParams.efDemandSoc, 76),
+            targetSoc: 90,
+            consoL1: numberValue(savedBibParams.consoBibL1, 7.97),
+            durationL1: numberValue(savedBibParams.dureeBibL1, 120),
+            consoL2: numberValue(savedBibParams.consoBibL2, 7.97),
+            durationL2: numberValue(savedBibParams.dureeBibL2, 90)
+        };
+        const builtinSaved = JSON.parse(sessionStorage.getItem(BUILTIN_KEY) || '{}');
+        const baseRows = uniqueRows(sourceRows.filter(row => row.rowIndex >= 1 && row.rowIndex <= 19).map(row => row.rowIndex));
+        const ttRows = uniqueRows(sourceRows.filter(row => row.rowIndex >= 1 && row.rowIndex <= 21).map(row => row.rowIndex));
+        const analyses = [
+            { id: 'base', name: 'BASE', note: '', selectedRows: baseRows, config: { ...initialConfig, ...(builtinSaved.base || {}) }, custom: false },
+            { id: 'tt-opt', name: 'TT Opt avec TACHY + Alarme', note: '', selectedRows: ttRows, config: { ...initialConfig, ...(builtinSaved['tt-opt'] || {}) }, custom: false }
+        ];
+
+        let customAnalyses;
+        try { customAnalyses = JSON.parse(sessionStorage.getItem(CUSTOM_KEY) || '[]'); } catch { customAnalyses = []; }
+        if (!Array.isArray(customAnalyses)) customAnalyses = [];
+        customAnalyses = customAnalyses.map((analysis, index) => ({
+            id: String(analysis.id || `custom-${Date.now()}-${index}`),
+            name: String(analysis.name || `Analyse ${index + 1}`),
+            note: 'Analyse personnalisée — modifiez les paramètres ou les données incluses ci-dessous.',
+            selectedRows: uniqueRows(Array.isArray(analysis.selectedRows) ? analysis.selectedRows : baseRows),
+            config: { ...initialConfig, ...(analysis.config || {}) },
+            custom: true
+        }));
+        analyses.push(...customAnalyses);
+
+        const chartInstances = new Map();
+        const listEl = document.getElementById('analysis-list');
+
+        function choiceMarkup(selectedRows, prefix, editable) {
+            return sourceRows.map(row => {
+                const required = row.rowIndex === AUTO_DISCHARGE_ROW;
+                const checked = required || selectedRows.includes(row.rowIndex);
+                return `<label class="check-item ${required ? 'required' : ''}"><input type="checkbox" ${checked ? 'checked' : ''} ${required || !editable ? 'disabled' : ''} data-row-index="${row.rowIndex}" data-prefix="${prefix}"> ${esc(row.label)}${required ? ' (obligatoire)' : ''}</label>`;
+            }).join('');
+        }
+
+        function analysisMarkup(analysis) {
+            const id = esc(analysis.id);
+            const config = analysis.config;
+            return `<section class="analysis" id="analysis-${id}" data-analysis-id="${id}">
+                <div class="analysis-heading">
+                    <h2>${esc(analysis.name)}</h2>${analysis.note ? `<span class="analysis-note">${esc(analysis.note)}</span>` : ''}
+                    ${analysis.custom ? '<button class="btn-delete" type="button" data-action="delete">Supprimer l’analyse</button>' : ''}
+                </div>
+                <div class="config-cards">
+                    <table class="loss-table">
+                        <colgroup><col style="width:40%"><col style="width:18%"><col style="width:22%"><col style="width:12%"><col style="width:8%"></colgroup>
+                        <thead><tr><th class="loss-label">Énergie perdue pdt bib</th><th>conso</th><th>durée (min)</th><th>Ah</th><th>Ah</th></tr></thead>
+                        <tbody>
+                            <tr><td><input class="small-input" type="number" step="0.01" min="0" data-field="consoL1" value="${config.consoL1}"></td><td><input class="small-input" type="number" step="1" min="1" data-field="durationL1" value="${config.durationL1}"></td><td data-output="ah-l1"></td><td class="loss-orange" data-output="total-l1"></td><td></td></tr>
+                            <tr><td><input class="small-input" type="number" step="0.01" min="0" data-field="consoL2" value="${config.consoL2}"></td><td><input class="small-input" type="number" step="1" min="1" data-field="durationL2" value="${config.durationL2}"></td><td data-output="ah-l2"></td><td class="loss-orange" data-output="total-l2"></td><td></td></tr>
+                        </tbody>
+                    </table>
+                    <table class="threshold-table">
+                        <thead><tr><th colspan="2" class="threshold-header">LAB <input class="small-input" type="number" min="1" step="0.1" data-field="capacityAh" value="${config.capacityAh}"> Ah</th></tr></thead>
+                        <tbody>
+                            <tr><td class="threshold-label">%SOC de départ</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="startingSoc" value="${config.startingSoc}"></td></tr>
+                            <tr><td class="threshold-label">%SOC de demande d’EF</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="efDemandSoc" value="${config.efDemandSoc}"></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <details class="data-choice"><summary>Données incluses dans le calcul</summary><div class="check-grid">${choiceMarkup(analysis.selectedRows, id, analysis.custom)}</div></details>
+                <div class="table-container"><table class="analysis-table"><thead><tr><td colspan="3" class="title-cell">${esc(analysis.name)}</td><th colspan="${timeColumns.length + 1}"></th></tr></thead><tbody data-output="table-body"></tbody></table></div>
+                <div class="dashboard">
+                    <div class="dash-card"><h3> Évolution du %SOC Batterie</h3><div class="chart-box"><canvas data-chart="soc"></canvas></div></div>
+                    <div class="dash-card"><h3> Bilan Énergétique (Wh)</h3><table class="summary-table"><thead><tr><th>Indicateur</th><th>Somme Ah</th><th>Somme Besoin Wh (× 14,5 V)</th><th>Coût EF (Wh)</th></tr></thead><tbody>
+                        <tr><td>Conso de veille (12 V)</td><td data-output="sum-veille-ah"></td><td data-output="sum-veille-wh"></td><td rowspan="3" class="cost-cell" data-output="total-cost"></td></tr>
+                        <tr><td>Énergie perdue (Ligne 1)</td><td data-output="sum-loss-l1-ah"></td><td data-output="sum-loss-l1-wh"></td></tr>
+                        <tr><td>Énergie perdue (Ligne 2)</td><td data-output="sum-loss-l2-ah"></td><td data-output="sum-loss-l2-wh"></td></tr>
+                        <tr><td>Nb de bib</td><td colspan="3" class="bib-count" data-output="bib-count"></td></tr>
+                    </tbody></table></div>
+                    <div class="dash-card"><h3> Répartition Coût EF (%)</h3><div class="chart-box"><canvas data-chart="pie"></canvas></div></div>
+                </div>
+            </section>`;
+        }
+
+        function setOutput(section, name, value) {
+            const element = section.querySelector(`[data-output="${name}"]`);
+            if (element) element.textContent = value;
+        }
+
+        function calculateAnalysis(analysis) {
+            const config = analysis.config;
+            const capacityAh = Math.max(numberValue(config.capacityAh, 60), .01);
+            const startSoc = numberValue(config.startingSoc, 90);
+            const demandSoc = numberValue(config.efDemandSoc, 76);
+            const targetSoc = numberValue(config.targetSoc, 90);
+            const consoL1 = numberValue(config.consoL1, 7.97);
+            const durationL1 = numberValue(config.durationL1, 120);
+            const consoL2 = numberValue(config.consoL2, 7.97);
+            const durationL2 = numberValue(config.durationL2, 90);
+            const ahL1 = consoL1 * durationL1 / 60;
+            const ahL2 = consoL2 * durationL2 / 60;
+
+            const ahSpent = [];
+            let cumulativeAh = 0;
+            timeColumns.forEach((column, index) => {
+                const currentSum = analysis.selectedRows.reduce((sum, rowIndex) => sum + currentFor(rowIndex, column), 0);
+                const previousTime = index === 0 ? 0 : timeColumns[index - 1].daysElapsed;
+                cumulativeAh += (currentSum / 1000) * (column.daysElapsed - previousTime) * 24;
+                ahSpent.push(cumulativeAh);
+            });
+
+            let totalLossL1 = 0;
+            let totalLossL2 = 0;
+            const socLost = ahSpent.map(value => value * 100 / capacityAh);
+            const socCurrent = [];
+            let previousSoc = startSoc;
+            timeColumns.forEach((column, index) => {
+                if (index < 6) {
+                    socCurrent.push(null);
+                } else if (column.key === '8h') {
+                    socCurrent.push(startSoc);
+                    previousSoc = startSoc;
+                } else {
+                    let calculatedSoc = previousSoc - socLost[index];
+                    if (ahSpent[index] === consoL1 || calculatedSoc < demandSoc || (column.dayNum && column.dayNum % BIB_FREQUENCY_DAYS === 0)) calculatedSoc = targetSoc;
+                    socCurrent.push(calculatedSoc);
+                    previousSoc = calculatedSoc;
+                }
+                if (column.dayNum && column.dayNum % BIB_FREQUENCY_DAYS === 0) {
+                    totalLossL1 += ahL1;
+                    totalLossL2 += RECUP_ENERGY_L1;
+                }
+            });
+
+            const sumVeilleAh = ahSpent[ahSpent.length - 1];
+            const sumVeilleWh = sumVeilleAh * 14.5;
+            const sumLossL1Wh = totalLossL1 * 14.5;
+            const sumLossL2Wh = totalLossL2 * 14.5;
+            const totalCost = sumVeilleWh + sumLossL1Wh + sumLossL2Wh;
+            const lossDay1 = 1 % BIB_FREQUENCY_DAYS === 0 ? ahL1 : 0;
+            let bibCount = lossDay1 === ahL1 || (startSoc - socLost[7]) < demandSoc ? 90 : Math.round(startSoc - socLost[7]);
+            return { capacityAh, startSoc, demandSoc, targetSoc, consoL1, durationL1, consoL2, durationL2, ahL1, ahL2, ahSpent, socLost, socCurrent, totalLossL1, totalLossL2, sumVeilleAh, sumVeilleWh, sumLossL1Wh, sumLossL2Wh, totalCost, bibCount };
+        }
+
+        function tableBodyHtml(analysis, result) {
+            let html = '<tr><td class="label-col">Jours</td>' + timeColumns.map(col => `<th class="day-header">${col.label}</th>`).join('') + '<th>Total</th></tr>';
+            html += `<tr><td rowspan="6" class="cell-duration">30 j</td><td rowspan="6" class="cell-ef">EF sur 30 jrs</td><td class="label-col">Ah dépensés par jour</td>${result.ahSpent.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : '0,00'}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
+            html += `<tr><td class="label-col">Système Loss pdt extra feeding (Ah)</td>${timeColumns.map(col => { const active = col.dayNum && col.dayNum % BIB_FREQUENCY_DAYS === 0; return `<td class="${active ? 'pink-cell' : ''}">${active ? fmt(result.ahL1, 1) : ''}</td>`; }).join('')}<td class="total-cell">${fmt(result.totalLossL1)}</td></tr>`;
+            html += `<tr><td class="label-col">Extra feeding (Ah)</td>${timeColumns.map(col => { const active = col.dayNum && col.dayNum % BIB_FREQUENCY_DAYS === 0; return `<td class="${active ? 'pink-cell' : ''}">${active ? fmt(RECUP_ENERGY_L1, 1) : ''}</td>`; }).join('')}<td class="total-cell">${fmt(result.totalLossL2)}</td></tr>`;
+            html += `<tr><td class="label-col">%SOC batterie perdus avant EF</td>${result.socLost.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : ''}</td>`).join('')}<td class="total-cell"></td></tr>`;
+            html += `<tr><td class="label-col">%SOC batterie</td>${result.socCurrent.map((value, index) => { if (value === null) return '<td></td>'; const reset = index > 7 && Math.abs(value - result.targetSoc) < 1e-9; return `<td class="${reset ? 'soc-reset' : ''}">${fmt(value)}</td>`; }).join('')}<td class="total-cell"></td></tr>`;
+            html += `<tr><td class="label-col"></td>${timeColumns.map(col => `<td>${col.dayNum ? '0,00' : ''}</td>`).join('')}<td class="total-cell"></td></tr>`;
+            return html;
+        }
+
+        function updateCharts(analysis, section, result) {
+            if (typeof Chart === 'undefined') return;
+            ['soc', 'pie'].forEach(type => {
+                const key = `${analysis.id}-${type}`;
+                if (chartInstances.has(key)) chartInstances.get(key).destroy();
+            });
+            const socChart = new Chart(section.querySelector('[data-chart="soc"]'), {
+                type: 'line', data: { labels: timeColumns.map(col => col.label), datasets: [{ label: '%SOC Batterie', data: result.socCurrent, borderColor: '#1f77b4', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 1, tension: .1 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 60, max: 100 } } }
+            });
+            const lostWh = result.sumLossL1Wh + result.sumLossL2Wh;
+            const pctVeille = result.totalCost > 0 ? Math.round(result.sumVeilleWh / result.totalCost * 100) : 0;
+            const pctLost = result.totalCost > 0 ? Math.round(lostWh / result.totalCost * 100) : 0;
+            const pieChart = new Chart(section.querySelector('[data-chart="pie"]'), {
+                type: 'pie', data: { labels: [`Besoin Batt12V (${pctVeille}%)`, `Énergie perdue (${pctLost}%)`], datasets: [{ data: [result.sumVeilleWh, lostWh], backgroundColor: ['#2563eb', '#ea580c'] }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            });
+            chartInstances.set(`${analysis.id}-soc`, socChart);
+            chartInstances.set(`${analysis.id}-pie`, pieChart);
+        }
+
+        function renderAnalysis(analysis) {
+            const section = document.getElementById(`analysis-${analysis.id}`);
+            if (!section) return;
+            const result = calculateAnalysis(analysis);
+            setOutput(section, 'ah-l1', fmt(result.ahL1, 3));
+            setOutput(section, 'total-l1', fmt(result.ahL1 + RECUP_ENERGY_L1));
+            setOutput(section, 'ah-l2', fmt(result.ahL2, 3));
+            setOutput(section, 'total-l2', fmt(result.ahL2 + RECUP_ENERGY_L2));
+            section.querySelector('[data-output="table-body"]').innerHTML = tableBodyHtml(analysis, result);
+            setOutput(section, 'sum-veille-ah', fmt(result.sumVeilleAh));
+            setOutput(section, 'sum-veille-wh', fmt(result.sumVeilleWh));
+            setOutput(section, 'sum-loss-l1-ah', fmt(result.totalLossL1));
+            setOutput(section, 'sum-loss-l1-wh', fmt(result.sumLossL1Wh));
+            setOutput(section, 'sum-loss-l2-ah', fmt(result.totalLossL2));
+            setOutput(section, 'sum-loss-l2-wh', fmt(result.sumLossL2Wh));
+            setOutput(section, 'total-cost', fmt(result.totalCost));
+            setOutput(section, 'bib-count', result.bibCount);
+            updateCharts(analysis, section, result);
+        }
+
+        function persist() {
+            const builtins = Object.fromEntries(analyses.filter(a => !a.custom).map(a => [a.id, a.config]));
+            sessionStorage.setItem(BUILTIN_KEY, JSON.stringify(builtins));
+            sessionStorage.setItem(CUSTOM_KEY, JSON.stringify(analyses.filter(a => a.custom).map(a => ({ id: a.id, name: a.name, selectedRows: a.selectedRows, config: a.config }))));
+            const calculated = Object.fromEntries(analyses.map(analysis => [analysis.id, { name: analysis.name, selectedRows: analysis.selectedRows, result: calculateAnalysis(analysis) }]));
+            sessionStorage.setItem('biberonnageCalculatedAnalyses', JSON.stringify(calculated));
+        }
+
+        function renderAll() {
+            chartInstances.forEach(chart => chart.destroy());
+            chartInstances.clear();
+            listEl.innerHTML = analyses.map(analysisMarkup).join('');
+            analyses.forEach(renderAnalysis);
+        }
+
+        listEl.addEventListener('input', event => {
+            const section = event.target.closest('.analysis');
+            if (!section) return;
+            const analysis = analyses.find(item => item.id === section.dataset.analysisId);
+            if (!analysis) return;
+            if (event.target.matches('[data-field]')) {
+                analysis.config[event.target.dataset.field] = numberValue(event.target.value);
+                persist();
+                renderAnalysis(analysis);
+            }
+            if (event.target.matches('[data-row-index]') && analysis.custom) {
+                const rowIndex = Number(event.target.dataset.rowIndex);
+                analysis.selectedRows = event.target.checked ? uniqueRows([...analysis.selectedRows, rowIndex]) : uniqueRows(analysis.selectedRows.filter(value => value !== rowIndex));
+                section.querySelector('details summary').textContent = 'Données incluses dans le calcul';
+                persist();
+                renderAnalysis(analysis);
+            }
+        });
+
+        listEl.addEventListener('click', event => {
+            if (!event.target.matches('[data-action="delete"]')) return;
+            const section = event.target.closest('.analysis');
+            const index = analyses.findIndex(item => item.id === section.dataset.analysisId && item.custom);
+            if (index < 0 || !confirm('Supprimer cette analyse personnalisée ?')) return;
+            analyses.splice(index, 1);
+            persist();
+            renderAll();
+        });
+
+        const creator = document.getElementById('analysis-creator');
+        const newChoices = document.getElementById('new-row-choices');
+        function fillCreator() {
+            document.getElementById('new-name').value = '';
+            document.getElementById('new-capacity').value = initialConfig.capacityAh;
+            document.getElementById('new-start-soc').value = initialConfig.startingSoc;
+            document.getElementById('new-demand-soc').value = initialConfig.efDemandSoc;
+            document.getElementById('new-target-soc').value = initialConfig.targetSoc;
+            document.getElementById('new-conso-l1').value = initialConfig.consoL1;
+            document.getElementById('new-duration-l1').value = initialConfig.durationL1;
+            document.getElementById('new-conso-l2').value = initialConfig.consoL2;
+            document.getElementById('new-duration-l2').value = initialConfig.durationL2;
+            newChoices.innerHTML = choiceMarkup(baseRows, 'new', true);
+        }
+        document.getElementById('show-creator').addEventListener('click', () => {
+            fillCreator(); creator.classList.add('open'); creator.scrollIntoView({ behavior: 'smooth', block: 'start' }); document.getElementById('new-name').focus();
+        });
+        document.getElementById('cancel-creator').addEventListener('click', () => creator.classList.remove('open'));
+        document.getElementById('create-analysis').addEventListener('click', () => {
+            const name = document.getElementById('new-name').value.trim();
+            if (!name) { document.getElementById('new-name').focus(); return; }
+            const selectedRows = uniqueRows([...newChoices.querySelectorAll('input:checked')].map(input => Number(input.dataset.rowIndex)));
+            const analysis = {
+                id: `custom-${Date.now()}`, name, note: 'Analyse personnalisée — modifiez les paramètres ou les données incluses ci-dessous.', custom: true, selectedRows,
+                config: {
+                    capacityAh: numberValue(document.getElementById('new-capacity').value, 60), startingSoc: numberValue(document.getElementById('new-start-soc').value, 90),
+                    efDemandSoc: numberValue(document.getElementById('new-demand-soc').value, 76), targetSoc: numberValue(document.getElementById('new-target-soc').value, 90),
+                    consoL1: numberValue(document.getElementById('new-conso-l1').value, 7.97), durationL1: numberValue(document.getElementById('new-duration-l1').value, 120),
+                    consoL2: numberValue(document.getElementById('new-conso-l2').value, 7.97), durationL2: numberValue(document.getElementById('new-duration-l2').value, 90)
+                }
+            };
+            analyses.push(analysis); creator.classList.remove('open'); persist(); renderAll();
+            requestAnimationFrame(() => document.getElementById(`analysis-${analysis.id}`).scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        });
+
+        ProjectStorage.bindSaveButton('project-save', 'project-save-status');
+        document.getElementById('reset-results').addEventListener('click', () => {
+            if (!confirm('Restaurer toutes les valeurs initiales du biberonnage et supprimer les analyses personnalisées ?')) return;
+            [DATA_KEY, PARAMS_KEY, BUILTIN_KEY, CUSTOM_KEY, 'biberonnageCalculatedAnalyses'].forEach(key => sessionStorage.removeItem(key));
+            window.location.reload();
+        });
+        document.getElementById('previous-step').addEventListener('click', async () => {
+            persist();
+            try { await ProjectStorage.saveActiveProject(); } catch (error) { console.error(error); }
+            window.location.href = '/biberonnage';
+        });
+        document.addEventListener('click', event => {
+            const details = document.getElementById('actions-details');
+            if (details && !details.contains(event.target)) details.removeAttribute('open');
+        });
+
+        renderAll();
+        persist();
+    </script>
+</body>
+</html>

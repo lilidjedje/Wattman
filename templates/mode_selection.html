@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sélection du Mode</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 50px 40px;
+            animation: slideUp 0.5s ease-out;
+            text-align: center;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        h1 { color: #333; margin-bottom: 10px; font-size: 2.3em; }
+        .subtitle { color: #666; margin-bottom: 40px; font-size: 1.1em; }
+        
+        .mode-grid {
+            display: flex;
+            gap: 25px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .mode-card {
+            flex: 1;
+            min-width: 280px;
+            background: #f8f9ff;
+            border: 3px solid #667eea;
+            border-radius: 15px;
+            padding: 40px 20px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        .mode-card:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.25);
+        }
+        .mode-card.disabled-mode {
+            border-color: #cbd5e1;
+            background: #f1f5f9;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .mode-card.disabled-mode:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        .mode-icon { font-size: 3.5em; }
+        .mode-title { font-size: 1.3em; font-weight: 700; color: #2d3748; }
+        .mode-desc { font-size: 0.95em; color: #718096; line-height: 1.4; }
+        
+        .btn-back {
+            margin-top: 30px; padding: 10px 25px; background: none;
+            border: 2px solid #718096; color: #718096; border-radius: 8px;
+            cursor: pointer; font-weight: 600; transition: all 0.2s;
+        }
+        .btn-back:hover { background: #f7fafc; color: #4a5568; border-color: #4a5568; }
+        .pdf-export-button { position: fixed; top: 62px; right: 22px; z-index: 200; padding: 12px 20px; text-decoration: none; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body>
+    <a class="button pdf-export-button" href="/export_synthesis_pdf?auto=1">Export synthèses PDF</a>
+    <div class="container">
+        <h1> Choisissez votre Mode d'Analyse</h1>
+        <p class="subtitle">Sélectionnez l'outil de dimensionnement ou de calcul requis pour votre session</p>
+
+        <div class="mode-grid">
+            <!-- Mode 1 : DCDC Sizing / WLTC -->
+            <div class="mode-card" onclick="window.location.href='/homologation_configuration'">
+                <div class="mode-icon"></div>
+                <div class="mode-title">DCDC Sizing / WLTC (-7 °C)</div>
+            </div>
+
+            <!-- Mode 2 : Autonomie Batterie (Désactivé pour l'instant) -->
+            <!-- Dans templates/mode_selection.html, trouve la deuxième carte et remplace-la par : -->
+<div class="mode-card" onclick="window.location.href='/battery_configuration'">
+    <div class="mode-icon"></div>
+    <div class="mode-title">Autonomie Batterie</div>
+</div>
+
+            <button class="mode-card" type="button" onclick="openCanServer()" aria-label="Ouvrir le CAN Server hébergé sur le Raspberry Pi">
+                <div class="mode-icon"></div>
+                <div class="mode-title">Analyse de logs</div>
+                <div class="mode-desc">Accès au CAN Server : acquisition ESP32-C3 multi INA226 et analyse</div>
+            </button>
+        </div>
+
+        <button class="btn-back" onclick="window.location.href='/import_project'">← Changer de fichier d'entrée</button>
+    </div>
+    <script src="{{ url_for('static', filename='project_storage.js') }}"></script>
+    <script src="{{ url_for('static', filename='homologation_defaults.js') }}"></script>
+    <script>
+        const canServerUrl = {{ can_server_url|tojson }};
+        const readJson = (storage, key, fallback) => {
+            try { return JSON.parse(storage.getItem(key) || JSON.stringify(fallback)); }
+            catch { return fallback; }
+        };
+        const numeric = value => {
+            const number = Number(String(value ?? '').replace(',', '.').replace('%', ''));
+            return Number.isFinite(number) ? number : 0;
+        };
+
+        function dcdcDevices(excelData) {
+            const defaults = window.HomologationDefaults;
+            const sheet = excelData['Device List'] || Object.values(excelData)[0];
+            const selectedRaw = sessionStorage.getItem('selectedDeviceKeys');
+            const selected = new Set(readJson(sessionStorage, 'selectedDeviceKeys', []));
+            const deleted = new Set(readJson(sessionStorage, 'deletedHomologationDeviceKeys', []));
+            const currents = readJson(sessionStorage, 'modifiedCurrents', {});
+            const matrix = readJson(sessionStorage, 'profileMatrix', {});
+            const custom = readJson(sessionStorage, 'customHomologationDevices', []);
+            const intervals = defaults.dcdcIntervals;
+            const bounds = [0, 300, 600, 900, 1500, 1800];
+            const profiles = defaults.dcdcProfiles;
+            const profileLabels = {winter: 'Winter < 5°C', midseason: 'Mid-season 5–15°C', summer: 'Summer > 15°C'};
+            const wltcWindows = [[0, 100], [100.8, 240], [240, 420], [420, 489.6], [735, 1500], [1500, 1800]];
+            const wltcLabels = ['WLTC Cycle 1', 'WLTC Cycle 2', 'WLTC Cycle 3'];
+            const occurrenceCounts = {};
+            const devices = [];
+
+            (sheet?.data || []).forEach((row, rowIndex) => {
+                const name = row['Device Name'] || `Device ${rowIndex + 1}`;
+                const key = `${rowIndex}_${name}`;
+                const category = String(row.current_category || row['Current Category'] || '').trim().toUpperCase();
+                if (deleted.has(key) || (selectedRaw !== null ? !selected.has(key) : category !== 'H')) return;
+                const normalized = defaults.normalize(name);
+                const occurrence = occurrenceCounts[normalized] || 0;
+                occurrenceCounts[normalized] = occurrence + 1;
+                const nominal = numeric(currents[key] ?? row['Current (A)'] ?? row['Homologation Current (A)']);
+                const initial = defaults.valuesFor('dcdc', name, occurrence) || Array(15).fill(100);
+                const scenarios = {};
+                profiles.forEach((profile, profileIndex) => {
+                    scenarios[profileLabels[profile]] = intervals.map((interval, intervalIndex) => {
+                        const percentage = numeric(matrix[`${rowIndex}_${profile}_${interval}`] ?? initial[profileIndex * intervals.length + intervalIndex] ?? 100);
+                        return {
+                            label: interval,
+                            start_s: bounds[intervalIndex],
+                            end_s: bounds[intervalIndex + 1],
+                            expected_A: nominal * percentage / 100
+                        };
+                    });
+                });
+                const wltcInitial = defaults.valuesFor('wltc', name, occurrence) || Array(18).fill(100);
+                wltcLabels.forEach((label, cycleIndex) => {
+                    scenarios[label] = defaults.wltcIntervals.map((interval, intervalIndex) => ({
+                        label: interval,
+                        start_s: wltcWindows[intervalIndex][0],
+                        end_s: wltcWindows[intervalIndex][1],
+                        expected_A: nominal * numeric(wltcInitial[cycleIndex * defaults.wltcIntervals.length + intervalIndex] ?? 100) / 100
+                    }));
+                });
+                devices.push({id: `dcdc:${key}`, kind: 'dcdc', name, nominal_A: nominal, source_unit: 'A', scenarios});
+            });
+
+            custom.forEach(device => {
+                const key = `custom_${device.id}`;
+                if (deleted.has(key)) return;
+                const nominal = numeric(currents[key] ?? device.current);
+                const scenarios = {};
+                profiles.forEach(profile => {
+                    scenarios[profileLabels[profile]] = intervals.map((interval, intervalIndex) => ({
+                        label: interval,
+                        start_s: bounds[intervalIndex],
+                        end_s: bounds[intervalIndex + 1],
+                        expected_A: nominal * numeric(matrix[`${key}_${profile}_${interval}`] ?? 100) / 100
+                    }));
+                });
+                wltcLabels.forEach(label => {
+                    scenarios[label] = defaults.wltcIntervals.map((interval, intervalIndex) => ({
+                        label: interval,
+                        start_s: wltcWindows[intervalIndex][0],
+                        end_s: wltcWindows[intervalIndex][1],
+                        expected_A: nominal
+                    }));
+                });
+                devices.push({id: `dcdc:${key}`, kind: 'dcdc', name: device.name, nominal_A: nominal, source_unit: 'A', scenarios});
+            });
+            return devices;
+        }
+
+        function sleepDevices(excelData) {
+            const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
+            const selectedRaw = sessionStorage.getItem('selectedEcuKeys');
+            const selected = new Set(readJson(sessionStorage, 'selectedEcuKeys', []));
+            const deleted = new Set(readJson(sessionStorage, 'deletedDarkDeviceKeys', []));
+            const custom = readJson(sessionStorage, 'customDarkDevices', []);
+            const modes = [
+                ['DM1', 'modifiedDM1Currents', 'DM1 Current (mA)'],
+                ['DM2', 'modifiedDM2Currents', 'DM2 Current (mA)'],
+                ['Customer Mode', 'modifiedCustomerCurrents', 'CM Current (mA)']
+            ];
+            const devices = [];
+            modes.forEach(([mode, storageKey, column]) => {
+                const modified = readJson(sessionStorage, storageKey, {});
+                const maximumDay = mode === 'Customer Mode' ? 30 : 90;
+                const dayLabels = ['0,0 jours', '0,3 jours'];
+                for (let day = 1; day <= maximumDay; day += 0.5) {
+                    dayLabels.push(day.toFixed(1).replace('.', ',') + ' jours');
+                }
+                const matrixStorageKey = mode === 'Customer Mode'
+                    ? 'customerModeMatrix'
+                    : `${mode.toLowerCase()}ModeMatrix`;
+                const matrix = readJson(sessionStorage, matrixStorageKey, {});
+                const dayNumber = label => Number(label.replace(' jours', '').replace(',', '.'));
+                const profilesFor = keyForDay => Object.fromEntries(dayLabels.map((label, index) => [
+                    String(dayNumber(label)),
+                    Number(matrix[keyForDay(label)] ?? (index % 2 === 0 ? 1 : 0))
+                ]));
+                (sheet?.data || []).forEach((row, rowIndex) => {
+                    const name = row['ECU Name'] || row['Device Name'] || `ECU ${rowIndex + 1}`;
+                    const key = `${rowIndex}_${name}`;
+                    if (deleted.has(key) || (selectedRaw !== null && !selected.has(key))) return;
+                    const nominalMilliAmp = numeric(
+                        modified[key] ?? row[column] ?? row['Current (A)'] ??
+                        row['Sleep Current (mA)'] ?? row['Homologation Current (mA)']
+                    );
+                    devices.push({
+                        id: `sleep:${mode}:${key}`,
+                        kind: 'sleep',
+                        mode,
+                        name: `${name} — ${mode}`,
+                        nominal_A: nominalMilliAmp / 1000,
+                        source_unit: 'mA',
+                        day_profiles: profilesFor(label => `${rowIndex}_${label}`),
+                        scenarios: {}
+                    });
+                });
+                custom.forEach(device => {
+                    const key = `custom:${device.id}`;
+                    const nominalMilliAmp = numeric(modified[key] ?? device.current);
+                    devices.push({
+                        id: `sleep:${mode}:${key}`,
+                        kind: 'sleep',
+                        mode,
+                        name: `${device.name} — ${mode}`,
+                        nominal_A: nominalMilliAmp / 1000,
+                        source_unit: 'mA',
+                        day_profiles: profilesFor(label => `${key}_${label}`),
+                        scenarios: {}
+                    });
+                });
+            });
+            return devices;
+        }
+
+        function buildTheorySnapshot() {
+            const excelData = readJson(sessionStorage, 'excelData', {});
+            const homologation = readJson(sessionStorage, 'homologationConfiguration', {});
+            const battery = readJson(sessionStorage, 'batteryConfiguration', {});
+            const calculatedBiberonnages = readJson(
+                sessionStorage, 'biberonnageCalculatedAnalyses', {}
+            );
+            let biberonnageAnalyses = Object.entries(calculatedBiberonnages).map(
+                ([id, analysis]) => ({
+                    id,
+                    name: String(analysis?.name || id),
+                    result: analysis?.result || {}
+                })
+            );
+            if (!biberonnageAnalyses.length) {
+                const savedParams = readJson(sessionStorage, 'biberonnageParams', {});
+                const builtins = readJson(sessionStorage, 'biberonnageBuiltinAnalyses', {});
+                const custom = readJson(sessionStorage, 'biberonnageCustomAnalyses', []);
+                const common = {
+                    capacityAh: numeric(battery.capacityAh) || 60,
+                    startingSoc: numeric(savedParams.startingSoc ?? battery.startingSoc) || 90,
+                    efDemandSoc: numeric(savedParams.efDemandSoc) || 76,
+                    targetSoc: 90
+                };
+                const asAnalysis = (id, name, config = {}) => ({
+                    id,
+                    name,
+                    result: {
+                        capacityAh: numeric(config.capacityAh ?? common.capacityAh),
+                        startSoc: numeric(config.startingSoc ?? common.startingSoc),
+                        demandSoc: numeric(config.efDemandSoc ?? common.efDemandSoc),
+                        targetSoc: numeric(config.targetSoc ?? common.targetSoc)
+                    }
+                });
+                biberonnageAnalyses = [
+                    asAnalysis('base', 'BASE', builtins.base),
+                    asAnalysis('tt-opt', 'TT Opt avec TACHY + Alarme', builtins['tt-opt']),
+                    ...(Array.isArray(custom) ? custom.map((item, index) =>
+                        asAnalysis(
+                            String(item.id || `custom-${index + 1}`),
+                            String(item.name || `Biberonnage ${index + 1}`),
+                            item.config
+                        )
+                    ) : [])
+                ];
+            }
+            return {
+                version: 1,
+                generated_at: new Date().toISOString(),
+                project: ProjectStorage.getActiveProject() || {},
+                devices: [...dcdcDevices(excelData), ...sleepDevices(excelData)],
+                biberonnage_analyses: biberonnageAnalyses,
+                analysis_config: {
+                    dcdc_output_current_A: numeric(homologation.dcdcOutputCurrentA) || 250,
+                    battery_capacity_Ah: numeric(battery.capacityAh) || 60,
+                    starting_soc_percent: numeric(battery.startingSoc) || 90,
+                    minimum_soc_percent: numeric(battery.minimumSoc) || 70
+                }
+            };
+        }
+
+        function openCanServer() {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `${canServerUrl.replace(/\/+$/, '')}/import-theory`;
+            const payload = document.createElement('input');
+            payload.type = 'hidden';
+            payload.name = 'theory_snapshot';
+            payload.value = JSON.stringify(buildTheorySnapshot());
+            form.appendChild(payload);
+            document.body.appendChild(form);
+            form.submit();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration DCDC Sizing</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+        .header {
+            max-width: 1750px; margin: 0 auto 30px; color: white;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+        }
+        .header h1 { font-size: 2.2em; display: flex; align-items: center; gap: 10px; }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: 600; transition: all 0.3s ease; font-size: 1em;
+        }
+        .btn-back { background: rgba(255, 255, 255, 0.2); color: white; border: 2px solid white; }
+        .btn-back:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
+        .btn-menu { background: #3182ce; color: white; }
+        .btn-menu:hover { background: #2563eb; transform: translateY(-2px); }
+        .btn-results { background: #27ae60; color: white; }
+        .btn-results:hover { background: #229954; transform: translateY(-2px); }
+        
+        .container { max-width: 1750px; margin: 0 auto; }
+        .stepper { max-width: 1750px; margin: 0 auto 24px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; padding: 16px; border-radius: 12px; background: white; box-shadow: 0 4px 15px rgba(0, 0, 0, .12); }
+        .step { border: 0; border-radius: 8px; padding: 12px; color: #52647d; background: #f1f5f9; font: inherit; font-weight: 700; cursor: pointer; }
+        .step:hover { background: #e4e8ff; color: #4f46e5; }
+        .step.active { color: white; background: #4f46e5; }
+        @media (max-width: 650px) { .stepper { grid-template-columns: 1fr 1fr; } }
+        .table-wrapper {
+            background: white; border-radius: 12px; overflow-x: auto;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); margin-bottom: 30px;
+        }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        th { color: white; padding: 10px; font-weight: 600; font-size: 0.85em; border: 1px solid rgba(255, 255, 255, 0.2); }
+        th.main-header { font-size: 1em; padding: 12px; background: rgba(0,0,0,0.1); }
+        tbody tr { border-bottom: 1px solid #ecf0f1; }
+        tbody tr:nth-child(even) { background: #f8f9ff; }
+        td { padding: 8px; color: #333; font-size: 0.9em; border: 1px solid #e2e8f0; }
+        .device-name { text-align: left; font-weight: 500; min-width: 200px; padding-left: 15px; }
+        
+        .homologation-input {
+            width: 90px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px;
+            text-align: center; font-size: 0.9em; font-weight: 600; transition: all 0.2s; background-color: #f8fafc;
+        }
+        .homologation-input.modified { border-color: #f39c12; background: #fef5e7; color: #b7791f; }
+        
+        select.bound-select {
+            width: 65px; padding: 5px; border: 1px solid #cbd5e1; border-radius: 4px;
+            font-size: 0.9em; text-align: center; font-weight: 600; background-color: #f8fafc; cursor: pointer;
+        }
+        select.bound-select.modified { border-color: #f39c12; background: #fef5e7; color: #b7791f; }
+
+        .profile-input {
+            width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px;
+            text-align: center; font-size: 0.9em; transition: all 0.2s;
+        }
+        .profile-input:focus { outline: none; border-color: #667eea; background: #f1f5f9; }
+        .profile-input.modified { border-color: #f39c12; background: #fef5e7; font-weight: bold; }
+        
+        .button-group { display: flex; gap: 15px; justify-content: center; margin-top: 30px; }
+        .empty-state { background: white; border-radius: 12px; padding: 60px; text-align: center; color: #999; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="homologation-step-page current-profile-page preserve-table-colors">
+    <div class="header">
+        <button class="btn btn-back" onclick="navigateTo('/homologation_configuration')">← Retour</button>
+        <h1>Configuration DCDC Sizing</h1>
+        <div class="header-actions">
+            <div class="retractable-menu"><details id="actions-details"><summary>Sommaire / Actions</summary><div class="menu-content">
+                <span class="saved-status" id="saved-status" aria-live="polite"></span>
+                <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
+                <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
+                <hr>
+                <button class="btn-menu btn-mode" type="button" onclick="navigateTo('/mode_selection')">Sélection du mode</button>
+                <button class="btn-menu btn-home" type="button" id="homologation-home">Accueil</button>
+            </div></details></div>
+        </div>
+    </div>
+
+    <nav class="stepper" aria-label="Étapes du dimensionnement DCDC">
+        <button class="step active" type="button" onclick="navigateTo('/edit_current')">1. DCDC Sizing</button>
+        <button class="step" type="button" onclick="navigateTo('/edit_alternator')">2. WLTC (-7 °C)</button>
+        <button class="step" type="button" onclick="navigateTo('/edit_pao')">3. PAO</button>
+        <button class="step" type="button" onclick="navigateTo('/edit_gmv')">4. GMV</button>
+    </nav>
+
+    <div class="container">
+        <aside class="profile-review-warning" role="note">
+            <strong>Point de contrôle :</strong>
+            laissez de préférence les pourcentages affichés en bleu et vérifiez attentivement tous les pourcentages affichés en rouge.
+        </aside>
+        <div class="table-wrapper" id="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th rowspan="2" style="min-width: 200px;">Device Name</th>
+                        <th rowspan="2" style="min-width: 130px; background-color: #4a5568;">Homologation Current</th>
+                        <th rowspan="2" style="min-width: 80px; background-color: #4a5568;">Lower</th>
+                        <th rowspan="2" style="min-width: 80px; background-color: #4a5568;">Upper</th>
+                        <th colspan="6" class="main-header" style="background-color: #2b6cb0;">Profile : Winter (&lt;5°C)</th>
+                        <th colspan="6" class="main-header" style="background-color: #dd6b20;">Profile : Mid-season (5°C&lt;15°C)</th>
+                        <th colspan="6" class="main-header" style="background-color: #319795;">Profile : Summer (T&gt;15°C)</th>
+                    </tr>
+                    <tr id="sub-headers"></tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <section class="device-add-panel">
+            <h2>Ajouter un Device</h2>
+            <form id="add-device-form" class="device-add-form">
+                <label>Device Name<input name="name" required></label>
+                <label>Homologation Current<span class="cell-unit-input" data-unit="A"><input name="current" type="number" min="0" step="0.01" required></span></label>
+                <label>Lower<select name="lower"><option value="1">1</option><option value="0">0</option></select></label>
+                <label>Upper<select name="upper"><option value="0">0</option><option value="1">1</option></select></label>
+                <button class="btn btn-results" type="submit">Ajouter</button>
+            </form>
+            <p>Les profils du nouveau Device sont initialisés à 100 %.</p>
+        </section>
+
+        <div class="button-group">
+            <button class="btn btn-results" onclick="navigateTo('/edit_alternator')">Étape suivante : WLTC (-7 °C) →</button>
+        </div>
+    </div>
+
+    <dialog id="delete-device-dialog" class="delete-device-dialog">
+        <h2>Supprimer ce Device ?</h2>
+        <p>Êtes-vous sûr de vouloir supprimer <strong id="delete-device-name"></strong> de la liste et des calculs de synthèse ?</p>
+        <div><button id="cancel-device-delete" type="button">Non</button><button id="confirm-device-delete" type="button">Oui</button></div>
+    </dialog>
+
+    <script src="/static/homologation_defaults.js"></script>
+    <script src="/static/project_storage.js"></script>
+    <script src="/static/homologation_ui.js"></script>
+    <script>
+        if (!window.HomologationDefaults) {
+        const intervals = ['0 - 5min', '5 - 10min', '10 - 15min', '15 - 25min', '25 - 30min'];
+        const profiles = ['winter', 'midseason', 'summer'];
+        
+        const subHeadersTr = document.getElementById('sub-headers');
+        profiles.forEach(() => { intervals.forEach(int => { const th = document.createElement('th'); th.textContent = int; subHeadersTr.appendChild(th); }); });
+
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        let profileMatrix = JSON.parse(sessionStorage.getItem('profileMatrix') || '{}');
+        let modifiedCurrents = JSON.parse(sessionStorage.getItem('modifiedCurrents') || '{}');
+        let modifiedLowers = JSON.parse(sessionStorage.getItem('modifiedLowers') || '{}');
+        let modifiedUppers = JSON.parse(sessionStorage.getItem('modifiedUppers') || '{}');
+        
+        let sheet = excelData['Device List'] || Object.values(excelData)[0];
+        const storedDeviceKeys = sessionStorage.getItem('selectedDeviceKeys');
+        const selectedDeviceKeys = new Set(JSON.parse(storedDeviceKeys || '[]'));
+        const tbody = document.getElementById('table-body');
+
+        if (sheet && sheet.data && sheet.data.length > 0) {
+            let renderedCount = 0;
+            sheet.data.forEach((row, rowIndex) => {
+                // FILTRE SUR CURRENT_CATEGORY H
+                const category = String(row['current_category'] || row['Current Category'] || 'H').trim().toUpperCase();
+                if (category !== 'H') return;
+
+                const deviceName = row['Device Name'] || `Device ${rowIndex + 1}`;
+                const rawCurrent = row['Current (A)'] !== null && row['Current (A)'] !== undefined ? row['Current (A)'] : row['Homologation Current (A)'];
+                const originalHomologation = rawCurrent !== null && rawCurrent !== undefined ? rawCurrent : '';
+                
+                const deviceKey = `${rowIndex}_${deviceName}`;
+                if (storedDeviceKeys !== null && !selectedDeviceKeys.has(deviceKey)) return;
+
+                renderedCount++;
+                const tr = document.createElement('tr');
+                
+                // 1. Device Name
+                const tdName = document.createElement('td');
+                tdName.className = 'device-name';
+                tdName.textContent = deviceName;
+                tr.appendChild(tdName);
+
+                // 2. Homologation Current (A)
+                const tdHomologation = document.createElement('td');
+                const hInput = document.createElement('input');
+                hInput.type = 'number'; hInput.step = '0.01'; hInput.className = 'homologation-input';
+                const savedCurrent = modifiedCurrents[deviceKey];
+                hInput.value = savedCurrent !== undefined ? savedCurrent : originalHomologation;
+                if (savedCurrent !== undefined && parseFloat(savedCurrent) !== parseFloat(originalHomologation)) hInput.classList.add('modified');
+                hInput.addEventListener('change', (e) => {
+                    const val = e.target.value.trim();
+                    if (val === '' || parseFloat(val) === parseFloat(originalHomologation)) { hInput.classList.remove('modified'); delete modifiedCurrents[deviceKey]; }
+                    else { hInput.classList.add('modified'); modifiedCurrents[deviceKey] = parseFloat(val); }
+                    sessionStorage.setItem('modifiedCurrents', JSON.stringify(modifiedCurrents));
+                });
+                tdHomologation.appendChild(hInput); tr.appendChild(tdHomologation);
+
+                // 3. Lower select (1)
+                const tdLower = document.createElement('td');
+                const lowerSelect = document.createElement('select'); lowerSelect.className = 'bound-select';
+                lowerSelect.innerHTML = '<option value="0">0</option><option value="1">1</option>';
+                const savedLower = modifiedLowers[deviceKey];
+                lowerSelect.value = savedLower !== undefined ? savedLower : "1";
+                if (savedLower !== undefined && savedLower !== "1") lowerSelect.classList.add('modified');
+                lowerSelect.addEventListener('change', (e) => {
+                    if (e.target.value === "1") { lowerSelect.classList.remove('modified'); delete modifiedLowers[deviceKey]; }
+                    else { lowerSelect.classList.add('modified'); modifiedLowers[deviceKey] = e.target.value; }
+                    sessionStorage.setItem('modifiedLowers', JSON.stringify(modifiedLowers));
+                });
+                tdLower.appendChild(lowerSelect); tr.appendChild(tdLower);
+
+                // 4. Upper select (0)
+                const tdUpper = document.createElement('td');
+                const upperSelect = document.createElement('select'); upperSelect.className = 'bound-select';
+                upperSelect.innerHTML = '<option value="0">0</option><option value="1">1</option>';
+                const savedUpper = modifiedUppers[deviceKey];
+                upperSelect.value = savedUpper !== undefined ? savedUpper : "0";
+                if (savedUpper !== undefined && savedUpper !== "0") upperSelect.classList.add('modified');
+                upperSelect.addEventListener('change', (e) => {
+                    if (e.target.value === "0") { upperSelect.classList.remove('modified'); delete modifiedUppers[deviceKey]; }
+                    else { upperSelect.classList.add('modified'); modifiedUppers[deviceKey] = e.target.value; }
+                    sessionStorage.setItem('modifiedUppers', JSON.stringify(modifiedUppers));
+                });
+                tdUpper.appendChild(upperSelect); tr.appendChild(tdUpper);
+
+                // 5. Profils Temporels
+                profiles.forEach(p => {
+                    intervals.forEach(int => {
+                        const td = document.createElement('td');
+                        const input = document.createElement('input'); input.type = 'text'; input.className = 'profile-input';
+                        const key = `${rowIndex}_${p}_${int}`;
+                        const savedValue = profileMatrix[key] !== undefined ? profileMatrix[key] : '100%';
+                        input.value = savedValue;
+                        if(savedValue !== '100%') input.classList.add('modified');
+                        input.addEventListener('change', (e) => {
+                            let val = e.target.value.trim();
+                            if (val && !val.includes('%') && !isNaN(val)) val += '%';
+                            if (val === '100%' || val === '') { input.classList.remove('modified'); delete profileMatrix[key]; }
+                            else { input.classList.add('modified'); profileMatrix[key] = val; }
+                            input.value = val || '100%';
+                            sessionStorage.setItem('profileMatrix', JSON.stringify(profileMatrix));
+                        });
+                        td.appendChild(input);
+                        tr.appendChild(td);
+                    });
+                });
+                tbody.appendChild(tr);
+            });
+
+            if (renderedCount === 0) {
+                document.getElementById('table-wrapper').innerHTML = `<div class="empty-state">Aucun équipement de catégorie 'H' trouvé dans 'Device List'.</div>`;
+            }
+        } else {
+            document.getElementById('table-wrapper').innerHTML = `<div class="empty-state">Aucun équipement trouvé.</div>`;
+        }
+
+        function returnToMenu() {
+            saveProgress();
+            window.location.href = '/mode_selection';
+        }
+
+        function saveProgress() {
+            sessionStorage.setItem('modifiedCurrents', JSON.stringify(modifiedCurrents));
+            sessionStorage.setItem('modifiedLowers', JSON.stringify(modifiedLowers));
+            sessionStorage.setItem('modifiedUppers', JSON.stringify(modifiedUppers));
+            sessionStorage.setItem('profileMatrix', JSON.stringify(profileMatrix));
+        }
+
+        function navigateTo(path) {
+            saveProgress();
+            window.location.href = path;
+        }
+        }
+    </script>
+    <script src="/static/homologation_editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Affichage Excel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+        .header {
+            max-width: 1700px; margin: 0 auto 30px; color: white;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+        }
+        .header h1 { font-size: 2.5em; display: flex; align-items: center; gap: 10px; }
+        .header-buttons { display: flex; gap: 10px; }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: 600; transition: all 0.3s ease; font-size: 1em;
+        }
+        .btn-back { background: rgba(255, 255, 255, 0.2); color: white; border: 2px solid white; }
+        .btn-back:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
+        .btn-menu { background: #3182ce; color: white; }
+        .btn-menu:hover { background: #2563eb; transform: translateY(-2px); }
+        .btn-export { background: #27ae60; color: white; }
+        .btn-export:hover { background: #229954; transform: translateY(-2px); }
+        
+        .container { max-width: 1700px; margin: 0 auto; }
+        .sheet-tabs {
+            display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+            background: rgba(255, 255, 255, 0.1); padding: 15px; border-radius: 15px; backdrop-filter: blur(10px);
+        }
+        .sheet-tab {
+            padding: 10px 20px; background: rgba(255, 255, 255, 0.1); color: white;
+            border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 8px; cursor: pointer;
+            transition: all 0.3s ease; font-weight: 600;
+        }
+        .sheet-tab:hover { background: rgba(255, 255, 255, 0.2); transform: translateY(-2px); }
+        .sheet-tab.active { background: white; color: #667eea; border-color: white; }
+        
+        .sheet-content { display: none; animation: fadeIn 0.3s ease-out; }
+        .sheet-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .sheet-info {
+            background: white; padding: 15px 20px; border-radius: 12px 12px 0 0;
+            display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        .sheet-title { font-size: 1.3em; font-weight: 700; color: #333; }
+        .row-count { background: #667eea; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.9em; font-weight: 600; }
+        
+        .table-wrapper {
+            background: white; border-radius: 0 0 12px 12px; overflow-x: auto;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); margin-bottom: 30px; display: block;
+        }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: sticky; top: 0; z-index: 10; }
+        th { color: white; padding: 12px 15px; font-weight: 600; font-size: 0.9em; border: 1px solid rgba(255, 255, 255, 0.2); min-width: 100px; }
+        tbody tr { border-bottom: 1px solid #ecf0f1; transition: background 0.2s ease; }
+        tbody tr:hover { background: #f8f9ff; }
+        tbody tr:nth-child(even) { background: #f8f9ff; }
+        td { padding: 12px 15px; color: #333; font-size: 0.9em; border: 1px solid #e2e8f0; min-width: 100px; }
+        
+        .device-name { text-align: left !important; font-weight: 500; min-width: 200px; padding-left: 15px; }
+        .homologation-cell { font-weight: 600; color: #4a5568; }
+        .pao-inserted-row { background-color: #f0fff4 !important; font-style: italic; font-weight: 500; }
+        .gmv-inserted-row { background-color: #f0f7ff !important; font-style: italic; font-weight: 500; } /* Bleu clair pour GMV */
+        .filename { color: rgba(255, 255, 255, 0.9); font-size: 1.1em; text-align: center; margin-bottom: 20px; }
+        .stats { background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 8px; color: white; margin-top: 20px; text-align: center; font-size: 0.9em; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body>
+    <div class="header">
+        <h1> Données Importées</h1>
+<div class="header-buttons">
+    <button class="btn btn-export" id="export-btn"> Exporter CSV</button>
+    <button class="btn btn-menu" onclick="window.location.href='/mode_selection'"> Retour menu</button>
+    <button class="btn" style="background-color: #3182ce; color: white;" onclick="window.location.href='/synthesis'"> Générer une synthèse</button>
+    <button class="btn btn-back" onclick="window.location.href='/edit_gmv'"> Configuration GMV</button>
+    <button class="btn btn-back" onclick="window.location.href='/import_project'">← Retour</button>
+</div>
+    </div>
+
+    <div class="filename" id="filename"></div>
+
+    <div class="container">
+        <div class="sheet-tabs" id="sheet-tabs"></div>
+        <div id="sheets-container"></div>
+        <div class="stats" id="stats"></div>
+    </div>
+
+    <script>
+        const sheetsContainer = document.getElementById('sheets-container');
+        const sheetTabs = document.getElementById('sheet-tabs');
+        const exportBtn = document.getElementById('export-btn');
+        const filenameDiv = document.getElementById('filename');
+        const statsDiv = document.getElementById('stats');
+
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        const excelFilename = sessionStorage.getItem('excelFilename') || 'Données';
+        filenameDiv.textContent = ' ' + excelFilename;
+
+        if (!excelData || Object.keys(excelData).length === 0) {
+            sheetsContainer.innerHTML = `<div class="empty-state"><div class="empty-state-text">Aucune donnée trouvée. Veuillez importer un fichier Excel.</div></div>`;
+        } else {
+            const profiles = ['winter', 'midseason', 'summer'];
+            const profileMatrix = JSON.parse(sessionStorage.getItem('profileMatrix') || '{}');
+            const alternatorMatrix = JSON.parse(sessionStorage.getItem('alternatorMatrix') || '{}');
+            const modifiedCurrents = JSON.parse(sessionStorage.getItem('modifiedCurrents') || '{}');
+            const modifiedLowers = JSON.parse(sessionStorage.getItem('modifiedLowers') || '{}');
+            const modifiedUppers = JSON.parse(sessionStorage.getItem('modifiedUppers') || '{}');
+            const paoData = JSON.parse(sessionStorage.getItem('paoData') || '[]');
+            const gmvData = JSON.parse(sessionStorage.getItem('gmvData') || '[]');
+
+            Object.keys(excelData).forEach((sheetName, index) => {
+                const sheet = excelData[sheetName];
+
+                const tab = document.createElement('button');
+                tab.className = 'sheet-tab' + (index === 0 ? ' active' : '');
+                tab.textContent = sheetName;
+                tab.addEventListener('click', () => switchSheet(sheetName));
+                sheetTabs.appendChild(tab);
+
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'sheet-content' + (index === 0 ? ' active' : '');
+                contentDiv.id = 'sheet-' + sheetName.replace(/\s+/g, '-');
+
+                const sheetInfo = document.createElement('div');
+                sheetInfo.className = 'sheet-info';
+                sheetInfo.innerHTML = `
+                    <div class="sheet-title">${sheetName}</div>
+                    <div class="row-count">${sheet.row_count} ligne(s)</div>
+                `;
+
+                const tableWrapper = document.createElement('div');
+                tableWrapper.className = 'table-wrapper';
+
+                if (sheet.row_count === 0) {
+                    tableWrapper.innerHTML = `<div class="empty-state"><div class="empty-state-text">Ce tableau n'a pas de données.</div></div>`;
+                } else {
+                    try {
+                        const table = document.createElement('table');
+                        const thead = document.createElement('thead');
+
+                        if (sheetName === 'Device List' || sheetName === 'Alternator Data') {
+                            const isAlt = sheetName === 'Alternator Data';
+                            const currentIntervals = isAlt ? 
+                                ['0 - 1.67min', '1.68 - 4min', '4 - 7min', '7 - 8.16min', '12.25 - 25min', '25 - 30min'] : 
+                                ['0 - 5min', '5 - 10min', '10 - 15min', '15 - 25min', '25 - 30min'];
+                            
+                            thead.innerHTML = `
+                                <tr>
+                                    <th rowspan="2" class="device-name">Device Name</th>
+                                    <th rowspan="2" style="background-color: #4a5568;">Homologation Current (A)</th>
+                                    <th rowspan="2" style="background-color: #4a5568;">Lower</th>
+                                    <th rowspan="2" style="background-color: #4a5568;">Upper</th>
+                                    <th colspan="${currentIntervals.length}" style="background-color: #2b6cb0;">Profile : Winter</th>
+                                    <th colspan="${currentIntervals.length}" style="background-color: #dd6b20;">Profile : Mid-season</th>
+                                    <th colspan="${currentIntervals.length}" style="background-color: #319795;">Profile : Summer</th>
+                                </tr>
+                                <tr id="display-sub-headers-${index}"></tr>
+                            `;
+                            table.appendChild(thead);
+                            
+                            setTimeout(() => {
+                                const subTr = document.getElementById(`display-sub-headers-${index}`);
+                                if(subTr) {
+                                    profiles.forEach(() => {
+                                        currentIntervals.forEach(int => {
+                                            const th = document.createElement('th'); th.textContent = int; subTr.appendChild(th);
+                                        });
+                                    });
+                                }
+                            }, 0);
+
+                            const tbody = document.createElement('tbody');
+                            const lookupSheet = excelData['Device List'] || sheet;
+
+                            // Fonction pour injecter les lignes supplémentaires après Adaptation
+                            const appendAdditionalRows = () => {
+                                // 1. Injecter d'abord les PAO
+                                paoData.forEach(pao => {
+                                    const pTr = document.createElement('tr');
+                                    pTr.className = 'pao-inserted-row';
+                                    
+                                    const tdPaoName = document.createElement('td');
+                                    tdPaoName.className = 'device-name';
+                                    tdPaoName.textContent = "[PAO] " + pao.name;
+                                    pTr.appendChild(tdPaoName);
+
+                                    const tdPaoCurr = document.createElement('td');
+                                    tdPaoCurr.className = 'homologation-cell';
+                                    tdPaoCurr.textContent = pao.current || '-';
+                                    pTr.appendChild(tdPaoCurr);
+
+                                    const tdPaoLower = document.createElement('td');
+                                    tdPaoLower.textContent = pao.lower !== undefined ? pao.lower : '1';
+                                    pTr.appendChild(tdPaoLower);
+
+                                    const tdPaoUpper = document.createElement('td');
+                                    tdPaoUpper.textContent = pao.upper !== undefined ? pao.upper : '0';
+                                    pTr.appendChild(tdPaoUpper);
+
+                                    const sourceProfiles = isAlt ? pao.altProfiles : pao.devProfiles;
+                                    profiles.forEach(p => {
+                                        currentIntervals.forEach(int => {
+                                            const td = document.createElement('td');
+                                            td.textContent = sourceProfiles[`${p}_${int}`] || '100%';
+                                            pTr.appendChild(td);
+                                        });
+                                    });
+                                    tbody.appendChild(pTr);
+                                });
+
+                                // 2. Injecter ensuite les GMV en dessous des PAO
+                                gmvData.forEach(gmv => {
+                                    const gTr = document.createElement('tr');
+                                    gTr.className = 'gmv-inserted-row';
+                                    
+                                    const tdGmvName = document.createElement('td');
+                                    tdGmvName.className = 'device-name';
+                                    tdGmvName.textContent = "[GMV] " + gmv.name;
+                                    gTr.appendChild(tdGmvName);
+
+                                    const tdGmvCurr = document.createElement('td');
+                                    tdGmvCurr.className = 'homologation-cell';
+                                    tdGmvCurr.textContent = gmv.current || '-';
+                                    gTr.appendChild(tdGmvCurr);
+
+                                    const tdGmvLower = document.createElement('td');
+                                    tdGmvLower.textContent = gmv.lower !== undefined ? gmv.lower : '1';
+                                    gTr.appendChild(tdGmvLower);
+
+                                    const tdGmvUpper = document.createElement('td');
+                                    tdGmvUpper.textContent = gmv.upper !== undefined ? gmv.upper : '0';
+                                    gTr.appendChild(tdGmvUpper);
+
+                                    const sourceProfiles = isAlt ? gmv.altProfiles : gmv.devProfiles;
+                                    profiles.forEach(p => {
+                                        currentIntervals.forEach(int => {
+                                            const td = document.createElement('td');
+                                            td.textContent = sourceProfiles[`${p}_${int}`] || '100%';
+                                            gTr.appendChild(td);
+                                        });
+                                    });
+                                    tbody.appendChild(gTr);
+                                });
+                            };
+
+                            lookupSheet.data.forEach((row, rowIndex) => {
+                                const tr = document.createElement('tr');
+                                const dName = row['Device Name'] || `Device ${rowIndex + 1}`;
+                                
+                                const tdName = document.createElement('td');
+                                tdName.className = 'device-name';
+                                tdName.textContent = dName;
+                                tr.appendChild(tdName);
+
+                                const tdHomologation = document.createElement('td');
+                                tdHomologation.className = 'homologation-cell';
+                                const deviceKey = `${rowIndex}_${dName}`;
+                                const originalValue = row['Homologation Current (A)'] !== null && row['Homologation Current (A)'] !== undefined ? row['Homologation Current (A)'] : '-';
+                                const savedValue = modifiedCurrents[deviceKey];
+                                
+                                if (savedValue !== undefined) {
+                                    tdHomologation.textContent = savedValue;
+                                    tdHomologation.style.backgroundColor = '#fff3cd';
+                                    tdHomologation.style.fontWeight = 'bold';
+                                } else {
+                                    tdHomologation.textContent = originalValue;
+                                }
+                                tr.appendChild(tdHomologation);
+
+                                const lowerValue = modifiedLowers[deviceKey] !== undefined ? modifiedLowers[deviceKey] : '1';
+                                const tdLower = document.createElement('td');
+                                tdLower.textContent = lowerValue;
+                                if (lowerValue !== '1') {
+                                    tdLower.style.backgroundColor = '#fff3cd';
+                                    tdLower.style.fontWeight = 'bold';
+                                }
+                                tr.appendChild(tdLower);
+
+                                const upperValue = modifiedUppers[deviceKey] !== undefined ? modifiedUppers[deviceKey] : '0';
+                                const tdUpper = document.createElement('td');
+                                tdUpper.textContent = upperValue;
+                                if (upperValue !== '0') {
+                                    tdUpper.style.backgroundColor = '#fff3cd';
+                                    tdUpper.style.fontWeight = 'bold';
+                                }
+                                tr.appendChild(tdUpper);
+
+                                const matrixSource = isAlt ? alternatorMatrix : profileMatrix;
+                                profiles.forEach(p => {
+                                    currentIntervals.forEach(int => {
+                                        const td = document.createElement('td');
+                                        const key = `${rowIndex}_${p}_${int}`;
+                                        const val = matrixSource[key] !== undefined ? matrixSource[key] : '100%';
+                                        td.textContent = val;
+                                        if (val !== '100%') { td.style.backgroundColor = '#fff3cd'; td.style.fontWeight = 'bold'; }
+                                        tr.appendChild(td);
+                                    });
+                                });
+                                tbody.appendChild(tr);
+
+                                if (String(dName).toUpperCase().includes('ADAPT')) {
+                                    appendAdditionalRows();
+                                }
+                            });
+                            table.appendChild(tbody);
+
+                        } else {
+                            const headerRow = document.createElement('tr');
+                            sheet.headers.forEach(header => { const th = document.createElement('th'); th.textContent = header; headerRow.appendChild(th); });
+                            thead.appendChild(headerRow);
+                            table.appendChild(thead);
+
+                            const tbody = document.createElement('tbody');
+                            sheet.data.forEach(row => {
+                                const tr = document.createElement('tr');
+                                sheet.headers.forEach(header => {
+                                    const td = document.createElement('td');
+                                    td.textContent = row[header] !== null && row[header] !== undefined ? row[header] : '-';
+                                    tr.appendChild(td);
+                                });
+                                tbody.appendChild(tr);
+                            });
+                            table.appendChild(tbody);
+                        }
+
+                        tableWrapper.appendChild(table);
+                    } catch (e) {
+                        console.error('Error creating table:', e);
+                    }
+                }
+
+                contentDiv.appendChild(sheetInfo);
+                contentDiv.appendChild(tableWrapper);
+                sheetsContainer.appendChild(contentDiv);
+            });
+
+            updateStats();
+        }
+
+        function switchSheet(sheetName) {
+            document.querySelectorAll('.sheet-tab').forEach(tab => tab.classList.remove('active'));
+            const selectedTab = Array.from(document.querySelectorAll('.sheet-tab')).find(tab => tab.textContent === sheetName);
+            if (selectedTab) selectedTab.classList.add('active');
+            
+            document.querySelectorAll('.sheet-content').forEach(content => content.classList.remove('active'));
+            const contentId = 'sheet-' + sheetName.replace(/\s+/g, '-');
+            document.getElementById(contentId)?.classList.add('active');
+        }
+
+        function updateStats() {
+            let totalRows = 0;
+            Object.keys(excelData).forEach(sheetName => { totalRows += excelData[sheetName].row_count; });
+            statsDiv.innerHTML = ` Total: <strong>${Object.keys(excelData).length}</strong> feuille(s) | <strong>${totalRows}</strong> ligne(s) de données`;
+        }
+
+        exportBtn.addEventListener('click', () => {
+            const activeTab = document.querySelector('.sheet-tab.active');
+            if (!activeTab) return;
+
+            const sheetName = activeTab.textContent;
+            const sheet = excelData[sheetName];
+            if (sheet.row_count === 0) return;
+
+            let csv = '';
+            if (sheetName === 'Device List' || sheetName === 'Alternator Data') {
+                const isAlt = sheetName === 'Alternator Data';
+                const currentIntervals = isAlt ? 
+                    ['0 - 1.67min', '1.68 - 4min', '4 - 7min', '7 - 8.16min', '12.25 - 25min', '25 - 30min'] : 
+                    ['0 - 5min', '5 - 10min', '10 - 15min', '15 - 25min', '25 - 30min'];
+
+                const matrixSource = isAlt ? JSON.parse(sessionStorage.getItem('alternatorMatrix') || '{}') : JSON.parse(sessionStorage.getItem('profileMatrix') || '{}');
+                const modifiedCurrents = JSON.parse(sessionStorage.getItem('modifiedCurrents') || '{}');
+                const modifiedLowers = JSON.parse(sessionStorage.getItem('modifiedLowers') || '{}');
+                const modifiedUppers = JSON.parse(sessionStorage.getItem('modifiedUppers') || '{}');
+                const paoData = JSON.parse(sessionStorage.getItem('paoData') || '[]');
+                const gmvData = JSON.parse(sessionStorage.getItem('gmvData') || '[]');
+                
+                let headerRowArr = ['Device Name', 'Homologation Current (A)', 'Lower', 'Upper'];
+                ['Winter', 'Mid-Season', 'Summer'].forEach(p => { currentIntervals.forEach(int => { headerRowArr.push(`${p} (${int})`); }); });
+                csv += headerRowArr.join(',') + '\n';
+                
+                const lookupSheet = excelData['Device List'] || sheet;
+
+                lookupSheet.data.forEach((row, rowIndex) => {
+                    const dName = row['Device Name'] || `Device ${rowIndex + 1}`;
+                    const deviceKey = `${rowIndex}_${dName}`;
+                    const originalValue = row['Homologation Current (A)'] !== null && row['Homologation Current (A)'] !== undefined ? row['Homologation Current (A)'] : '-';
+                    const hCurr = modifiedCurrents[deviceKey] !== undefined ? modifiedCurrents[deviceKey] : originalValue;
+                    const lowerVal = modifiedLowers[deviceKey] !== undefined ? modifiedLowers[deviceKey] : '1';
+                    const upperVal = modifiedUppers[deviceKey] !== undefined ? modifiedUppers[deviceKey] : '0';
+                    
+                    let rowArray = [dName, hCurr, lowerVal, upperVal];
+                    ['winter', 'midseason', 'summer'].forEach(p => {
+                        currentIntervals.forEach(int => {
+                            const key = `${rowIndex}_${p}_${int}`;
+                            rowArray.push(matrixSource[key] !== undefined ? matrixSource[key] : '100%');
+                        });
+                    });
+                    csv += rowArray.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',') + '\n';
+
+                    if (String(dName).toUpperCase().includes('ADAPT')) {
+                        // Export des PAO
+                        paoData.forEach(pao => {
+                            let paoArray = ["[PAO] " + pao.name, pao.current || '-', pao.lower !== undefined ? pao.lower : '1', pao.upper !== undefined ? pao.upper : '0'];
+                            const sourceProfiles = isAlt ? pao.altProfiles : pao.devProfiles;
+                            ['winter', 'midseason', 'summer'].forEach(p => {
+                                currentIntervals.forEach(int => {
+                                    paoArray.push(sourceProfiles[`${p}_${int}`] || '100%');
+                                });
+                            });
+                            csv += paoArray.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',') + '\n';
+                        });
+
+                        // Export des GMV
+                        gmvData.forEach(gmv => {
+                            let gmvArray = ["[GMV] " + gmv.name, gmv.current || '-', gmv.lower !== undefined ? gmv.lower : '1', gmv.upper !== undefined ? gmv.upper : '0'];
+                            const sourceProfiles = isAlt ? gmv.altProfiles : gmv.devProfiles;
+                            ['winter', 'midseason', 'summer'].forEach(p => {
+                                currentIntervals.forEach(int => {
+                                    gmvArray.push(sourceProfiles[`${p}_${int}`] || '100%');
+                                });
+                            });
+                            csv += gmvArray.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',') + '\n';
+                        });
+                    }
+                });
+            } else {
+                csv += sheet.headers.map(h => '"' + h.replace(/"/g, '""') + '"').join(',') + '\n';
+                sheet.data.forEach(row => {
+                    const values = sheet.headers.map(header => {
+                        let value = row[header];
+                        return value === null || value === undefined ? '""' : '"' + String(value).replace(/"/g, '""') + '"';
+                    });
+                    csv += values.join(',') + '\n';
+                });
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.setAttribute('href', URL.createObjectURL(blob));
+            link.setAttribute('download', sheetName + '.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+</body>
+</html>

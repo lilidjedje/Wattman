@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard de conformité CAN</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ url_for('index') }}">Accueil CAN</a>
+        <div>
+            <p class="eyebrow">Validation / Courant et chronologie</p>
+            <h1>Dashboard de conformité</h1>
+        </div>
+        <a class="button secondary right" href="{{ url_for('logs') }}">Analyse de logs</a>
+    </header>
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span id="projectName">PROJET : —</span>
+            <span id="sessionId">SESSION : —</span>
+            <span id="generatedAt"></span>
+        </div>
+        <section class="dashboard-grid">
+            <div class="metric"><span>Verdict global</span><strong id="verdict">—</strong></div>
+            <div class="metric"><span>Conformité courant</span><strong id="score">—</strong></div>
+            <div class="metric"><span>Durée attendue</span><strong id="expectedDuration">—</strong></div>
+            <div class="metric"><span>Durée mesurée</span><strong id="actualDuration">—</strong></div>
+        </section>
+        <section class="panel">
+            <div class="panel-title"><h2 id="reportTitle">Rapport de mesure</h2></div>
+            <div id="notice" class="empty-notice">Chargement du rapport…</div>
+            <div id="reports"></div>
+        </section>
+    </main>
+    <script>
+        const endpoint = {{ url_for('api_dashboard_report')|tojson }};
+        const query = new URLSearchParams(location.search);
+        const sessionId = query.get('session_id') || '';
+
+        const number = value => value === null || value === undefined ? '—' : Number(value).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+        const seconds = value => `${number(value)} s`;
+        const label = status => status === 'pass' ? 'CONFORME' : status === 'warning' ? 'À CONTRÔLER' : status === 'no_data' ? 'SANS DONNÉE' : 'NON CONFORME';
+
+        function intervalTable(channel) {
+            const rows = channel.intervals.map(interval => `
+                <tr class="${interval.status}">
+                    <td>${interval.label}</td>
+                    <td>${number(interval.expected_A)} A</td>
+                    <td>${number(interval.average_A)} A</td>
+                    <td>${number(interval.minimum_A)} A</td>
+                    <td>${number(interval.maximum_A)} A</td>
+                    <td>${interval.samples}</td>
+                    <td>${number(interval.compliance_percent)} %</td>
+                    <td>${label(interval.status)}</td>
+                </tr>`).join('');
+            return `
+                <section style="margin-top:22px">
+                    <h2>Canal ${channel.channel} — ${channel.samples} échantillons — ${channel.lost} pertes</h2>
+                    <div style="overflow:auto">
+                        <table class="report-table">
+                            <thead><tr>
+                                <th>Intervalle théorique</th><th>Courant attendu</th><th>Moyenne mesurée</th>
+                                <th>Minimum</th><th>Maximum</th><th>Échantillons</th><th>Conformité</th><th>Verdict</th>
+                            </tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                </section>`;
+        }
+
+        fetch(`${endpoint}?session_id=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+            .then(async response => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Rapport indisponible.');
+                return data;
+            })
+            .then(report => {
+                const session = report.session || {};
+                document.getElementById('projectName').textContent = `PROJET : ${session.project?.name || 'Non renseigné'}`;
+                document.getElementById('sessionId').textContent = `SESSION : ${session.id || '—'}`;
+                document.getElementById('generatedAt').textContent = new Date().toLocaleString('fr-FR');
+                document.getElementById('reportTitle').textContent =
+                    `${session.measurement_type === 'sleep' ? 'Consommation de veille' : 'DCDC Sizing'} — ${session.device_name || 'Device non renseigné'}`;
+                const verdict = document.getElementById('verdict');
+                verdict.textContent = label(report.global_status);
+                verdict.className = `score ${report.global_status}`;
+                document.getElementById('score').textContent = `${number(report.global_score)} %`;
+                document.getElementById('expectedDuration').textContent = seconds(report.duration.expected_s);
+                document.getElementById('actualDuration').textContent = seconds(report.duration.actual_s);
+                const notice = document.getElementById('notice');
+                if (!report.has_data) {
+                    notice.textContent = 'La session est enregistrée, mais aucune donnée correspondante n’est encore présente dans la base. Ingérez le log ASC depuis l’analyseur, puis rechargez ce dashboard.';
+                    notice.hidden = false;
+                } else {
+                    notice.hidden = true;
+                }
+                document.getElementById('reports').innerHTML = report.channels.map(intervalTable).join('');
+            })
+            .catch(error => {
+                const notice = document.getElementById('notice');
+                notice.textContent = error.message;
+                notice.hidden = false;
+            });
+    </script>
+</body>
+</html>

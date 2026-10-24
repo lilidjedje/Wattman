@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Acquisition ESP32-C3</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ url_for('index') }}">Retour</a>
+        <div>
+            <p class="eyebrow">Module 01 / ESP32-C3 multi INA226</p>
+            <h1>Acquisition de courant</h1>
+        </div>
+        <a class="button secondary right" href="{{ url_for('logs') }}">Analyse de logs</a>
+    </header>
+
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span id="connectionState" class="status-led">Contrôle de la liaison ESP32-C3</span>
+            <span>CAN 500 kbit/s</span>
+            <span>INA226 : 0x40 / 0x41</span>
+        </div>
+
+        <div class="layout">
+            <section class="panel">
+                <div class="panel-title"><h2>Configuration de la mesure</h2></div>
+                <form id="measurementForm" class="form-grid">
+                    <label class="field">Nature de la mesure
+                        <select name="measurement_type" id="measurementType">
+                            <option value="dcdc">DCDC Sizing</option>
+                            <option value="sleep">Consommation de veille</option>
+                        </select>
+                    </label>
+                    <label class="field">Device / ECU concerné
+                        <select name="device_id" id="deviceSelect" required></select>
+                    </label>
+                    <input type="hidden" name="device_name" id="deviceName">
+                    <label class="field" id="scenarioField">Profil théorique
+                        <select name="scenario" id="scenarioSelect"></select>
+                    </label>
+                    <label class="field">Tolérance de conformité
+                        <span class="inline-fields">
+                            <input type="number" name="tolerance_percent" value="10" min="0.1" max="100" step="0.1">
+                            <input value="%" aria-label="Unité pourcentage" disabled>
+                        </span>
+                    </label>
+                    <label class="field">Fréquence d’acquisition
+                        <select name="freq">
+                            <option value="100">100 Hz</option>
+                            <option value="500">500 Hz</option>
+                            <option value="1000" selected>1000 Hz</option>
+                            <option value="2000">2000 Hz</option>
+                        </select>
+                    </label>
+                    <label class="field">Durée de mesure
+                        <span class="inline-fields">
+                            <input type="number" name="dureeValeur" value="10" min="1" required>
+                            <select name="dureeUnite">
+                                <option value="s">secondes</option>
+                                <option value="m">minutes</option>
+                                <option value="h">heures</option>
+                                <option value="j">jours</option>
+                            </select>
+                        </span>
+                    </label>
+                    <div class="field">
+                        <span>Canaux d’acquisition</span>
+                        <div class="channel-grid">
+                            <label class="channel-choice"><input type="checkbox" name="activeA" checked> Canal A / 0x40</label>
+                            <label class="channel-choice"><input type="checkbox" name="activeB" checked> Canal B / 0x41</label>
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button class="success" id="startButton" type="submit">Démarrer la mesure</button>
+                        <button class="danger" id="stopButton" type="button" disabled>Arrêter la mesure</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel">
+                <div class="panel-title"><h2>Supervision temps réel</h2></div>
+                <div class="status-board">
+                    <div class="metric"><span>État</span><strong id="globalState">Prêt</strong></div>
+                    <div class="metric"><span>Fréquence</span><strong id="frequencyValue">0 Hz</strong></div>
+                    <div class="metric"><span>Écoulé</span><strong id="elapsedValue">0 s</strong></div>
+                    <div class="metric"><span>Progression</span><strong id="progressValue">0 %</strong></div>
+                </div>
+                <div class="progress-shell"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="countdown" id="countdown">00:00:00</div>
+                <div class="message" id="message">En attente d’une commande.</div>
+                <div class="channel-status">
+                    <article class="channel-box">
+                        <strong>CANAL A / INA226 0x40</strong>
+                        <p id="channelA">Inactif</p>
+                        <button class="danger" type="button" data-stop="A" disabled>Arrêter A</button>
+                    </article>
+                    <article class="channel-box">
+                        <strong>CANAL B / INA226 0x41</strong>
+                        <p id="channelB">Inactif</p>
+                        <button class="danger" type="button" data-stop="B" disabled>Arrêter B</button>
+                    </article>
+                </div>
+                <div class="actions" style="margin-top:18px">
+                    <a class="button secondary" id="dashboardButton" href="{{ url_for('dashboard') }}">Visualiser le dashboard</a>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        const theory = {{ theory|tojson }};
+        const endpoints = {
+            control: {{ url_for('control_esp_acquisition')|tojson }},
+            status: {{ url_for('esp_target_config')|tojson }},
+            dashboard: {{ url_for('dashboard')|tojson }}
+        };
+        const form = document.getElementById('measurementForm');
+        const typeSelect = document.getElementById('measurementType');
+        const deviceSelect = document.getElementById('deviceSelect');
+        const scenarioSelect = document.getElementById('scenarioSelect');
+        const message = document.getElementById('message');
+        let pollTimer = null;
+        let currentSessionId = '';
+
+        function setMessage(text, kind = '') {
+            message.textContent = text;
+            message.className = `message ${kind}`.trim();
+        }
+
+        function formatSeconds(total) {
+            total = Math.max(0, Math.ceil(Number(total) || 0));
+            const hours = String(Math.floor(total / 3600)).padStart(2, '0');
+            const minutes = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+            const seconds = String(total % 60).padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
+
+        function filteredDevices() {
+            return (theory.devices || []).filter(device => device.kind === typeSelect.value);
+        }
+
+        function refreshDevices() {
+            const devices = filteredDevices();
+            deviceSelect.replaceChildren();
+            if (!devices.length) {
+                const option = new Option(
+                    typeSelect.value === 'dcdc' ? 'Aucun Device DCDC synchronisé' : 'Aucun ECU de veille synchronisé',
+                    ''
+                );
+                deviceSelect.add(option);
+            } else {
+                devices.forEach(device => deviceSelect.add(new Option(device.name, device.id)));
+            }
+            refreshScenarios();
+        }
+
+        function refreshScenarios() {
+            const device = (theory.devices || []).find(item => item.id === deviceSelect.value);
+            document.getElementById('deviceName').value = device?.name || '';
+            scenarioSelect.replaceChildren();
+            const names = Object.keys(device?.scenarios || {});
+            if (!names.length) scenarioSelect.add(new Option('Valeur nominale constante', 'nominal'));
+            else names.forEach(name => scenarioSelect.add(new Option(name, name)));
+            document.getElementById('scenarioField').hidden = typeSelect.value === 'sleep' && !names.length;
+        }
+
+        async function sendControl(payload) {
+            const response = await fetch(endpoints.control, { method: 'POST', body: payload });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Commande refusée.');
+            return data;
+        }
+
+        function renderStatus(data) {
+            const duration = Number(data.duration || 0);
+            const elapsed = Number(data.elapsed || 0);
+            const remaining = Math.max(0, duration - elapsed);
+            const progress = duration ? Math.min(100, elapsed / duration * 100) : 0;
+            document.getElementById('globalState').textContent = data.running ? 'MESURE' : 'PRÊT';
+            document.getElementById('frequencyValue').textContent = `${data.frequency || 0} Hz`;
+            document.getElementById('elapsedValue').textContent = `${elapsed} s`;
+            document.getElementById('progressValue').textContent = `${Math.round(progress)} %`;
+            document.getElementById('progressFill').style.width = `${progress}%`;
+            document.getElementById('countdown').textContent = formatSeconds(remaining);
+            document.getElementById('startButton').disabled = Boolean(data.running);
+            document.getElementById('stopButton').disabled = !data.running;
+            ['A', 'B'].forEach(channel => {
+                const sensor = data.sensors?.[channel] || {};
+                document.getElementById(`channel${channel}`).textContent =
+                    `${sensor.running ? 'Acquisition active' : sensor.finished ? 'Terminée' : 'Inactive'} · ` +
+                    `${sensor.samples || 0} échantillons · ${sensor.lost || 0} pertes · ${sensor.frequency || 0} Hz`;
+                document.querySelector(`[data-stop="${channel}"]`).disabled = !sensor.running;
+            });
+            if (data.session?.id) {
+                currentSessionId = data.session.id;
+                document.getElementById('dashboardButton').href =
+                    `${endpoints.dashboard}?session_id=${encodeURIComponent(currentSessionId)}`;
+            }
+            if (!data.running && pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                setMessage('Mesure terminée. Le dashboard peut maintenant contrôler la conformité.', 'ok');
+            }
+        }
+
+        async function pollStatus(showError = true) {
+            try {
+                const response = await fetch(endpoints.status, { cache: 'no-store' });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'ESP32-C3 indisponible.');
+                document.getElementById('connectionState').textContent = 'ESP32-C3 connecté';
+                renderStatus(data);
+            } catch (error) {
+                document.getElementById('connectionState').textContent = 'ESP32-C3 hors ligne';
+                if (showError) setMessage(error.message, 'error');
+            }
+        }
+
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            try {
+                setMessage('Transmission de la configuration à l’ESP32-C3…');
+                const data = await sendControl(new FormData(form));
+                renderStatus(data.acquisition);
+                currentSessionId = data.session?.id || '';
+                if (currentSessionId) {
+                    document.getElementById('dashboardButton').href =
+                        `${endpoints.dashboard}?session_id=${encodeURIComponent(currentSessionId)}`;
+                }
+                setMessage(data.message, 'ok');
+                if (pollTimer) clearInterval(pollTimer);
+                pollTimer = setInterval(pollStatus, 1000);
+            } catch (error) {
+                setMessage(error.message, 'error');
+            }
+        });
+
+        async function stop(sensor = 'ALL') {
+            const payload = new FormData();
+            payload.set('action', 'stop');
+            payload.set('sensor', sensor);
+            try {
+                const data = await sendControl(payload);
+                renderStatus(data.acquisition);
+                setMessage(data.message, 'ok');
+            } catch (error) {
+                setMessage(error.message, 'error');
+            }
+        }
+
+        document.getElementById('stopButton').addEventListener('click', () => stop('ALL'));
+        document.querySelectorAll('[data-stop]').forEach(button =>
+            button.addEventListener('click', () => stop(button.dataset.stop))
+        );
+        typeSelect.addEventListener('change', refreshDevices);
+        deviceSelect.addEventListener('change', refreshScenarios);
+        refreshDevices();
+        pollStatus(false);
+    </script>
+</body>
+</html>

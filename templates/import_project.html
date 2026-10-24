@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nouveau projet</title>
+    <style>
+        :root { --ink: #152c4a; --muted: #64748b; --primary: #4f46e5; --canvas: #f3f6fb; --line: #dce3ee; }
+        * { box-sizing: border-box; }
+        body { min-height: 100vh; margin: 0; font-family: "Segoe UI", Tahoma, sans-serif; color: var(--ink); background: var(--canvas); }
+        header { height: 76px; display: flex; align-items: center; gap: 20px; padding: 0 max(26px, calc((100% - 1000px) / 2)); background: #fff; border-bottom: 1px solid #e7edf5; }
+        header h1 { margin: 0; font-size: 1.45rem; }
+        .back { border: 1px solid #becafc; border-radius: 8px; padding: 8px 15px; color: #4556ad; background: #fff; font: inherit; cursor: pointer; }
+        main { width: min(760px, calc(100% - 40px)); margin: 34px auto 60px; }
+        form { display: grid; gap: 18px; }
+        label { display: grid; gap: 8px; color: #58708f; font-weight: 700; font-size: .85rem; letter-spacing: 0; text-transform: uppercase; }
+        input, select { width: 100%; min-height: 48px; border: 1px solid var(--line); border-radius: 8px; padding: 11px 14px; color: var(--ink); background: #fff; font: inherit; outline-color: var(--primary); }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .type-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .type-option input { position: absolute; opacity: 0; pointer-events: none; }
+        .type-option span { display: block; min-height: 54px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); text-align: center; text-transform: none; font-size: 1rem; cursor: pointer; }
+        .type-option input:checked + span { border-color: #6574ff; color: var(--primary); background: #f0f0ff; }
+        #ev-architecture { display: none; }
+        .upload { display: flex; align-items: center; gap: 12px; min-height: 80px; padding: 18px; border: 2px dashed #d7e0ec; border-radius: 8px; color: var(--muted); background: #fff; cursor: pointer; }
+        .upload input { display: none; }
+        .upload strong { display: block; color: var(--ink); }
+        .upload small { display: block; margin-top: 4px; }
+        .submit { min-height: 52px; border: 0; border-radius: 8px; color: #fff; background: var(--primary); font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; }
+        .submit:disabled { cursor: wait; opacity: .65; }
+        .error { display: none; padding: 12px; border-radius: 8px; color: #9b1c1c; background: #fde8e8; }
+        .error.show { display: block; }
+        @media (max-width: 600px) { .grid, .type-options { grid-template-columns: 1fr; } header { padding: 0 20px; } }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body>
+    <header><button type="button" class="back" onclick="window.location.href='/'">Retour</button><h1>Nouveau projet</h1></header>
+    <main>
+        <form id="project-form">
+            <div class="grid">
+                <label>Project name<input name="name" required placeholder="e.g. MQB Phase 2"></label>
+                <label>Powertrain<input name="powertrain" required placeholder="e.g. 1.5 TSI"></label>
+                <label>EE Architect<input name="eeArchitect" required placeholder="e.g. E/E Gen 3"></label>
+                <label>Application zone<input name="applicationZone" required placeholder="e.g. Europe"></label>
+                <label>Milestone<input name="milestone" required placeholder="e.g. SOP-3, DVP, PVS"></label>
+                <label>Date<input name="date" type="date" required></label>
+                <label>Pilot Wattman<input name="pilotWattman" required placeholder="Nom du pilote"></label>
+            </div>
+            <label>Type de projet</label>
+            <div class="type-options">
+                <label class="type-option"><input type="radio" name="projectType" value="ICE" checked><span>ICE</span></label>
+                <label class="type-option"><input type="radio" name="projectType" value="EV"><span>EV</span></label>
+            </div>
+            <label id="ev-architecture">Architecture EV<select name="evArchitecture"><option value="">Sélectionnez une architecture</option><option value="SDV">SDV</option><option value="Sweet 400">Sweet 400</option></select></label>
+            <label>Fiche Wattman (facultative)
+                <span class="upload"><input id="file-input" type="file" accept=".xlsx,.xls"><span><strong id="file-label">Sélectionner une fiche Excel</strong><small>Formats .xlsx ou .xls</small></span></span>
+            </label>
+            <div class="error" id="error-message"></div>
+            <button class="submit" type="submit" id="submit-button">OK</button>
+        </form>
+    </main>
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const form = document.getElementById('project-form');
+        const fileInput = document.getElementById('file-input');
+        const fileLabel = document.getElementById('file-label');
+        const errorMessage = document.getElementById('error-message');
+        const submitButton = document.getElementById('submit-button');
+        const evArchitecture = document.getElementById('ev-architecture');
+
+        document.querySelectorAll('input[name="projectType"]').forEach((option) => option.addEventListener('change', () => {
+            const isEv = document.querySelector('input[name="projectType"]:checked').value === 'EV';
+            evArchitecture.style.display = isEv ? 'grid' : 'none';
+            evArchitecture.querySelector('select').required = isEv;
+        }));
+        fileInput.addEventListener('change', () => { fileLabel.textContent = fileInput.files[0] ? fileInput.files[0].name : 'Sélectionner une fiche Excel'; });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            errorMessage.classList.remove('show');
+            const project = Object.fromEntries(new FormData(form).entries());
+            project.id = globalThis.crypto?.randomUUID?.() || `project-${Date.now()}`;
+            project.createdAt = new Date().toISOString();
+            project.filename = fileInput.files[0]?.name || '';
+            ProjectStorage.clearWorkingData();
+
+            if (!fileInput.files[0]) {
+                await ProjectStorage.saveProject(project);
+                window.location.href = '/mode_selection';
+                return;
+            }
+            const uploadData = new FormData();
+            uploadData.append('file', fileInput.files[0]);
+            uploadData.append('project_id', project.id);
+            submitButton.disabled = true;
+            submitButton.textContent = 'Import en cours...';
+            try {
+                const response = await fetch('/upload', { method: 'POST', body: uploadData });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error(data.error || 'Erreur lors de l’import');
+                sessionStorage.setItem('excelData', JSON.stringify(data.sheets));
+                sessionStorage.setItem('excelFilename', data.filename);
+                project.serverFileUrl = data.serverFileUrl;
+                project.serverFilename = data.filename;
+                sessionStorage.setItem('wattmanServerFileUrl', data.serverFileUrl);
+                await ProjectStorage.saveProject(project);
+                window.location.href = '/select_components';
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.add('show');
+                submitButton.disabled = false;
+                submitButton.textContent = 'OK';
+            }
+        });
+    </script>
+</body>
+</html>

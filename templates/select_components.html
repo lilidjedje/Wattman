@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sélection des Composants</title>
+    <style>
+        :root { --navy: #1f4e78; --canvas: #edf3f7; --primary: #2563eb; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: "Segoe UI", Tahoma, sans-serif; background: var(--canvas); padding: 30px 20px; color: #1e293b; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        h1 { color: var(--navy); margin-bottom: 8px; font-size: 1.8rem; }
+        p { color: #64748b; margin-bottom: 24px; }
+        
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+        .select-all-wrap { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #475569; cursor: pointer; }
+
+        .table-wrap { overflow-x: auto; margin-bottom: 24px; border: 1px solid #cbd5e1; border-radius: 8px; max-height: 55vh; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem; }
+        th, td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f8fafc; color: var(--navy); font-weight: 700; position: sticky; top: 0; z-index: 10; }
+        tr:hover { background: #f1f5f9; }
+        input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+        
+        .badge-h { padding: 3px 8px; border-radius: 4px; background: #e0e7ff; color: #3730a3; font-weight: bold; font-size: 0.85rem; }
+        .badge-s { padding: 3px 8px; border-radius: 4px; background: #fef3c7; color: #92400e; font-weight: bold; font-size: 0.85rem; }
+
+        .actions { display: flex; justify-content: flex-end; gap: 12px; }
+        .btn { padding: 11px 24px; border: 0; border-radius: 8px; font-weight: 700; cursor: pointer; font: inherit; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-secondary { background: #e2e8f0; color: #334155; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body>
+    <main class="container">
+        <h1 id="page-title">Sélection des composants</h1>
+        <div class="toolbar">
+            <label class="select-all-wrap">
+                <input type="checkbox" id="select-all" checked> Tout sélectionner / Tout désélectionner
+            </label>
+            <span id="counter" style="font-weight: 600; color: #475569;"></span>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th id="col-name">Device/ECU Name</th>
+                        <th style="width: 190px; text-align: center;">Homologation Current (A)</th>
+                        <th style="width: 170px; text-align: center;">Dark Current (mA)</th>
+                    </tr>
+                </thead>
+                <tbody id="component-tbody"></tbody>
+            </table>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-secondary" type="button" onclick="history.back()">← Retour</button>
+            <button class="btn btn-primary" type="button" id="save-selection">Enregistrer et continuer →</button>
+        </div>
+    </main>
+
+    <script>
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        
+        const titleEl = document.getElementById('page-title');
+        const tbody = document.getElementById('component-tbody');
+        const selectAllCheckbox = document.getElementById('select-all');
+        const counterEl = document.getElementById('counter');
+
+        titleEl.textContent = 'Sélection des composants';
+
+        const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
+        const storedHKeys = sessionStorage.getItem('selectedDeviceKeys');
+        const storedSKeys = sessionStorage.getItem('selectedEcuKeys');
+        const activeProject = JSON.parse(localStorage.getItem('activeProject') || 'null');
+        const isEvProject = String(activeProject?.projectType || '').toUpperCase() === 'EV';
+        const selectedHSets = {
+            H: storedHKeys !== null ? new Set(JSON.parse(storedHKeys)) : null,
+            S: storedSKeys !== null ? new Set(JSON.parse(storedSKeys)) : null
+        };
+
+        function updateCounter() {
+            const h = tbody.querySelectorAll('input[data-selection="H"]');
+            const s = tbody.querySelectorAll('input[data-selection="S"]');
+            const selectedH = Array.from(h).filter((checkbox) => checkbox.checked).length;
+            const selectedS = Array.from(s).filter((checkbox) => checkbox.checked).length;
+            counterEl.textContent = `Homologation : ${selectedH} / ${h.length} | Dark Current : ${selectedS} / ${s.length}`;
+            const all = [...h, ...s];
+            const selectedTotal = all.filter((checkbox) => checkbox.checked).length;
+            selectAllCheckbox.checked = all.length > 0 && selectedTotal === all.length;
+            selectAllCheckbox.indeterminate = selectedTotal > 0 && selectedTotal < all.length;
+        }
+
+        if (sheet && sheet.data) {
+            sheet.data.forEach((row, rowIndex) => {
+                // Lecture de la catégorie (colonne current_category)
+                const cat = String(row['current_category'] || row['Current Category'] || '').trim().toUpperCase();
+                
+                const name = row['Device Name'] || row['ECU Name'] || `Item ${rowIndex + 1}`;
+                const homologationCurrent = row['Current (A)'] ?? row['Homologation Current (A)'] ?? '-';
+                const darkCurrent = row['Sleep Current (mA)'] ?? row['DM1 Current (mA)'] ?? row['Homologation Current (mA)'] ?? '-';
+                const key = `${rowIndex}_${name}`;
+                const homologationChecked = selectedHSets.H === null ? (isEvProject || cat === 'H') : selectedHSets.H.has(key);
+                const darkChecked = selectedHSets.S === null ? cat === 'S' : selectedHSets.S.has(key);
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${name}</strong></td>
+                    <td style="text-align: center;"><label><input type="checkbox" data-key="${key}" data-selection="H" ${homologationChecked ? 'checked' : ''}> ${homologationCurrent}</label></td>
+                    <td style="text-align: center;"><label><input type="checkbox" data-key="${key}" data-selection="S" ${darkChecked ? 'checked' : ''}> ${darkCurrent}</label></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        updateCounter();
+
+        selectAllCheckbox.addEventListener('change', (e) => {
+            const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+            updateCounter();
+        });
+
+        tbody.addEventListener('change', updateCounter);
+
+        document.getElementById('save-selection').addEventListener('click', () => {
+            const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');
+            const newSelectedKeys = { H: [], S: [] };
+            
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    const selection = cb.getAttribute('data-selection');
+                    if (newSelectedKeys[selection]) newSelectedKeys[selection].push(cb.getAttribute('data-key'));
+                }
+            });
+
+            sessionStorage.setItem('selectedDeviceKeys', JSON.stringify(newSelectedKeys.H));
+            sessionStorage.setItem('selectedEcuKeys', JSON.stringify(newSelectedKeys.S));
+
+            // Redirection vers le menu de sélection des modes
+            window.location.href = '/mode_selection';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consommations forfaitaires</title>
+    <style>
+        :root { --navy: #1f4e78; --canvas: #edf3f7; --line: #b7c9d6; --primary: #2f63df; --surface: #fff; }
+        * { box-sizing: border-box; }
+        body { min-height: 100vh; margin: 0; padding: 24px; font-family: "Segoe UI", Tahoma, sans-serif; color: #1e2d45; background: var(--canvas); }
+        main { width: min(1180px, 100%); margin: 0 auto; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+        h1 { margin: 0; color: var(--navy); font-size: 1.8rem; } .subtitle { margin: 4px 0 0; color: #61738e; }
+
+        /* STEPPER / MENU DÉFILANT ÉTAPES */
+        .stepper { 
+            width: 100%; margin: 0 auto 24px; 
+            display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); 
+            gap: 12px; padding: 14px; border-radius: 12px; background: white; 
+            box-shadow: 0 4px 15px rgba(0, 0, 0, .08); border: 1px solid #cbd5e1;
+        }
+        .step { 
+            border: 0; border-radius: 8px; padding: 12px; color: #52647d; 
+            background: #f1f5f9; font: inherit; font-weight: 700; cursor: pointer; text-align: center; 
+        }
+        .step:hover { background: #e4e8ff; color: #4f46e5; }
+        .step.active { color: white; background: #4f46e5; }
+        
+        /* SOMMAIRE RÉTRACTABLE */
+        .retractable-menu { position: relative; display: inline-block; }
+        .retractable-menu details { background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .retractable-menu summary { padding: 10px 18px; font-weight: 700; cursor: pointer; color: var(--navy); list-style: none; display: flex; align-items: center; gap: 8px; background: #ffffff; border-radius: 8px; user-select: none; }
+        .menu-content { position: absolute; right: 0; top: 110%; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 100; min-width: 220px; }
+        .btn-menu { border: 0; border-radius: 5px; padding: 9px 14px; color: white; font: inherit; font-weight: 700; cursor: pointer; text-align: left; width: 100%; display: flex; align-items: center; gap: 8px; }
+        .btn-save { background: #087f5b; } .btn-reset { background: #b45309; } .btn-autonomy { background: #64748b; } .btn-mode { background: #667eea; } .btn-home { background: #1e293b; }
+        
+        .back, .continue, .add { min-height: 42px; border: 1px solid #bac8dd; border-radius: 7px; padding: 0 15px; background: #fff; color: #4c607d; font: inherit; font-weight: 700; cursor: pointer; }
+        .continue, .add { color: #fff; border-color: var(--primary); background: var(--primary); }
+        .panel { padding: 22px; border-radius: 8px; background: var(--surface); box-shadow: 0 6px 20px rgba(30,45,69,.08); border: 1px solid var(--line); margin-bottom: 20px; }
+        .scenario { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 16px; align-items: end; margin-bottom: 18px; }
+        label { display: grid; gap: 7px; color: #526781; font-size: .88rem; font-weight: 700; }
+        select, input { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 5px; padding: 8px; color: #1e2d45; background: #fff; font: inherit; }
+        .table-wrap { overflow-x: auto; } table { width: 100%; min-width: 850px; border-collapse: collapse; font-size: .88rem; } th, td { padding: 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; } th { color: #526781; background: #f7f9fc; } td input, td select { min-height: 34px; } .section td { padding: 13px 9px; color: var(--navy); background: #eef3ff; font-weight: 800; } .computed { color: #064bc0; font-weight: 800; white-space: nowrap; } .delete { border: 0; background: transparent; color: #b42318; font: inherit; font-weight: 700; cursor: pointer; }
+        .custom-form { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; align-items: end; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); } .custom-form label { font-size: .78rem; }
+        .unit-field { color: #61738e; font-weight: 700; white-space: nowrap; }
+        .unit-field input { width: calc(100% - 48px); margin-right: 7px; }
+        .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; } .saved { color: #15803d; font-size: .9rem; }
+        
+        .sleep-block { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .sleep-block h3 { margin-bottom: 12px; color: var(--navy); font-size: 1rem; }
+        .sleep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="fixed-consumption-page">
+    <main>
+        <header>
+            <button class="back" type="button" id="top-back-btn">← Retour</button>
+            <div><h1>Consommations forfaitaires</h1></div>
+            
+            <div class="retractable-menu">
+                <details id="actions-details">
+                    <summary> Sommaire / Actions</summary>
+                    <div class="menu-content">
+                        <span class="saved" id="saved-status" aria-live="polite"></span>
+                        <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
+                        <button class="btn-menu btn-reset" type="button" id="reset-btn"> Valeurs initiales</button>
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
+                        <button class="btn-menu btn-autonomy" id="autonomy-menu-button" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                        <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
+                        <button class="btn-menu btn-home" type="button" onclick="navigateHome()"> Accueil</button>
+                    </div>
+                </details>
+            </div>
+        </header>
+
+        <!-- MENU DÉFILANT ÉTAPES (INJECTÉ EN DYNAMIQUE DANS LE SCRIPT) -->
+        <nav class="stepper" id="mode-stepper" aria-label="Étapes du parcours"></nav>
+
+        <!-- SECTION ENDORMISSEMENT VÉHICULE : UN CYCLE PAR DÉFAUT -->
+        <section class="panel sleep-block">
+            <h3>Endormissement Véhicule</h3>
+            <div class="sleep-grid">
+                <label>Énergie par endormissement
+                    <span class="battery-unit-field">
+                        <input id="modeVehicleSleepEnergyAh" type="number" min="0" step="0.0001" placeholder="Ex. 0.08">
+                        <span class="battery-unit-suffix">Ah</span>
+                    </span>
+                </label>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="scenario"><label>Cas d’analyse<select id="scenario"></select></label><span class="saved" id="saved"></span></div>
+            <div class="table-wrap"><table><thead><tr><th>Fonction forfaitaire</th><th>Courant</th><th>Durée active</th><th>Ah/jour et énergie</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+            <div class="custom-form"><label>Nom<input id="custom-name" placeholder="Ex. Télématique"></label><label>Courant<span class="battery-unit-field"><input id="custom-current" type="number" min="0" step="0.01"><span class="battery-unit-suffix">mA</span></span></label><label>Durée d’activation<span class="battery-unit-field"><input id="custom-duration" type="number" min="0" step="0.01"><span class="battery-unit-suffix">h</span></span></label><button class="add" id="add-custom" type="button">Ajouter une fonction</button></div>
+            <div class="actions"><button class="continue" id="continue" type="button">Étape suivante : Consommation en veille →</button></div>
+        </section>
+    </main>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const batterySubMode = sessionStorage.getItem('batterySubMode') || 'Customer Mode';
+        const isDmMode = batterySubMode === 'DM1' || batterySubMode === 'DM2';
+        if (!isDmMode) document.getElementById('autonomy-menu-button')?.remove();
+        
+        
+        // Rendu dynamique du Stepper
+        const stepperEl = document.getElementById('mode-stepper');
+        const firstStepUrl = isDmMode ? '/edit_dm_mode' : '/edit_customer_mode';
+        const firstStepLabel = isDmMode ? `1. Courants ${batterySubMode}` : '1. Courants Customer';
+
+        stepperEl.innerHTML = `
+            <button class="step" type="button" onclick="window.location.href='${firstStepUrl}'">${firstStepLabel}</button>
+            <button class="step active" type="button" onclick="window.location.href='/fixed_consumption'">2. Consommations forfaitaires</button>
+            <button class="step" type="button" onclick="window.location.href='/sleep_consumption'">3. Consommation en veille</button>
+        `;
+
+        document.getElementById('top-back-btn').addEventListener('click', () => {
+            window.location.href = firstStepUrl;
+        });
+
+        const modeSleepEnergyEl = document.getElementById('modeVehicleSleepEnergyAh');
+        
+        const modeSleepKey = `vehicleSleep_${batterySubMode}`;
+        const savedModeSleep = JSON.parse(sessionStorage.getItem(modeSleepKey) || '{}');
+        
+        modeSleepEnergyEl.value = savedModeSleep.energyAh ?? 0.08;
+
+        function saveModeSleep() {
+            sessionStorage.setItem(modeSleepKey, JSON.stringify({
+                count: 1,
+                energyAh: Number(modeSleepEnergyEl.value) || 0
+            }));
+        }
+
+        modeSleepEnergyEl.addEventListener('input', saveModeSleep);
+
+        const scenarioOptions = [['baseLab', 'Base LAB'], ['withAlarm', 'Avec alarme'], ['withoutAlarmTachy', 'Sans alarme avec TACHY'], ['alarmTachy', 'Avec alarme avec TACHY']];
+        let definitions = [
+            { section: 'Cell Balancing (VE/Hybrides)' },
+            { id: 'cellBalancing', name: 'Cell balancing', current: 200, duration: 15, unit: 's', extra: { periodMin: 480, balancingDays: 30 }, calculation: 'cell' },
+            { section: 'PCU, CDC et transport' },
+            { id: 'pcuRam', name: 'PCU Suspend to RAM', current: 1, duration: 192, unit: 'h' },
+            { id: 'pcuSecure', name: 'PCU Secure reboot (cyber)', current: 3300, duration: 90, unit: 's' },
+            { id: 'cdcRam', name: 'CDC Suspend to RAM', current: 4.8, duration: 192, unit: 'h' },
+            { id: 'cdcGarage', name: 'CDC Garage mode (Google)', current: 2000, duration: 5, unit: 'min' },
+            { id: 'cdcSecure', name: 'CDC Secure reboot (cyber)', current: 2000, duration: 1.5, unit: 'min' },
+            { id: 'fota', name: 'Mode FOTA', current: 1511, duration: 0, unit: 'min' },
+            { id: 'transport', name: 'Transport - HFM', current: 0.72, duration: 10, unit: 'jours', calculation: 'daily' },
+            { section: 'Smart Antenna - Connectivité' },
+            { id: 'smartAntenna', name: 'Smart Antenna', current: 6, duration: 8, unit: 'jours', extra: { drxCurrent: 8, drxDays: 0, remoteEnergy: 0 }, calculation: 'antenna' },
+            { section: 'Fonctions d’accès' },
+            { id: 'handFree3', name: 'HAND FREE KAM - 3 premiers jours', current: 9, duration: 3, unit: 'jours', calculation: 'daily' },
+            { id: 'handFree48', name: 'HAND FREE KAM - jour 4 à 8', current: 4.2, duration: 5, unit: 'jours', calculation: 'daily' },
+            { id: 'first8', name: '8 premières heures', current: 0, duration: 8, unit: 'h', calculation: 'first8' },
+            { id: 'blm', name: 'BLM / Virtual Key', current: 0.7, duration: 0, unit: 'jours', calculation: 'daily' }
+        ];
+
+        const fixedStorageKey = isDmMode ? `fixedConsumption${batterySubMode}` : 'fixedConsumption';
+        
+        if (isDmMode) {
+            const removedDmEntries = new Set(['pcuSecure', 'cdcGarage', 'cdcSecure', 'fota', 'smartAntenna']);
+            definitions = definitions.filter((definition) => !removedDmEntries.has(definition.id) && definition.section !== 'Smart Antenna - Connectivité');
+            
+            const cdcRamIndex = definitions.findIndex((definition) => definition.id === 'cdcRam');
+            definitions.splice(cdcRamIndex + 1, 0, { id: 'ivc3', name: 'IVC3 - consommation de veille', current: 0.4, duration: 0, unit: 'h', calculation: 'energy' });
+            
+        }
+
+        const scenarioSelect = document.getElementById('scenario'); const rows = document.getElementById('rows'); const saved = document.getElementById('saved');
+        scenarioOptions.forEach(([value, label]) => scenarioSelect.add(new Option(label, value)));
+        let configurations = JSON.parse(sessionStorage.getItem(fixedStorageKey) || (isDmMode ? sessionStorage.getItem('fixedConsumption') : null) || '{}');
+        
+        const durationHours = (duration, unit) => ({ h: duration, min: duration / 60, s: duration / 3600, jours: duration * 24 })[unit] || 0;
+        const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+        const defaultEntry = (definition) => ({ current: definition.current, duration: definition.duration, unit: definition.unit, extra: definition.extra || {}, calculation: definition.calculation || 'energy' });
+        
+        function activeData() { 
+            const key = scenarioSelect.value; 
+            configurations[key] ||= { entries: {}, custom: [] }; 
+            configurations[key].entries ??= {}; 
+            configurations[key].custom ??= []; 
+            definitions.filter((item) => item.id).forEach((item) => { 
+                const defaults = defaultEntry(item); 
+                const entry = configurations[key].entries[item.id] ||= defaults; 
+                entry.current ??= defaults.current; 
+                entry.duration ??= defaults.duration; 
+                entry.unit ??= defaults.unit; 
+                entry.calculation ??= defaults.calculation; 
+                entry.extra = { ...defaults.extra, ...entry.extra }; 
+            }); 
+            return configurations[key]; 
+        }
+
+        function format(value, suffix = 'Ah') { return `${Number(value).toFixed(4).replace('.', ',')} ${suffix}`; }
+        
+        function calculate(entry) { 
+            const current = number(entry.current); 
+            const duration = number(entry.duration); 
+            if (entry.calculation === 'cell') { 
+                const daily = (duration / 3600) * (current / 1000) * (24 * 60 / number(entry.extra.periodMin, 1)); 
+                return `Ah/jour : ${format(daily, 'Ah/j')} | Énergie : ${format(daily * number(entry.extra.balancingDays), 'Ah')}`; 
+            } 
+            if (entry.calculation === 'antenna') { 
+                const mqttDaily = (current / 1000) * 24; 
+                const mqttEnergy = duration * mqttDaily; 
+                const drxDaily = (number(entry.extra.drxCurrent) / 1000) * 24; 
+                const drxEnergy = number(entry.extra.drxDays) * drxDaily; 
+                const total = mqttEnergy + drxEnergy + (6 * number(entry.extra.remoteEnergy)); 
+                return `MQTT Ah/jour : ${format(mqttDaily, 'Ah/j')} | Énergie MQTT : ${format(mqttEnergy)} | DRX Ah/jour : ${format(drxDaily, 'Ah/j')} | Énergie DRX : ${format(drxEnergy)} | Énergie 1 remote : ${format(number(entry.extra.remoteEnergy))} | Énergie totale : ${format(total)}`; 
+            } 
+            if (entry.calculation === 'daily') { 
+                const daily = (current / 1000) * 24; 
+                return `Ah/jour : ${format(daily, 'Ah/j')} | Énergie : ${format(daily * duration, 'Ah')}`; 
+            } 
+            if (entry.calculation === 'first8') { 
+                const ah = current / 1000; 
+                return `Ah : ${format(ah)} | Énergie : ${format(ah * duration)}`; 
+            } 
+            const daily = (current / 1000) * durationHours(duration, entry.unit);
+            return `Ah/jour : ${format(daily, 'Ah/j')} | Énergie : ${format(daily, 'Ah')}`;
+        }
+
+        function createInput(value, type, onChange, unit = '') { 
+            const input = document.createElement('input'); 
+            input.type = type; 
+            input.value = value; 
+            input.min = '0'; 
+            input.step = '0.0001'; 
+            input.className = 'editable-field'; 
+            input.addEventListener('input', () => { onChange(input.value); saveAndRender(input); }); 
+            if (!unit) return input;
+            const wrapper = document.createElement('span');
+            wrapper.className = 'battery-unit-field';
+            wrapper.appendChild(input);
+            const suffix = document.createElement('span');
+            suffix.className = 'battery-unit-suffix';
+            suffix.textContent = unit;
+            wrapper.appendChild(suffix);
+            return wrapper;
+        }
+
+        const deletedFixedKey = `deletedFixedFunctionIds_${batterySubMode}`;
+        let deletedFixedIds = new Set(JSON.parse(sessionStorage.getItem(deletedFixedKey) || '[]'));
+        function removeFunctionButton(name, callback) {
+            const button = document.createElement('button');
+            button.className = 'device-row-delete';
+            button.type = 'button';
+            button.textContent = '×';
+            button.title = `Supprimer ${name}`;
+            button.setAttribute('aria-label', `Supprimer ${name}`);
+            button.addEventListener('click', () => {
+                if (window.confirm(`Êtes-vous sûr de vouloir supprimer « ${name} » ?`)) callback();
+            });
+            return button;
+        }
+
+        function render() { 
+            const data = activeData(); 
+            rows.replaceChildren(); 
+            definitions.forEach((definition) => { 
+                if (definition.section) { 
+                    const tr = document.createElement('tr'); 
+                    tr.className = 'section'; 
+                    tr.innerHTML = `<td colspan="5">${definition.section}</td>`; 
+                    rows.appendChild(tr); 
+                    return; 
+                } 
+                if (deletedFixedIds.has(definition.id)) return;
+                const entry = data.entries[definition.id]; 
+                if (definition.id === 'cellBalancing') addCellBalancingRows(entry); 
+                else if (definition.id === 'smartAntenna') addSmartAntennaRows(entry); 
+                else addRow(definition.name, entry, false, definition.id); 
+            }); 
+            data.custom.forEach((entry, index) => addRow(entry.name, entry, true, index)); 
+        }
+
+        function addCellBalancingRows(entry) { 
+            const fields = [
+                ["Période entre calcul de consigne d’équilibrage", entry.extra.periodMin, (value) => entry.extra.periodMin = value],
+                ["Conso lors du calcul de consigne d’équilibrage", entry.current, (value) => entry.current = value],
+                ["Durée du calcul d’équilibrage", entry.duration, (value) => entry.duration = value],
+                ['Durée du balancing', entry.extra.balancingDays, (value) => entry.extra.balancingDays = value]
+            ];
+            const units = ['min', 'mA', 's', 'jours'];
+            fields.forEach(([label, value, update], index) => { const tr = document.createElement('tr'); const labelCell = document.createElement('td'); labelCell.textContent = label; tr.appendChild(labelCell); const valueCell = document.createElement('td'); valueCell.colSpan = 2; valueCell.appendChild(createInput(value, 'number', update, units[index])); tr.appendChild(valueCell); tr.appendChild(document.createElement('td')); tr.appendChild(document.createElement('td')); rows.appendChild(tr); });
+            const calculationRow = document.createElement('tr'); calculationRow.innerHTML = '<td>Calcul automatique</td><td colspan="2"></td><td class="computed"></td><td></td>'; calculationRow.querySelector('.computed').textContent = calculate(entry); calculationRow.lastElementChild.appendChild(removeFunctionButton('Cell balancing', () => { deletedFixedIds.add('cellBalancing'); sessionStorage.setItem(deletedFixedKey, JSON.stringify([...deletedFixedIds])); render(); })); rows.appendChild(calculationRow);
+        }
+
+        function addSmartAntennaRows(entry) { 
+            const fields = [
+                ['Conso MQTT Always ON', entry.current, (value) => entry.current = value],
+                ["Durée d'activité MQTT", entry.duration, (value) => entry.duration = value],
+                ['Conso DRX', entry.extra.drxCurrent, (value) => entry.extra.drxCurrent = value],
+                ["Durée d'activité DRX", entry.extra.drxDays, (value) => entry.extra.drxDays = value],
+                ['Energie 1 remote', entry.extra.remoteEnergy, (value) => entry.extra.remoteEnergy = value]
+            ];
+            const units = ['mA', 'jours', 'mA', 'jours', 'Ah'];
+            fields.forEach(([label, value, update], index) => { const tr = document.createElement('tr'); const labelCell = document.createElement('td'); labelCell.textContent = label; tr.appendChild(labelCell); const valueCell = document.createElement('td'); valueCell.colSpan = 2; valueCell.appendChild(createInput(value, 'number', update, units[index])); tr.appendChild(valueCell); tr.appendChild(document.createElement('td')); tr.appendChild(document.createElement('td')); rows.appendChild(tr); });
+            const calculationRow = document.createElement('tr'); calculationRow.innerHTML = '<td>Calcul automatique Smart Antenna</td><td colspan="2"></td><td class="computed"></td><td></td>'; calculationRow.querySelector('.computed').textContent = calculate(entry); calculationRow.lastElementChild.appendChild(removeFunctionButton('Smart Antenna', () => { deletedFixedIds.add('smartAntenna'); sessionStorage.setItem(deletedFixedKey, JSON.stringify([...deletedFixedIds])); render(); })); rows.appendChild(calculationRow);
+        }
+
+        function addRow(name, entry, isCustom, identifier) { 
+            const tr = document.createElement('tr'); 
+            const nameCell = document.createElement('td'); nameCell.textContent = name; tr.appendChild(nameCell); 
+            const currentCell = document.createElement('td'); currentCell.appendChild(createInput(entry.current, 'number', (value) => entry.current = value, 'mA')); tr.appendChild(currentCell); 
+            const durationCell = document.createElement('td'); durationCell.appendChild(createInput(entry.duration, 'number', (value) => entry.duration = value, entry.unit)); tr.appendChild(durationCell); 
+            const result = document.createElement('td'); result.className = 'computed'; result.textContent = calculate(entry); tr.appendChild(result); 
+            const action = document.createElement('td'); 
+            action.appendChild(removeFunctionButton(name, () => {
+                if (isCustom) activeData().custom.splice(identifier, 1);
+                else {
+                    deletedFixedIds.add(identifier);
+                    sessionStorage.setItem(deletedFixedKey, JSON.stringify([...deletedFixedIds]));
+                }
+                saveAndRender();
+            }));
+            tr.appendChild(action); rows.appendChild(tr); 
+        }
+
+        function saveAndRender(activeField) { 
+            const scrollPosition = window.scrollY; 
+            const fields = [...document.querySelectorAll('.editable-field')]; 
+            const fieldIndex = activeField ? fields.indexOf(activeField) : -1; 
+            const cursorStart = activeField?.selectionStart; 
+            const cursorEnd = activeField?.selectionEnd; 
+            sessionStorage.setItem(fixedStorageKey, JSON.stringify(configurations)); 
+            saved.textContent = 'Enregistré'; 
+            render(); 
+            window.scrollTo(0, scrollPosition); 
+            if (fieldIndex >= 0) { 
+                const replacementField = document.querySelectorAll('.editable-field')[fieldIndex]; 
+                replacementField?.focus({ preventScroll: true }); 
+                if (replacementField?.setSelectionRange && cursorStart !== null) replacementField.setSelectionRange(cursorStart, cursorEnd); 
+            } 
+        }
+
+        scenarioSelect.addEventListener('change', render);
+        document.getElementById('add-custom').addEventListener('click', () => { 
+            const name = document.getElementById('custom-name').value.trim(); 
+            if (!name) return; 
+            activeData().custom.push({ name, current: document.getElementById('custom-current').value || 0, duration: document.getElementById('custom-duration').value || 0, unit: 'h', calculation: 'energy' }); 
+            ['custom-name','custom-current','custom-duration'].forEach((id) => document.getElementById(id).value = ''); 
+            saveAndRender(); 
+        });
+
+        document.getElementById('continue').addEventListener('click', () => { 
+            saveModeSleep();
+            sessionStorage.setItem(fixedStorageKey, JSON.stringify(configurations)); 
+            window.location.href = '/sleep_consumption'; 
+        });
+
+        ProjectStorage.bindSaveButton('project-save', 'saved-status');
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (confirm('Restaurer les consommations initiales ?')) {
+                sessionStorage.removeItem(fixedStorageKey);
+                configurations = {};
+                render();
+                document.getElementById('saved-status').textContent = 'Valeurs réinitialisées.';
+            }
+        });
+
+        function navigateHome() {
+            const activeProject = ProjectStorage.getActiveProject();
+            if (activeProject && activeProject.name) {
+                window.location.href = '/';
+            } else {
+                alert("Veuillez d'abord enregistrer le projet pour pouvoir revenir à la page d'accueil.");
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const details = document.getElementById('actions-details');
+            if (details && !details.contains(e.target)) details.removeAttribute('open');
+        });
+
+        render();
+    </script>
+</body>
+</html>

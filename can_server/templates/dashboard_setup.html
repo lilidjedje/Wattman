@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Préparer le dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ back_url }}">{{ back_label }}</a>
+        <div>
+            <p class="eyebrow">Étape 2 / Configuration d’analyse</p>
+            <h1>Préparer le dashboard</h1>
+        </div>
+        <a class="button secondary right" href="{{ url_for('index') }}">Workstation</a>
+    </header>
+
+    <main class="workstation-main">
+        <section class="panel">
+            <div class="panel-title"><h2>1. Sélectionnez l’usage de la mesure</h2></div>
+            <div class="analysis-mode-grid" id="modeGrid">
+                <button type="button" class="analysis-mode" data-mode="dcdc"><strong>DCDC Sizing</strong><span>Vérification du courant de sortie</span></button>
+                <button type="button" class="analysis-mode" data-mode="dm1"><strong>Veille DM1</strong><span>Autonomie en nombre de jours</span></button>
+                <button type="button" class="analysis-mode" data-mode="dm2"><strong>Veille DM2</strong><span>Autonomie en nombre de jours</span></button>
+                <button type="button" class="analysis-mode" data-mode="customer"><strong>Customer Mode</strong><span>Autonomie en nombre de jours</span></button>
+                <button type="button" class="analysis-mode" data-mode="biberonnage"><strong>Biberonnage</strong><span>Profil et énergie cumulée</span></button>
+                <button type="button" class="analysis-mode" data-mode="wltc"><strong>WLTC</strong><span>Dimensionnement sur cycle</span></button>
+            </div>
+        </section>
+
+        <section class="panel setup-panel" id="configurationPanel" hidden>
+            <div class="panel-title"><h2>2. Canaux, température et ECU inclus dans la mesure</h2></div>
+            <form id="setupForm" class="form-grid">
+                <fieldset class="field channel-config">
+                    <legend>Canaux à visualiser dans le dashboard</legend>
+                    <div class="dashboard-channel-choices">
+                        {% if 'A' in available_channels %}
+                        <label><input type="radio" name="dashboardChannelMode" value="A"> Canal A uniquement / 0x40</label>
+                        {% endif %}
+                        {% if 'B' in available_channels %}
+                        <label><input type="radio" name="dashboardChannelMode" value="B"> Canal B uniquement / 0x41</label>
+                        {% endif %}
+                        {% if 'A' in available_channels and 'B' in available_channels %}
+                        <label><input type="radio" name="dashboardChannelMode" value="AB"> Les deux canaux A et B</label>
+                        {% endif %}
+                    </div>
+                    <small>Les graphiques, indicateurs et tableaux suivront cette sélection.</small>
+                </fieldset>
+                <label class="field" id="temperatureField">Température pendant la mesure
+                    <span class="inline-fields">
+                        <input type="number" id="temperature" min="-50" max="80" step="0.1" value="20" required>
+                        <input value="°C" aria-label="Unité Celsius" disabled>
+                    </span>
+                </label>
+                <fieldset class="field channel-config" id="dayRangeField" hidden>
+                    <legend>Plage de jours à comparer</legend>
+                    <div class="inline-fields">
+                        <label>Jour de départ
+                            <select id="startDay"></select>
+                        </label>
+                        <label>Jour de fin
+                            <select id="endDay"></select>
+                        </label>
+                    </div>
+                    <small id="dayRangeHelp">Les profils 0/1 des ECU seront appliqués uniquement sur cette plage.</small>
+                </fieldset>
+                <label class="field" id="feedingAnalysisField" hidden>Biberonnage à analyser
+                    <select id="feedingAnalysis"></select>
+                    <small>Le nom et les paramètres batterie de cette analyse apparaîtront dans le dashboard.</small>
+                </label>
+                <div class="selection-toolbar">
+                    <div>
+                        <strong id="deviceTitle">Devices / ECU mesurés</strong>
+                        <p id="selectionCount">0 sélectionné</p>
+                    </div>
+                    <div class="actions">
+                        <button class="secondary" type="button" id="selectAll">Tout sélectionner</button>
+                        <button class="secondary" type="button" id="clearAll">Tout désélectionner</button>
+                    </div>
+                </div>
+                <div id="deviceList" class="device-selection-grid"></div>
+                <div class="message" id="message">Sélectionnez les ECU réellement présents dans la mesure.</div>
+                <div class="actions">
+                    <button class="success" type="submit">Afficher le dashboard</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <script>
+        const theory = {{ theory|tojson }};
+        const query = new URLSearchParams(location.search);
+        let sessionId = query.get('session_id') || '';
+        let activeMode = '';
+        const list = document.getElementById('deviceList');
+        const panel = document.getElementById('configurationPanel');
+        const message = document.getElementById('message');
+        const initialChannels = {{ selected_channels|tojson }};
+        const initialChannelMode = initialChannels.includes('A') && initialChannels.includes('B')
+            ? 'AB' : (initialChannels[0] || '');
+        const initialChannelInput = document.querySelector(
+            `input[name="dashboardChannelMode"][value="${initialChannelMode}"]`
+        );
+        if (initialChannelInput) initialChannelInput.checked = true;
+
+        const sleepMode = device => String(device.mode || device.name || '').toLowerCase();
+        function devicesFor(mode) {
+            const devices = theory.devices || [];
+            if (mode === 'dcdc' || mode === 'wltc') return devices.filter(device => device.kind === 'dcdc');
+            if (mode === 'dm1') return devices.filter(device => device.kind === 'sleep' && sleepMode(device).includes('dm1'));
+            if (mode === 'dm2') return devices.filter(device => device.kind === 'sleep' && sleepMode(device).includes('dm2'));
+            if (mode === 'customer') return devices.filter(device => device.kind === 'sleep' && sleepMode(device).includes('customer'));
+            const customer = devices.filter(device => device.kind === 'sleep' && sleepMode(device).includes('customer'));
+            return customer.length ? customer : devices.filter(device => device.kind === 'sleep');
+        }
+
+        function escapeHtml(value) {
+            const node = document.createElement('span');
+            node.textContent = value ?? '';
+            return node.innerHTML;
+        }
+
+        function updateCount() {
+            const selected = list.querySelectorAll('input:checked').length;
+            const total = list.querySelectorAll('input').length;
+            document.getElementById('selectionCount').textContent = `${selected} / ${total} sélectionné${selected > 1 ? 's' : ''}`;
+        }
+
+        function renderDevices() {
+            const devices = devicesFor(activeMode);
+            list.innerHTML = devices.map(device => `
+                <label class="device-choice">
+                    <input type="checkbox" value="${escapeHtml(device.id)}" checked>
+                    <span><strong>${escapeHtml(device.name)}</strong><small>${Number(device.nominal_A || 0).toFixed(4)} A nominal</small></span>
+                </label>`).join('');
+            if (!devices.length) list.innerHTML = '<div class="empty-notice">Aucun ECU compatible n’est synchronisé dans le projet.</div>';
+            list.querySelectorAll('input').forEach(input => input.addEventListener('change', updateCount));
+            updateCount();
+        }
+
+        function dayValues(maximumDay) {
+            const values = [0, 0.3];
+            for (let day = 1; day <= maximumDay; day += 0.5) values.push(day);
+            return values;
+        }
+
+        function updateAnalysisFields() {
+            const isAutonomy = ['dm1', 'dm2', 'customer'].includes(activeMode);
+            const isFeeding = activeMode === 'biberonnage';
+            const usesTemperature = ['dcdc', 'wltc'].includes(activeMode);
+            const temperature = document.getElementById('temperature');
+            document.getElementById('temperatureField').hidden = !usesTemperature;
+            document.getElementById('dayRangeField').hidden = !isAutonomy;
+            document.getElementById('feedingAnalysisField').hidden = !isFeeding;
+            temperature.disabled = !usesTemperature;
+            temperature.required = usesTemperature;
+            if (isFeeding) {
+                const analyses = theory.biberonnage_analyses || [];
+                document.getElementById('feedingAnalysis').innerHTML = analyses.length
+                    ? analyses.map(item =>
+                        `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`
+                    ).join('')
+                    : '<option value="measured">Biberonnage mesuré</option>';
+            }
+            if (!isAutonomy) return;
+            const maximumDay = activeMode === 'customer' ? 30 : 90;
+            const values = dayValues(maximumDay);
+            const options = values.map(day =>
+                `<option value="${day}">${day.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} jour${day > 1 ? 's' : ''}</option>`
+            ).join('');
+            document.getElementById('startDay').innerHTML = options;
+            document.getElementById('endDay').innerHTML = options;
+            document.getElementById('startDay').value = '0';
+            document.getElementById('endDay').value = String(maximumDay);
+            document.getElementById('dayRangeHelp').textContent =
+                `Choisissez une plage entre 0 et ${maximumDay} jours. Les profils binaires 0/1 seront appliqués à chaque ECU.`;
+        }
+
+        document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => {
+            activeMode = button.dataset.mode;
+            document.querySelectorAll('[data-mode]').forEach(item => item.classList.toggle('selected', item === button));
+            panel.hidden = false;
+            document.getElementById('deviceTitle').textContent = `ECU inclus — ${button.querySelector('strong').textContent}`;
+            updateAnalysisFields();
+            renderDevices();
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }));
+        document.getElementById('selectAll').addEventListener('click', () => {
+            list.querySelectorAll('input').forEach(input => { input.checked = true; });
+            updateCount();
+        });
+        document.getElementById('clearAll').addEventListener('click', () => {
+            list.querySelectorAll('input').forEach(input => { input.checked = false; });
+            updateCount();
+        });
+
+        async function resolveSession() {
+            if (sessionId) return sessionId;
+            const response = await fetch({{ url_for('get_measurement_sessions')|tojson }}, { cache: 'no-store' });
+            const data = await response.json();
+            sessionId = data.sessions?.[0]?.id || '';
+            return sessionId;
+        }
+
+        document.getElementById('setupForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            const deviceIds = [...list.querySelectorAll('input:checked')].map(input => input.value);
+            const channelMode = document.querySelector('input[name="dashboardChannelMode"]:checked')?.value;
+            const dashboardChannels = channelMode === 'AB' ? ['A', 'B'] : (channelMode ? [channelMode] : []);
+            if (!dashboardChannels.length) {
+                message.textContent = 'Sélectionnez le canal A, le canal B ou les deux.';
+                message.className = 'message error';
+                return;
+            }
+            if (!deviceIds.length) {
+                message.textContent = 'Sélectionnez au moins un ECU / Device.';
+                message.className = 'message error';
+                return;
+            }
+            if (['dm1', 'dm2', 'customer'].includes(activeMode)
+                && Number(document.getElementById('endDay').value) <= Number(document.getElementById('startDay').value)) {
+                message.textContent = 'Le jour de fin doit être supérieur au jour de départ.';
+                message.className = 'message error';
+                return;
+            }
+            try {
+                message.textContent = 'Préparation du calcul…';
+                message.className = 'message';
+                const id = await resolveSession();
+                if (!id) throw new Error('Aucune session de mesure disponible.');
+                const response = await fetch({{ url_for('configure_dashboard')|tojson }}, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: id,
+                        analysis_type: activeMode,
+                        temperature_c: document.getElementById('temperature').disabled
+                            ? null : Number(document.getElementById('temperature').value),
+                        start_day: Number(document.getElementById('startDay').value),
+                        end_day: Number(document.getElementById('endDay').value),
+                        biberonnage_id: activeMode === 'biberonnage'
+                            ? document.getElementById('feedingAnalysis').value : null,
+                        device_ids: deviceIds,
+                        dashboard_channels: dashboardChannels
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Configuration refusée.');
+                location.href = data.dashboard_url;
+            } catch (error) {
+                message.textContent = error.message;
+                message.className = 'message error';
+            }
+        });
+    </script>
+</body>
+</html>

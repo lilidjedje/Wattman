@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+**/.venv/
+**/.vscode/
+
+# Node.js
+node_modules/
+**/node_modules/
+
+# Build output and temporary work
+dist/
+desktop-build/
+desktop-runtime-new/
+win-unpacked/
+.asar-staging-*/
+.build-temp/
+.pyinstaller-cache/
+.test-temp/
+
+# Local data and test fixtures
+uploads/
+desktop-test-data*/
+can_server/data/
+can_server/Base_de_Donnees/
+can_server/Periode_ete/
+can_server/sources/
+*.db
+*.sqlite
+*.sqlite3
+*.asc
+
+# Local dependency caches and vendored wheels
+requirements/
+can_server/packages/
+can_server/wheels/
+
+# Duplicate project copy and machine-specific notes
+auto/
+a ajouter ou modifier.txt
+edit_gmv.html
+Datasheet.docx
+ExtraFeeding Ampere Tool_v1.3.xlsm

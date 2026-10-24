@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Acquisition ESP32-C3 multi INA226</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
+        <div>
+            <p class="eyebrow">ESP32-C3 multi INA226 / {{ 'Bus CAN' if acquisition_mode == 'can' else 'Wi-Fi direct' }}</p>
+            <h1>{{ 'Acquisition CAN pour CANalyzer' if acquisition_mode == 'can' else 'Acquisition numérique directe' }}</h1>
+        </div>
+        <a class="button secondary right" href="{{ url_for('logs') }}">Analyse de logs</a>
+    </header>
+
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span id="connectionState" class="status-led">Contrôle de la liaison ESP32-C3</span>
+            <span>Connexion directe PC ↔ ESP32-C3</span>
+            <span id="canState">{{ 'CAN : contrôle du MCP2515' if acquisition_mode == 'can' else 'CAN contourné · flux numérique Wi-Fi' }}</span>
+            <span>Multi INA226 : 0x40 / 0x41</span>
+        </div>
+
+        <div class="layout">
+            <section class="panel">
+                <div class="panel-title"><h2>Configuration de l’acquisition</h2></div>
+                <p class="form-intro">
+                    {% if acquisition_mode == 'can' %}
+                    Les deux voies INA226 sont émises sur le bus CAN pour être visualisées et enregistrées dans CANalyzer. Le fichier ASC obtenu pourra ensuite être chargé dans le dashboard.
+                    {% else %}
+                    Les deux voies INA226 sont reçues directement depuis l’ESP32-C3, traitées et enregistrées dans la base locale. Le dashboard sera disponible sans import ASC.
+                    {% endif %}
+                </p>
+                <form id="measurementForm" class="form-grid">
+                    <input type="hidden" name="acquisition_mode" value="{{ acquisition_mode }}">
+                    <input type="hidden" name="channelSelection" value="1">
+                    <p class="form-intro">Fréquence d’acquisition réelle et durée de mesure réglables séparément pour chaque canal.</p>
+                    {% for channel, address in [('A', '0x40'), ('B', '0x41')] %}
+                    <fieldset class="field channel-config">
+                        <legend>
+                            <label><input type="checkbox" name="active{{ channel }}" value="1" checked> Canal {{ channel }} / {{ address }}</label>
+                        </legend>
+                        <label>Fréquence d’acquisition du canal {{ channel }}
+                            <span class="inline-fields">
+                                <input type="number" name="freq{{ channel }}" value="1000" min="1" max="1000" step="1" required>
+                                <input value="Hz" aria-label="Unité hertz" disabled>
+                            </span>
+                        </label>
+                        <label>Durée de mesure du canal {{ channel }}
+                            <span class="inline-fields">
+                                <input type="number" name="dureeValeur{{ channel }}" value="10" min="1" step="1" required>
+                                <select name="dureeUnite{{ channel }}">
+                                    <option value="s">secondes</option>
+                                    <option value="m">minutes</option>
+                                    <option value="h">heures</option>
+                                    <option value="j">jours</option>
+                                </select>
+                            </span>
+                        </label>
+                    </fieldset>
+                    {% endfor %}
+                    <p class="form-intro">La somme des fréquences des canaux actifs est limitée à 2000 Hz.</p>
+                    <div class="actions">
+                        <button class="success" id="startButton" type="submit">Démarrer la mesure</button>
+                        <button class="danger" id="stopButtonA" type="button" disabled>Arrêter canal A</button>
+                        <button class="danger" id="stopButtonB" type="button" disabled>Arrêter canal B</button>
+                        <button class="danger" id="stopButton" type="button" disabled>Arrêter les deux canaux</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel">
+                <div class="panel-title"><h2>Supervision temps réel</h2></div>
+                <div class="status-board">
+                    <div class="metric"><span>État</span><strong id="globalState">Prêt</strong></div>
+                    <div class="metric"><span>Fréquence réelle canal A</span><strong id="frequencyValueA">0 Hz</strong></div>
+                    <div class="metric"><span>Fréquence réelle canal B</span><strong id="frequencyValueB">0 Hz</strong></div>
+                    <div class="metric"><span>Canal A — écoulé / durée</span><strong id="durationValueA">0 / 0 s</strong></div>
+                    <div class="metric"><span>Canal B — écoulé / durée</span><strong id="durationValueB">0 / 0 s</strong></div>
+                    <div class="metric"><span>Progression canal A</span><strong id="progressValueA">0 %</strong></div>
+                    <div class="metric"><span>Progression canal B</span><strong id="progressValueB">0 %</strong></div>
+                </div>
+                <p>Canal A — temps restant : <strong id="countdownA">00:00:00</strong></p>
+                <div class="progress-shell"><div class="progress-fill" id="progressFillA"></div></div>
+                <p>Canal B — temps restant : <strong id="countdownB">00:00:00</strong></p>
+                <div class="progress-shell"><div class="progress-fill" id="progressFillB"></div></div>
+                <div class="message" id="message">
+                    {% if request.args.get('dashboard_missing') %}
+                    Aucune mesure numérique n’est encore enregistrée. Lancez une acquisition avant d’ouvrir le dashboard.
+                    {% else %}
+                    En attente d’une commande.
+                    {% endif %}
+                </div>
+                <div class="channel-status">
+                    <article class="channel-box"><strong>INA226 A / 0x40</strong><p id="channelA">Inactif</p></article>
+                    <article class="channel-box"><strong>INA226 B / 0x41</strong><p id="channelB">Inactif</p></article>
+                </div>
+                <div class="actions" style="margin-top:18px">
+                    <a class="button secondary disabled-link" id="dashboardButton" href="#" aria-disabled="true">
+                        {{ 'Le chargement ASC sera disponible après la mesure' if acquisition_mode == 'can' else 'Le dashboard sera disponible après la mesure' }}
+                    </a>
+                    <a class="button secondary" href="{{ url_for('index') }}">Changer de source</a>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        const endpoints = {
+            control: {{ url_for('control_esp_acquisition')|tojson }},
+            status: {{ url_for('esp_target_config')|tojson }},
+            dashboardImport: {{ url_for('dashboard_import')|tojson }},
+            dashboardSetup: {{ url_for('dashboard_setup')|tojson }}
+        };
+        const acquisitionMode = {{ acquisition_mode|tojson }};
+        sessionStorage.setItem('measurementSourceMode', acquisitionMode);
+        const form = document.getElementById('measurementForm');
+        const message = document.getElementById('message');
+        const dashboardButton = document.getElementById('dashboardButton');
+        let pollTimer = null;
+        let currentSessionId = '';
+
+        function setMessage(text, kind = '') {
+            message.textContent = text;
+            message.className = `message ${kind}`.trim();
+        }
+        function formatSeconds(total) {
+            total = Math.max(0, Math.ceil(Number(total) || 0));
+            return [Math.floor(total / 3600), Math.floor(total % 3600 / 60), total % 60]
+                .map(value => String(value).padStart(2, '0')).join(':');
+        }
+        async function sendControl(payload) {
+            const response = await fetch(endpoints.control, { method: 'POST', body: payload });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Commande refusée.');
+            return data;
+        }
+        function renderStatus(data) {
+            document.getElementById('globalState').textContent = data.running ? 'MESURE' : 'PRÊT';
+            const can = data.can || {};
+            document.getElementById('canState').textContent = acquisitionMode === 'can'
+                ? (can.ready
+                    ? `CAN prêt · ${(can.bitrate || 500000) / 1000} kbit/s · quartz ${can.oscillator_mhz || '?'} MHz · ${can.tx_ok || 0} trames`
+                    : 'CAN : MCP2515 indisponible')
+                : 'CAN contourné · flux numérique Wi-Fi';
+            document.getElementById('startButton').disabled = Boolean(data.running);
+            document.getElementById('stopButton').disabled = !data.running;
+            ['A', 'B'].forEach(channel => {
+                const sensor = data.sensors?.[channel] || {};
+                document.getElementById(`stopButton${channel}`).disabled = !sensor.running;
+                const sensorDuration = Number(sensor.duration || 0);
+                const sensorElapsed = Number(sensor.elapsed || 0);
+                const sensorProgress = sensorDuration
+                    ? Math.min(100, sensorElapsed / sensorDuration * 100)
+                    : 0;
+                document.getElementById(`frequencyValue${channel}`).textContent = `${sensor.frequency || 0} Hz`;
+                document.getElementById(`durationValue${channel}`).textContent =
+                    `${formatSeconds(sensorElapsed)} / ${formatSeconds(sensorDuration)}`;
+                document.getElementById(`progressValue${channel}`).textContent = `${Math.round(sensorProgress)} %`;
+                document.getElementById(`progressFill${channel}`).style.width = `${sensorProgress}%`;
+                document.getElementById(`countdown${channel}`).textContent =
+                    formatSeconds(Math.max(0, sensorDuration - sensorElapsed));
+                document.getElementById(`channel${channel}`).textContent =
+                    `${sensor.running ? 'Acquisition active' : sensor.finished ? 'Terminée' : 'Inactive'} · ` +
+                    `${sensor.samples || 0} échantillons · ${sensor.lost || 0} pertes · ${sensor.frequency || 0} Hz · ` +
+                    `${sensor.elapsed || 0} / ${sensor.duration || 0} s`;
+            });
+            if (data.session?.id) {
+                currentSessionId = data.session.id;
+                if (acquisitionMode === 'digital' || !data.running) {
+                    dashboardButton.href = acquisitionMode === 'can'
+                        ? endpoints.dashboardImport
+                        : `${endpoints.dashboardSetup}?session_id=${encodeURIComponent(currentSessionId)}`;
+                    dashboardButton.textContent = acquisitionMode === 'can'
+                        ? 'Charger le fichier ASC de CANalyzer'
+                        : (data.running ? 'Ouvrir le dashboard en direct' : 'Afficher le dashboard des mesures');
+                    dashboardButton.classList.remove('disabled-link');
+                    dashboardButton.removeAttribute('aria-disabled');
+                }
+            }
+            if (!data.running && pollTimer) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                setMessage(
+                    acquisitionMode === 'can'
+                        ? 'Mesure CAN terminée. Enregistrez le log dans CANalyzer, puis chargez son fichier ASC.'
+                        : 'Mesure terminée. Les valeurs de l’ESP32-C3 sont déjà enregistrées et disponibles dans le dashboard.',
+                    'ok'
+                );
+            }
+        }
+        async function pollStatus(showError = true) {
+            try {
+                const response = await fetch(endpoints.status, { cache: 'no-store' });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'ESP32-C3 indisponible.');
+                document.getElementById('connectionState').textContent = 'ESP32-C3 connecté';
+                renderStatus(data);
+            } catch (error) {
+                document.getElementById('connectionState').textContent = 'ESP32-C3 hors ligne';
+                if (showError) setMessage(error.message, 'error');
+            }
+        }
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            try {
+                setMessage('Transmission de la fréquence et de la durée à l’ESP32-C3…');
+                const data = await sendControl(new FormData(form));
+                renderStatus(data.acquisition);
+                currentSessionId = data.session?.id || '';
+                if (acquisitionMode === 'digital' && currentSessionId) {
+                    dashboardButton.href = `${endpoints.dashboardSetup}?session_id=${encodeURIComponent(currentSessionId)}`;
+                    dashboardButton.textContent = 'Ouvrir le dashboard en direct';
+                    dashboardButton.classList.remove('disabled-link');
+                    dashboardButton.removeAttribute('aria-disabled');
+                } else {
+                    dashboardButton.classList.add('disabled-link');
+                    dashboardButton.setAttribute('aria-disabled', 'true');
+                    dashboardButton.href = '#';
+                    dashboardButton.textContent = 'Mesure en cours…';
+                }
+                setMessage(data.message, 'ok');
+                if (pollTimer) clearInterval(pollTimer);
+                pollTimer = setInterval(pollStatus, 1000);
+            } catch (error) {
+                setMessage(error.message, 'error');
+            }
+        });
+        async function stopSensor(sensor) {
+            const payload = new FormData();
+            payload.set('action', 'stop');
+            payload.set('sensor', sensor);
+            try {
+                const data = await sendControl(payload);
+                renderStatus({ ...data.acquisition, session: data.session });
+                setMessage(data.message, 'ok');
+            } catch (error) {
+                setMessage(error.message, 'error');
+            }
+        }
+        document.getElementById('stopButtonA').addEventListener('click', () => stopSensor('A'));
+        document.getElementById('stopButtonB').addEventListener('click', () => stopSensor('B'));
+        document.getElementById('stopButton').addEventListener('click', () => stopSensor('ALL'));
+        pollStatus(false);
+    </script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Calculator Hub</title>
+    <style>
+        :root { --ink: #152c4a; --muted: #64748b; --primary: #4f46e5; --surface: #ffffff; --canvas: #f3f6fb; }
+        * { box-sizing: border-box; }
+        body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; font-family: "Segoe UI", Tahoma, sans-serif; color: var(--ink); background: var(--canvas); }
+        main { width: min(760px, 100%); text-align: center; }
+        .mark { display: grid; place-items: center; width: 76px; height: 76px; margin: 0 auto 24px; color: #fff; font-size: 38px; font-weight: 800; background: linear-gradient(145deg, #ffb15b, #ff5f4d); clip-path: polygon(54% 0, 20% 53%, 47% 53%, 40% 100%, 81% 42%, 55% 42%); }
+        h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: 0; }
+        p { color: var(--muted); font-size: 1.12rem; margin: 14px 0 38px; }
+        .actions { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+        .action { min-width: 235px; border: 1px solid #dce3ee; border-radius: 8px; padding: 20px 26px; color: var(--ink); background: var(--surface); box-shadow: 0 6px 18px rgba(21, 44, 74, .08); font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: transform .2s, box-shadow .2s; }
+        .action:hover { transform: translateY(-3px); box-shadow: 0 12px 25px rgba(21, 44, 74, .15); }
+        .action.primary { color: #fff; border-color: var(--primary); background: var(--primary); }
+        
+        /* DIALOGUE & RECHERCHE */
+        dialog { width: min(680px, calc(100% - 32px)); border: 0; border-radius: 12px; padding: 28px; box-shadow: 0 24px 80px rgba(15, 23, 42, .3); }
+        dialog::backdrop { background: rgba(15, 23, 42, .42); }
+        dialog h2 { margin: 0 0 18px; text-align: left; color: var(--ink); }
+        
+        .search-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .search-filters input, .search-filters select { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; font-size: 0.92rem; outline-color: var(--primary); }
+        .search-filters input { flex: 2; min-width: 180px; }
+        .search-filters select { flex: 1; min-width: 140px; }
+
+        #projects { display: grid; gap: 10px; max-height: 50vh; overflow-y: auto; padding-right: 4px; }
+        
+        .project-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #dce3ee; border-radius: 8px; background: #fff; text-align: left; transition: all 0.2s; }
+        .project-card:hover { border-color: var(--primary); background: #f8fafc; }
+        
+        .project-info { flex: 1; cursor: pointer; }
+        .project-info strong { display: block; font-size: 1.05rem; color: var(--ink); }
+        .project-info span { display: block; margin-top: 4px; color: var(--muted); font-size: .88rem; }
+        .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: bold; background: #e0e7ff; color: #3730a3; margin-top: 5px; }
+
+        .btn-delete { border: 0; background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+        .btn-delete:hover { background: #fca5a5; }
+
+        .empty { padding: 24px 0; color: var(--muted); text-align: center; }
+        .close { margin-top: 18px; float: right; border: 0; background: transparent; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; }
+        @media (max-width: 560px) { .action { width: 100%; } .search-filters { flex-direction: column; } }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body>
+    <main>
+        <div class="mark" aria-hidden="true">+</div>
+        <h1>Engineering Calculator Hub</h1>
+        <p>Automotive Engineering Tools</p>
+        <div class="actions">
+            <button class="action primary" type="button" onclick="window.location.href='/import_project'">Nouveau projet</button>
+            <button class="action" type="button" id="load-project">Sélectionner un projet existant</button>
+        </div>
+    </main>
+
+    <dialog id="project-dialog">
+        <h2> Projets existants</h2>
+        
+        <!-- BARRE DE RECHERCHE ET FILTRES -->
+        <div class="search-filters">
+            <input type="text" id="search-input" placeholder=" Rechercher par nom, pilote, jalon...">
+            <select id="type-filter">
+                <option value="">Tous les types</option>
+                <option value="ICE">ICE</option>
+                <option value="EV">EV (Tous)</option>
+                <option value="SDV">EV - SDV</option>
+                <option value="Sweet 400">EV - Sweet 400</option>
+            </select>
+        </div>
+
+        <div id="projects"></div>
+        <button class="close" type="button" id="close-dialog">Fermer</button>
+    </dialog>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const dialog = document.getElementById('project-dialog');
+        const projectsContainer = document.getElementById('projects');
+        const searchInput = document.getElementById('search-input');
+        const typeFilter = document.getElementById('type-filter');
+
+        let allProjects = [];
+
+        function renderProjects() {
+            const query = searchInput.value.trim().toLowerCase();
+            const selectedType = typeFilter.value;
+
+            const filtered = allProjects.filter(project => {
+                const name = (project.name || '').toLowerCase();
+                const pilot = (project.pilotWattman || '').toLowerCase();
+                const milestone = (project.milestone || '').toLowerCase();
+                const type = project.projectType || '';
+                const arch = project.evArchitecture || '';
+
+                const matchesQuery = !query || name.includes(query) || pilot.includes(query) || milestone.includes(query);
+                
+                let matchesType = true;
+                if (selectedType === 'ICE') matchesType = type === 'ICE';
+                else if (selectedType === 'EV') matchesType = type === 'EV';
+                else if (selectedType === 'SDV') matchesType = type === 'EV' && arch === 'SDV';
+                else if (selectedType === 'Sweet 400') matchesType = type === 'EV' && arch === 'Sweet 400';
+
+                return matchesQuery && matchesType;
+            });
+
+            projectsContainer.replaceChildren();
+
+            if (!filtered.length) {
+                projectsContainer.innerHTML = '<p class="empty">Aucun projet ne correspond à vos critères.</p>';
+                return;
+            }
+
+            filtered.forEach((project) => {
+                const card = document.createElement('div');
+                card.className = 'project-card';
+
+                const info = document.createElement('div');
+                info.className = 'project-info';
+
+                const name = document.createElement('strong');
+                name.textContent = project.name || 'Projet sans nom';
+
+                const details = document.createElement('span');
+                details.textContent = `Date : ${project.date || 'N/C'} | Pilote : ${project.pilotWattman || 'N/C'} | Fiche : ${project.serverFilename || project.filename || 'Aucune'}`;
+
+                const typeText = project.projectType === 'EV' ? `EV (${project.evArchitecture || 'Non spécifié'})` : (project.projectType || 'ICE');
+                const badge = document.createElement('span');
+                badge.className = 'type-badge';
+                badge.textContent = typeText;
+
+                info.append(name, details, badge);
+
+                // Clic sur les détails -> Charger le projet
+                info.addEventListener('click', async () => {
+                    info.querySelector('span').textContent = 'Chargement des données...';
+                    try {
+                        await ProjectStorage.restoreProject(project);
+                        window.location.href = '/mode_selection';
+                    } catch (error) {
+                        alert(`Impossible de charger le projet : ${error.message}`);
+                    }
+                });
+
+                // Bouton de suppression
+               // Bouton de suppression
+const deleteBtn = document.createElement('button');
+deleteBtn.className = 'btn-delete';
+deleteBtn.textContent = ' Supprimer';
+deleteBtn.title = 'Supprimer ce projet';
+deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (confirm(`Voulez-vous vraiment supprimer définitivement le projet "${project.name}" ?`)) {
+        // CORRECTION : On passe l'objet project entier (ou son id/name)
+        await ProjectStorage.deleteProject(project);
+        
+        // Recharge la liste fraîche depuis le stockage local
+        allProjects = ProjectStorage.getProjects();
+        
+        // Rafraîchit l'affichage et les filtres de recherche
+        renderProjects();
+    }
+});
+
+                card.append(info, deleteBtn);
+                projectsContainer.appendChild(card);
+            });
+        }
+
+        document.getElementById('load-project').addEventListener('click', () => {
+            allProjects = ProjectStorage.getProjects();
+            searchInput.value = '';
+            typeFilter.value = '';
+            renderProjects();
+            dialog.showModal();
+        });
+
+        searchInput.addEventListener('input', renderProjects);
+        typeFilter.addEventListener('change', renderProjects);
+
+        document.getElementById('close-dialog').addEventListener('click', () => dialog.close());
+    </script>
+</body>
+</html>

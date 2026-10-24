@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Résultats autonomie DM</title>
+    <style>
+        :root {
+            --blue: #bdd0ec;
+            --cyan: #d7ffff;
+            --yellow: #fff900;
+            --pale-yellow: #ffffb8;
+            --green: #d0ffd0;
+            --cream: #fff2cc;
+            --ink: #111827;
+            --navy: #1f4e78;
+            --muted: #64748b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { margin: 0; background: #f3f6fb; color: var(--ink); font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; padding: 20px; }
+        
+        .topbar { 
+            max-width: 1580px; margin: 0 auto 20px; 
+            display: flex; align-items: center; justify-content: space-between; 
+            gap: 14px; flex-wrap: wrap; background: #fff; padding: 14px 22px; 
+            border-radius: 10px; border: 1px solid #dbe2ea; box-shadow: 0 2px 10px rgba(15,23,42,.06); 
+        }
+        .topbar h1 { margin: 0; font-size: 1.6rem; color: var(--navy); }
+        .topbar p { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
+        .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        
+        button, .button { border: 0; border-radius: 7px; padding: 9px 15px; font-weight: 700; cursor: pointer; text-decoration: none; font-size: 14px; font-family: inherit; }
+        .primary { background: #2563eb; color: white; }
+        .primary:hover { background: #1d4ed8; }
+        .secondary { background: #e8eef7; color: #20304a; border: 1px solid #bac8dd; }
+        .secondary:hover { background: #dce5f2; }
+        .danger { background: #fee2e2; color: #991b1b; }
+        .danger:hover { background: #fca5a5; }
+
+        /* SOMMAIRE RÉTRACTABLE */
+        .retractable-menu { position: relative; display: inline-block; text-align: left; }
+        .retractable-menu details { background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .retractable-menu summary { padding: 9px 16px; font-weight: 700; cursor: pointer; color: var(--navy); list-style: none; display: flex; align-items: center; gap: 8px; background: #ffffff; border-radius: 8px; user-select: none; }
+        .menu-content { position: absolute; right: 0; top: 110%; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 100; min-width: 220px; }
+        .btn-menu { border: 0; border-radius: 5px; padding: 9px 14px; color: white; font: inherit; font-weight: 700; cursor: pointer; text-align: left; width: 100%; display: flex; align-items: center; gap: 8px; }
+        .btn-save { background: #087f5b; } .btn-reset { background: #b45309; } .btn-autonomy { background: #64748b; } .btn-mode { background: #667eea; } .btn-home { background: #1e293b; }
+        .saved-status { min-height: 1.25em; color: #087f5b; font-size: .85rem; font-weight: 700; text-align: right; }
+
+        main { max-width: 1580px; margin: 0 auto; }
+        .profile { margin-bottom: 30px; border: 1px solid #cfd8e5; border-radius: 12px; background: white; overflow: hidden; box-shadow: 0 6px 22px rgba(15,23,42,.06); }
+        .profile-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; background: #eef3fa; border-bottom: 1px solid #cfd8e5; }
+        .profile-heading h2 { margin: 0; font-size: 18px; color: var(--navy); }
+        .profile-heading small { display: block; margin-top: 3px; color: var(--muted); }
+        
+        .mode-block { padding: 17px; }
+        .mode-block + .mode-block { border-top: 3px solid #334155; }
+        .mode-title { margin: 0 0 10px; padding: 8px 12px; background: #1f4e78; color: white; text-align: center; font-size: 17px; border-radius: 6px; }
+        
+        .table-scroll { overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 6px; background: white; }
+        table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+        th, td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: middle; }
+        th { text-align: center; }
+        
+        /* LARGEURS FIXES ET DÉFINIES POUR UN ALIGNEMENT PARFAIT */
+        col.col-section { width: 110px; }
+        col.col-function { width: 190px; }
+        col.col-parameter { width: 320px; }
+        col.col-value { width: 220px; }
+
+        .section-col { text-align: center; font-weight: 700; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .5px; }
+        .function-col { text-align: center; font-weight: 700; }
+        .parameter-col { text-align: left; }
+        .value-col { text-align: right; white-space: nowrap; }
+        
+        .ev-header { background: var(--blue); font-size: 16px; font-weight: bold; }
+        .battery-header { background: #fff; font-size: 15px; font-weight: bold; }
+        .scenario-header { background: var(--yellow); font-size: 15px; line-height: 1.2; font-weight: bold; }
+        .autonomy-row th { background: var(--blue); font-size: 15px; }
+        .autonomy-value { font-size: 16px; font-weight: 800; color: #1f4e78; }
+        .cyan { background: var(--cyan); }
+        .pale-yellow { background: var(--pale-yellow); }
+        .green { background: var(--green); }
+        .cream { background: var(--cream); }
+        .energy-label, .energy-value { color: #063ee8; font-weight: 800; }
+        .total-row td { background: #dcfce7; color: #064e3b; font-weight: 800; font-size: 13px; }
+        .warning { color: #d10a0a; }
+
+        dialog { width: min(440px, calc(100% - 30px)); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 22px 65px rgba(15,23,42,.25); margin: auto; }
+        dialog::backdrop { background: rgba(15,23,42,.5); }
+        .dialog-body { padding: 22px; }
+        .dialog-body h2 { margin: 0 0 18px; color: var(--navy); }
+        .field { display: grid; gap: 6px; margin-bottom: 15px; }
+        .field label { font-weight: 700; color: #334155; }
+        .field input { width: 100%; padding: 10px 11px; border: 1px solid #aeb9c8; border-radius: 7px; font-size: 15px; }
+        .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 20px; }
+        .footer-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; }
+
+        @media (max-width: 760px) {
+            .topbar { align-items: flex-start; flex-direction: column; }
+            .actions { justify-content: flex-start; width: 100%; }
+            .profile-heading { align-items: flex-start; }
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="preserve-table-colors">
+    <header class="topbar">
+        <div>
+            <h1 id="topbar-title"> Résultats Autonomie DM</h1>
+        </div>
+        <div class="actions">
+            <button class="primary" id="export-dm-excel" type="button">Export Excel File</button>
+            <button class="primary" id="addProfileButton" type="button">＋ Ajouter un profil</button>
+            
+            <div class="retractable-menu">
+                <details id="actions-details">
+                    <summary> Sommaire / Actions</summary>
+                    <div class="menu-content">
+                        <span class="saved-status" id="saved-status" aria-live="polite"></span>
+                        <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
+                        <button class="btn-menu btn-reset" type="button" id="reset-btn"> Valeurs initiales</button>
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
+                        <button class="btn-menu btn-autonomy" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                        <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
+                        <button class="btn-menu btn-home" type="button" onclick="navigateHome()"> Accueil</button>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <div id="profiles"></div>
+        <div class="footer-actions">
+            <a class="button secondary" href="/sleep_consumption">← Étape précédente : Consommation en veille</a>
+            <button class="primary" type="button" id="bottomAddProfile">＋ Ajouter un profil</button>
+        </div>
+    </main>
+
+    <dialog id="profileDialog">
+        <form method="dialog" id="profileForm" class="dialog-body">
+            <h2>Ajouter un profil batterie</h2>
+            <div class="field">
+                <label for="profileName">Nom du profil</label>
+                <input id="profileName" maxlength="60" placeholder="Ex. Batterie 70 Ah">
+            </div>
+            <div class="field">
+                <label for="profileCapacity">Capacité (Ah)</label>
+                <input id="profileCapacity" type="number" min="1" step="0.1" required placeholder="60">
+            </div>
+            <div class="dialog-actions">
+                <button class="secondary" value="cancel" type="button" id="cancelProfile">Annuler</button>
+                <button class="primary" value="default" type="submit">Créer le tableau</button>
+            </div>
+        </form>
+    </dialog>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        // Récupération du sous-mode sélectionné ('DM1' ou 'DM2')
+        const requestedSubMode = new URLSearchParams(window.location.search).get('mode');
+        const activeSubMode = ['DM1', 'DM2'].includes(requestedSubMode)
+            ? requestedSubMode
+            : (sessionStorage.getItem('batterySubMode') || 'DM1');
+        document.getElementById('topbar-title').textContent = ` Résultats Autonomie ${activeSubMode}`;
+
+        // Seulement 2 SCÉNARIOS (Unique colonne Logistique et unique colonne Sans Unplug)
+        const SCENARIOS = [
+            { key: 'baseLab', battery: 'L2', label: 'Logistique', capacityOffset: 0 },
+            { key: 'withoutAlarmTachy', battery: 'L2', label: 'Sans Unplug', capacityOffset: 0 }
+        ];
+
+        const DEFAULT_FIXED = {
+            cellBalancing: { current: 200, duration: 15, unit: 's', extra: { periodMin: 480, balancingDays: 30 }, calculation: 'cell' },
+            pcuRam: { current: 1, duration: 192, unit: 'h', calculation: 'energy' },
+            cdcRam: { current: 4.8, duration: 192, unit: 'h', calculation: 'energy' },
+            ivc3: { current: 0.4, duration: 0, unit: 'h', calculation: 'energy' },
+            handFree3: { current: 9, duration: 3, unit: 'jours', calculation: 'daily' },
+            handFree48: { current: 4.2, duration: 5, unit: 'jours', calculation: 'daily' },
+            first8: { current: 0, duration: 8, unit: 'h', calculation: 'first8' },
+            blm: { current: 0.7, duration: 0, unit: 'jours', calculation: 'daily' },
+            transport: { current: 0.72, duration: 10, unit: 'jours', calculation: 'daily' }
+        };
+
+        function readJson(key, fallback) {
+            try { return JSON.parse(sessionStorage.getItem(key)) || fallback; }
+            catch (_) { return fallback; }
+        }
+        function n(value, fallback = 0) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : fallback;
+        }
+        function format(value, digits = 2) {
+            return n(value).toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        }
+        function valueCell(value, unit = '', digits = 2, cls = 'cyan') {
+            return `<td class="value-col ${cls}">${format(value, digits)}${unit ? ' ' + unit : ''}</td>`;
+        }
+
+        // FONCTION GENERATRICE DE LIGNES CORRIGEE ET ALIGNEE
+        function row(section, sectionClass, fn, parameter, values, options = {}) {
+            if (options.colspan) {
+                const cls = options.energy ? 'energy-label' : 'parameter-col';
+                return `<tr><td colspan="${options.colspan}" class="${cls}">${parameter}</td>${values.map(v => valueCell(v.value, v.unit, v.digits, v.cls || (options.energy ? 'cyan energy-value' : 'cyan'))).join('')}</tr>`;
+            }
+
+            const sectionCell = section ? `<td class="section-col ${sectionClass}" rowspan="${options.rowspan || 1}">${section}</td>` : '';
+            
+            let fnCell = '';
+            if (fn || options.fnRowspan) {
+                const rsAttr = options.fnRowspan ? ` rowspan="${options.fnRowspan}"` : '';
+                fnCell = `<td class="function-col"${rsAttr}>${fn}</td>`;
+            }
+
+            const paramCls = options.energy ? 'energy-label' : 'parameter-col';
+            const paramCell = `<td class="${paramCls}">${parameter}</td>`;
+
+            return `<tr>${sectionCell}${fnCell}${paramCell}${values.map(v => valueCell(v.value, v.unit, v.digits, v.cls || (options.energy ? 'cyan energy-value' : 'cyan'))).join('')}</tr>`;
+        }
+
+        function entryEnergy(entry) {
+            const current = n(entry?.current);
+            const duration = n(entry?.duration);
+            const calculation = entry?.calculation || 'energy';
+            if (calculation === 'cell') {
+                const daily = (duration / 3600) * (current / 1000) * (24 * 60 / Math.max(n(entry?.extra?.periodMin, 480), 0.0001));
+                return daily * n(entry?.extra?.balancingDays, 30);
+            }
+            if (calculation === 'daily') return (current / 1000) * 24 * duration;
+            if (calculation === 'first8') return (current / 1000) * duration;
+            const durationHours = ({ h: duration, min: duration / 60, s: duration / 3600, jours: duration * 24 })[entry?.unit] || 0;
+            return (current / 1000) * durationHours;
+        }
+
+        function twtEnergy(item) {
+            return ((n(item?.ivcCurrent) + n(item?.powerlatchCurrent)) / 1000) * (n(item?.durationSeconds) / 3600);
+        }
+
+        function modeData(mode) {
+            const genericFixed = readJson('fixedConsumption', {});
+            const genericSleep = readJson('sleepConsumption', {});
+            const fixed = readJson(`fixedConsumption${mode}`, genericFixed);
+            const sleep = readJson(`sleepConsumption${mode}`, genericSleep);
+            const excel = readJson('excelData', {});
+            const modified = readJson(mode === 'DM2' ? 'modifiedDM2Currents' : 'modifiedDM1Currents', {});
+            const storedSelected = sessionStorage.getItem('selectedEcuKeys');
+            const selected = new Set(readJson('selectedEcuKeys', []));
+            const deletedDevices = new Set(readJson('deletedDarkDeviceKeys', []));
+            const customDevices = readJson('customDarkDevices', []);
+            let homologationMa = 0;
+            const sheet = excel['Device List'] || excel['ECU List'] || Object.values(excel)[0];
+            (sheet?.data || []).forEach((row, rowIndex) => {
+                const name = row['Device Name'] || row['ECU Name'] || `ECU ${rowIndex + 1}`;
+                const ecuKey = `${rowIndex}_${name}`;
+                if (deletedDevices.has(ecuKey)) return;
+                if (storedSelected !== null && !selected.has(ecuKey)) return;
+                const sourceColumn = mode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
+                homologationMa += n(modified[ecuKey] ?? row[sourceColumn] ?? row['Sleep Current (mA)']);
+            });
+            customDevices.forEach(device => {
+                const key = `custom:${device.id}`;
+                homologationMa += n(modified[key] ?? device.current);
+            });
+            return { fixed, sleep, homologationMa };
+        }
+
+        function getFixedScenario(store, key) {
+            const source = store?.configurations?.[key] || store?.[key] || {};
+            const entries = { ...DEFAULT_FIXED, ...(source.entries || source) };
+            Object.keys(DEFAULT_FIXED).forEach(name => entries[name] = { ...DEFAULT_FIXED[name], ...(entries[name] || {}) });
+            return { entries, custom: Array.isArray(source.custom) ? source.custom : [] };
+        }
+
+        function getSleepScenario(store, key) {
+            const source = store?.configurations?.[key] || store?.[key] || {};
+            return {
+                sansEbdu: n(source.sansEbdu),
+                alarm: n(source.alarm),
+                agingSoc: n(source.agingSoc, 0.08),
+                twt: {
+                    single: source?.twt?.single || source?.twt?.periodic || source?.twt?.movement || {}
+                },
+                custom: readJson(`customSleepFunctions_${activeSubMode}`, [])
+            };
+        }
+
+        function computeColumn(mode, scenario, baseCapacity) {
+            const globalConfig = readJson('batteryConfiguration', {});
+            const wakeConfig = readJson(`wakeParams_${mode}`, globalConfig);
+            const sleepVehicleConfig = readJson(`vehicleSleep_${mode}`, {
+                count: globalConfig.vehicleSleepCount ?? 1,
+                energyAh: globalConfig.vehicleSleepEnergyAh ?? 0.08
+            });
+
+            const data = modeData(mode);
+            const capacity = Math.max(1, baseCapacity + scenario.capacityOffset);
+            const startSoc = n(globalConfig.startingSoc, 90);
+            const minSoc = n(globalConfig.minimumSoc, 70);
+            const gross = capacity * Math.max(0, startSoc - minSoc) / 100;
+            
+            const vehicleCount = 1;
+            const vehicleUnit = n(sleepVehicleConfig.energyAh, 0.08);
+            const vehicleTotal = vehicleCount * vehicleUnit;
+
+            const fixed = getFixedScenario(data.fixed, scenario.key);
+            const deletedFixed = new Set(readJson(`deletedFixedFunctionIds_${mode}`, []));
+            const fixedNames = ['cellBalancing', 'pcuRam', 'cdcRam', 'ivc3', 'handFree3', 'handFree48', 'first8', 'blm', 'transport'];
+            const fixedTotal = fixedNames.filter(key => !deletedFixed.has(key)).reduce((sum, key) => sum + entryEnergy(fixed.entries[key]), 0)
+                + fixed.custom.reduce((sum, item) => sum + entryEnergy(item), 0);
+            const available = gross - vehicleTotal - fixedTotal;
+
+            const sleep = getSleepScenario(data.sleep, scenario.key);
+            
+            const wakePeriod = Math.max(n(wakeConfig.wakePeriodHours, 8), 0.0001);
+            const wakeDuration = n(wakeConfig.wakeDurationSeconds, 2);
+            const wakeCurrent = n(wakeConfig.wakeCurrentMa, 536);
+            const balancingDuration = n(wakeConfig.wakeCellBalancingDurationSeconds, 60);
+            const balancingCurrent = n(wakeConfig.wakeCellBalancingCurrentMa, 4359);
+            const wakesPerDay = 24 / wakePeriod;
+            const technicalWake = ((wakeCurrent / 1000) * (wakeDuration / 3600) + (balancingCurrent / 1000) * (balancingDuration / 3600)) * wakesPerDay;
+
+            const instantaneous = data.homologationMa;
+            const sleepCurrentEnergy = instantaneous / 1000 * 24;
+            const alarmEnergy = sleep.alarm / 1000 * 24;
+            const sansEbduEnergy = sleep.sansEbdu / 1000 * 24;
+            const deletedSleep = new Set(readJson(`deletedSleepFunctionIds_${mode}`, []));
+            const twtSingleEnergy = deletedSleep.has('twt') ? 0 : twtEnergy(sleep.twt.single);
+            const agingEnergy = capacity * sleep.agingSoc / 100;
+            const customSleepEnergy = readJson(`customSleepFunctions_${mode}`, []).reduce((sum, item) => {
+                const scenarioCurrent = item?.values?.[scenario.key] ?? item.current;
+                return sum + n(scenarioCurrent) / 1000 * 24;
+            }, 0);
+            
+            const dailyTotal = sleepCurrentEnergy + technicalWake
+                + (deletedSleep.has('alarm') ? 0 : alarmEnergy)
+                + (deletedSleep.has('sansEbdu') ? 0 : sansEbduEnergy)
+                + twtSingleEnergy
+                + (deletedSleep.has('aging') ? 0 : agingEnergy)
+                + customSleepEnergy;
+            
+            return { scenario, capacity, startSoc, minSoc, gross, vehicleCount, vehicleUnit, vehicleTotal, fixed, fixedTotal, available, sleep, wakePeriod, wakeDuration, wakeCurrent, balancingDuration, balancingCurrent, technicalWake, instantaneous, sleepCurrentEnergy, alarmEnergy, sansEbduEnergy, twtSingleEnergy, agingEnergy, customSleepEnergy, dailyTotal, autonomy: dailyTotal > 0 ? Math.max(0, available) / dailyTotal : 0 };
+        }
+
+        function fixedEntryRows(columns, key, label, section = '', rowspan = 0) {
+            const entries = columns.map(c => c.fixed.entries[key]);
+            const unit = entries[0]?.unit === 's' ? 's' : entries[0]?.unit === 'jours' ? 'jours' : entries[0]?.unit || 'h';
+            let html = row(section, 'green', label, key === 'transport' ? 'Conso HFM' : 'Consommation', entries.map(e => ({ value: n(e.current), unit: 'mA', digits: 2 })), { rowspan, fnRowspan: key === 'transport' ? 4 : 3 });
+            if (key === 'transport') {
+                html += row('', '', '', 'Ah/jour du Welcome Access', entries.map(e => ({ value: n(e.current) / 1000 * 24, unit: 'Ah/j', digits: 3 })));
+                html += row('', '', '', "Durée d'activité de la fonction", entries.map(e => ({ value: n(e.duration), unit, digits: 1 })));
+            } else {
+                html += row('', '', '', 'Durée', entries.map(e => ({ value: n(e.duration), unit, digits: 1 })));
+            }
+            html += row('', '', '', 'Énergie', entries.map(e => ({ value: entryEnergy(e), unit: 'Ah', digits: 3 })), { energy: true });
+            return html;
+        }
+
+        function twtRows(columns) {
+            const items = columns.map(c => c.sleep.twt.single);
+            let html = row('', 'cream', 'TWT', 'Conso IVC', items.map(i => ({ value: n(i.ivcCurrent), unit: 'mA', digits: 1 })), { fnRowspan: 5 });
+            html += row('', '', '', 'Powerlatch VH', items.map(i => ({ value: n(i.powerlatchCurrent), unit: 'mA', digits: 1 })));
+            html += row('', '', '', "Durée d'envoi", items.map(i => ({ value: n(i.durationSeconds), unit: 's', digits: 1 })));
+            html += row('', '', '', 'Ah/jour', columns.map(c => ({ value: c.twtSingleEnergy, unit: 'Ah/j', digits: 5 })), { energy: true });
+            html += row('', '', '', 'Énergie', columns.map(c => ({ value: c.twtSingleEnergy, unit: 'Ah', digits: 5 })), { energy: true });
+            return html;
+        }
+
+        function customFixedRows(columns) {
+            const max = Math.max(...columns.map(column => column.fixed.custom.length), 0);
+            let html = '';
+            for (let index = 0; index < max; index++) {
+                const entries = columns.map(column => column.fixed.custom[index] || {});
+                const name = entries.find(entry => entry.name)?.name || `Fonction ajoutée ${index + 1}`;
+                html += row('', 'green', name, 'Consommation', entries.map(entry => ({ value: n(entry.current), unit: 'mA', digits: 2 })), { fnRowspan: 3 });
+                html += row('', '', '', 'Durée', entries.map(entry => ({ value: n(entry.duration), unit: entry.unit || 'h', digits: 2 })));
+                html += row('', '', '', 'Énergie', entries.map(entry => ({ value: entryEnergy(entry), unit: 'Ah', digits: 4 })), { energy: true });
+            }
+            return html;
+        }
+
+        function customSleepRows(mode) {
+            return readJson(`customSleepFunctions_${mode}`, []).map(item => {
+                const values = SCENARIOS.map(scenario => n(item?.values?.[scenario.key] ?? item.current));
+                return row('', 'cream', item.name, 'Conso', values.map(value => ({ value, unit: 'mA', digits: 2 })), { fnRowspan: 2 })
+                    + row('', '', '', 'Consommation', values.map(value => ({ value: value / 1000 * 24, unit: 'Ah/j', digits: 4 })), { energy: true });
+            }).join('');
+        }
+
+        function renderMode(mode, capacity) {
+            const cols = SCENARIOS.map(s => computeColumn(mode, s, capacity));
+            const deletedFixed = new Set(readJson(`deletedFixedFunctionIds_${mode}`, []));
+            const deletedSleep = new Set(readJson(`deletedSleepFunctionIds_${mode}`, []));
+            const fixedSpecs = [
+                ['cellBalancing', 'Cell Balancing (VE/Hybrides)', 3],
+                ['pcuRam', 'PCU Suspend to RAM', 3],
+                ['cdcRam', 'CDC Suspend to RAM', 3],
+                ['ivc3', 'IVC3', 3],
+                ['transport', 'Transport', 4]
+            ].filter(([key]) => !deletedFixed.has(key));
+            const customFixedCount = Math.max(...cols.map(column => column.fixed.custom.length), 0);
+            const fixedSectionRows = fixedSpecs.reduce((sum, spec) => sum + spec[2], 0) + customFixedCount * 3;
+            const fixedHtml = fixedSpecs.map(([key, label], index) =>
+                fixedEntryRows(cols, key, label, index === 0 ? 'Consommations fixes' : '', index === 0 ? fixedSectionRows : 0)
+            ).join('') + customFixedRows(cols);
+            const customSleepCount = readJson(`customSleepFunctions_${mode}`, []).length;
+            const sleepSectionRows = 8
+                + (deletedSleep.has('alarm') ? 0 : 2)
+                + (deletedSleep.has('sansEbdu') ? 0 : 2)
+                + (deletedSleep.has('twt') ? 0 : 5)
+                + (deletedSleep.has('aging') ? 0 : 2)
+                + customSleepCount * 2;
+
+            return `<section class="mode-block" data-mode="${mode}">
+                <h3 class="mode-title">Autonomie ${mode}</h3>
+                <div class="table-scroll">
+                <table>
+                    <colgroup>
+                        <col class="col-section">
+                        <col class="col-function">
+                        <col class="col-parameter">
+                        <col class="col-value">
+                        <col class="col-value">
+                    </colgroup>
+                    <thead>
+                        <tr><th colspan="3"></th><th class="ev-header" colspan="2">EV</th></tr>
+                        <tr><th colspan="3"></th>${cols.map(c => `<th class="battery-header">${c.scenario.battery} ${format(c.capacity, c.capacity % 1 ? 1 : 0)}Ah</th>`).join('')}</tr>
+                        <tr><th colspan="3"></th>${cols.map(c => `<th class="scenario-header">${c.scenario.label}</th>`).join('')}</tr>
+                        <tr class="autonomy-row"><th colspan="3">Autonomie ${mode}</th>${cols.map(c => `<th><span class="autonomy-value ${c.autonomy < 5 ? 'warning' : ''}">${format(c.autonomy, 1)} jours</span></th>`).join('')}</tr>
+                    </thead>
+                    <tbody>
+                        ${row('Batterie', 'pale-yellow', '', 'Capacité batterie', cols.map(c => ({ value: c.capacity, unit: 'Ah', digits: c.capacity % 1 ? 1 : 0 })), { rowspan: 4, fnRowspan: 4 })}
+                        ${row('', '', '', 'SOC de départ', cols.map(c => ({ value: c.startSoc, unit: '%', digits: 0 })))}
+                        ${row('', '', '', 'SOC minimum en veille', cols.map(c => ({ value: c.minSoc, unit: '%', digits: 0 })))}
+                        ${row('', '', '', 'Énergie disponible brute', cols.map(c => ({ value: c.gross, unit: 'Ah', digits: 2 })), { energy: true })}
+                        
+                        ${row('Avant veille', 'pale-yellow', 'Endormissement véhicule', 'Énergie par endormissement', cols.map(c => ({ value: c.vehicleUnit, unit: 'Ah', digits: 3 })), { rowspan: 2, fnRowspan: 2 })}
+                        ${row('', '', '', 'Énergie', cols.map(c => ({ value: c.vehicleTotal, unit: 'Ah', digits: 3 })), { energy: true })}
+                        
+                        ${fixedHtml}
+                        
+                        ${row('', '', '', 'Énergie disponible en début de veille', cols.map(c => ({ value: c.available, unit: 'Ah', digits: 2 })), { energy: true, colspan: 3 })}
+                        
+                        ${row('Veille', 'cream', 'Courant veille', 'Conso veille instantanée', cols.map(c => ({ value: c.instantaneous, unit: 'mA', digits: 3 })), { rowspan: sleepSectionRows, fnRowspan: 2 })}
+                        ${row('', '', '', 'Consommation', cols.map(c => ({ value: c.sleepCurrentEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
+                        
+                        ${row('', '', 'Réveil technique périodique', 'Périodicité', cols.map(c => ({ value: c.wakePeriod, unit: 'heures', digits: 1 })), { fnRowspan: 6 })}
+                        ${row('', '', '', 'Durée réveil technique', cols.map(c => ({ value: c.wakeDuration, unit: 's', digits: 1 })))}
+                        ${row('', '', '', 'Conso réveil technique', cols.map(c => ({ value: c.wakeCurrent, unit: 'mA', digits: 1 })))}
+                        ${row('', '', '', 'Durée Cell Balancing', cols.map(c => ({ value: c.balancingDuration, unit: 's', digits: 1 })))}
+                        ${row('', '', '', 'Conso Cell Balancing', cols.map(c => ({ value: c.balancingCurrent, unit: 'mA', digits: 1 })))}
+                        ${row('', '', '', 'Consommation', cols.map(c => ({ value: c.technicalWake, unit: 'Ah/j', digits: 5 })), { energy: true })}
+                        
+                        ${deletedSleep.has('alarm') ? '' : row('', '', 'ALARME', 'Conso alarme', cols.map(c => ({ value: c.sleep.alarm, unit: 'mA', digits: 2 })), { fnRowspan: 2 })}
+                        ${deletedSleep.has('alarm') ? '' : row('', '', '', 'Consommation', cols.map(c => ({ value: c.alarmEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
+                        
+                        ${deletedSleep.has('sansEbdu') ? '' : row('', '', 'Sans e-BDU s53', 'Conso', cols.map(c => ({ value: c.sleep.sansEbdu, unit: 'mA', digits: 2 })), { fnRowspan: 2 })}
+                        ${deletedSleep.has('sansEbdu') ? '' : row('', '', '', 'Consommation', cols.map(c => ({ value: c.sansEbduEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
+                        
+                        ${deletedSleep.has('twt') ? '' : twtRows(cols)}
+
+                        ${customSleepRows(mode)}
+                        
+                        ${deletedSleep.has('aging') ? '' : row('', '', 'Vieillissement batterie', 'SOC vieillissement (% par jour)', cols.map(c => ({ value: c.sleep.agingSoc, unit: '%', digits: 2 })), { fnRowspan: 2 })}
+                        ${deletedSleep.has('aging') ? '' : row('', '', '', 'Consommation', cols.map(c => ({ value: c.agingEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
+                        
+                        <tr class="total-row"><td colspan="3">Consommation en veille totale</td>${cols.map(c => `<td class="value-col">${format(c.dailyTotal, 4)} Ah/j</td>`).join('')}</tr>
+                    </tbody>
+                </table>
+                </div>
+            </section>`;
+        }
+
+        function getProfiles() {
+            const config = readJson('batteryConfiguration', {});
+            const baseCapacity = Math.max(1, n(config.capacityAh, 60));
+            const custom = readJson('dmBatteryProfiles', []);
+            return [{ id: 'main', name: 'Profil principal', capacity: baseCapacity, removable: false }, ...custom];
+        }
+
+        function render() {
+            const host = document.getElementById('profiles');
+            const profiles = getProfiles();
+            
+            // Affichage exclusif pour le mode actif (DM1 ou DM2)
+            host.innerHTML = profiles.map(profile => `<article class="profile" data-profile-id="${profile.id}">
+                <div class="profile-heading">
+                    <div><h2>${escapeHtml(profile.name)}</h2><small>Capacité L2 : ${format(profile.capacity, profile.capacity % 1 ? 1 : 0)} Ah</small></div>
+                    ${profile.removable ? `<button type="button" class="danger remove-profile" data-id="${profile.id}">Supprimer</button>` : ''}
+                </div>
+                ${renderMode(activeSubMode, n(profile.capacity))}
+            </article>`).join('');
+            
+            document.querySelectorAll('.remove-profile').forEach(button => button.addEventListener('click', () => {
+                const profiles = readJson('dmBatteryProfiles', []).filter(item => item.id !== button.dataset.id);
+                sessionStorage.setItem('dmBatteryProfiles', JSON.stringify(profiles));
+                render();
+            }));
+        }
+
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = String(value || '');
+            return div.innerHTML;
+        }
+
+        const dialog = document.getElementById('profileDialog');
+        function openDialog() {
+            const count = readJson('dmBatteryProfiles', []).length + 2;
+            document.getElementById('profileName').value = `Profil ${count}`;
+            document.getElementById('profileCapacity').value = '';
+            dialog.showModal();
+            document.getElementById('profileCapacity').focus();
+        }
+
+        document.getElementById('addProfileButton').addEventListener('click', openDialog);
+        document.getElementById('bottomAddProfile').addEventListener('click', openDialog);
+        document.getElementById('export-dm-excel').addEventListener('click', async (event) => {
+            const button = event.currentTarget;
+            const config = readJson('batteryConfiguration', {});
+            const capacity = Math.max(1, n(config.capacityAh, 60));
+            const results = SCENARIOS.map(scenario => {
+                const column = computeColumn(activeSubMode, scenario, capacity);
+                return {
+                    scenario: scenario.key,
+                    autonomy: column.autonomy,
+                    capacity: column.capacity,
+                    startSoc: column.startSoc,
+                    minSoc: column.minSoc,
+                    gross: column.gross,
+                    vehicleUnit: column.vehicleUnit,
+                    instantaneous: column.instantaneous,
+                    sleepCurrentEnergy: column.sleepCurrentEnergy,
+                    technicalWake: column.technicalWake,
+                    alarmCurrent: column.sleep.alarm,
+                    alarmEnergy: column.alarmEnergy,
+                    sansEbduCurrent: column.sleep.sansEbdu,
+                    sansEbduEnergy: column.sansEbduEnergy,
+                    twtIvc: column.sleep.twt.single.ivcCurrent,
+                    twtPowerlatch: column.sleep.twt.single.powerlatchCurrent,
+                    twtDuration: column.sleep.twt.single.durationSeconds,
+                    dailyTotal: column.dailyTotal
+                };
+            });
+            const activeProject = ProjectStorage.getActiveProject?.() || {};
+            button.disabled = true;
+            button.textContent = 'Génération en cours…';
+            try {
+                const response = await fetch('/export_dm_results_excel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: activeSubMode, project: activeProject, results })
+                });
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error || 'Export impossible.');
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Consoveille_Resultats_${activeSubMode}.xlsx`;
+                document.body.append(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Export Excel File';
+            }
+        });
+        document.getElementById('cancelProfile').addEventListener('click', () => dialog.close());
+        document.getElementById('profileForm').addEventListener('submit', event => {
+            event.preventDefault();
+            const capacity = n(document.getElementById('profileCapacity').value);
+            if (capacity <= 0) return;
+            const profiles = readJson('dmBatteryProfiles', []);
+            profiles.push({
+                id: `profile-${Date.now()}`,
+                name: document.getElementById('profileName').value.trim() || `Batterie ${format(capacity, 1)} Ah`,
+                capacity,
+                removable: true
+            });
+            sessionStorage.setItem('dmBatteryProfiles', JSON.stringify(profiles));
+            dialog.close();
+            render();
+        });
+
+        ProjectStorage.bindSaveButton('project-save', 'saved-status');
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (confirm('Restaurer les profils batterie par défaut ?')) {
+                sessionStorage.removeItem('dmBatteryProfiles');
+                render();
+                document.getElementById('saved-status').textContent = 'Valeurs réinitialisées.';
+            }
+        });
+
+        function navigateHome() {
+            const activeProject = ProjectStorage.getActiveProject();
+            if (activeProject && activeProject.name) {
+                window.location.href = '/';
+            } else {
+                alert("Veuillez d'abord enregistrer le projet pour pouvoir revenir à la page d'accueil.");
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const details = document.getElementById('actions-details');
+            if (details && !details.contains(e.target)) details.removeAttribute('open');
+        });
+
+        render();
+    </script>
+</body>
+</html>

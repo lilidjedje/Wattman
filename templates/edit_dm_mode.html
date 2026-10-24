@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Mode DM</title>
+    <style>
+        :root { 
+            --navy: #1f4e78; 
+            --canvas: #edf3f7; 
+            --line: #b7c9d6; 
+            --primary: #2563eb; 
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+        .header {
+            max-width: 1800px; margin: 0 auto 20px; color: white;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+        }
+        .header h1 { font-size: 2.2em; display: flex; align-items: center; gap: 10px; }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: 600; transition: all 0.3s ease; font-size: 1em;
+        }
+        .btn-back { background: rgba(255, 255, 255, 0.2); color: white; border: 2px solid white; }
+        .btn-back:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
+        .btn-results { background: #27ae60; color: white; }
+        .btn-results:hover { background: #229954; transform: translateY(-2px); }
+
+        .stepper { 
+            max-width: 1800px; margin: 0 auto 24px; 
+            display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); 
+            gap: 12px; padding: 14px; border-radius: 12px; background: white; 
+            box-shadow: 0 4px 15px rgba(0, 0, 0, .12); 
+        }
+        .step { 
+            border: 0; border-radius: 8px; padding: 12px; color: #52647d; 
+            background: #f1f5f9; font: inherit; font-weight: 700; cursor: pointer; text-align: center; 
+        }
+        .step:hover { background: #e4e8ff; color: #4f46e5; }
+        .step.active { color: white; background: #4f46e5; }
+        
+        .retractable-menu { position: relative; display: inline-block; text-align: left; }
+        .retractable-menu details { background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .retractable-menu summary { padding: 10px 18px; font-weight: 700; cursor: pointer; color: var(--navy); list-style: none; display: flex; align-items: center; gap: 8px; background: #ffffff; border-radius: 8px; user-select: none; }
+        .menu-content { position: absolute; right: 0; top: 110%; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 100; min-width: 220px; }
+        .btn-menu { border: 0; border-radius: 5px; padding: 9px 14px; color: white; font: inherit; font-weight: 700; cursor: pointer; text-align: left; width: 100%; display: flex; align-items: center; gap: 8px; }
+        .btn-save { background: #087f5b; } .btn-reset { background: #b45309; } .btn-autonomy { background: #64748b; } .btn-mode { background: #667eea; } .btn-home { background: #1e293b; }
+        .saved-status { min-height: 1.25em; color: #087f5b; font-size: .85rem; font-weight: 700; text-align: right; }
+
+        .container { max-width: 1800px; margin: 0 auto; }
+        .filename { color: rgba(255, 255, 255, 0.9); font-size: 1.1em; text-align: center; margin-bottom: 20px; }
+        
+        .table-wrapper {
+            background: white; border-radius: 12px; overflow-x: auto;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); margin-bottom: 30px;
+        }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: sticky; top: 0; z-index: 10; }
+        th {
+            color: white; padding: 12px 8px; font-weight: 600; font-size: 0.8em;
+            border: 1px solid rgba(255, 255, 255, 0.2); min-width: 85px;
+        }
+        th.sticky-col { position: sticky; left: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); z-index: 11; min-width: 180px; }
+        th.sticky-col2 { position: sticky; left: 180px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); z-index: 11; min-width: 140px; width: 140px; }
+        th.highlight-day { background: #ffd200 !important; color: #2d3748 !important; }
+        
+        tbody tr { border-bottom: 1px solid #ecf0f1; }
+        tbody tr:nth-child(even) { background: #f8f9ff; }
+        td { padding: 6px; color: #333; font-size: 0.85em; border: 1px solid #e2e8f0; }
+        
+        td.sticky-col { position: sticky; left: 0; background: white; text-align: left; font-weight: 500; padding-left: 15px; border-right: 2px solid #cbd5e1; }
+        td.sticky-col2 { position: sticky; left: 180px; background: #f8fafc; font-weight: 600; border-right: 2px solid #cbd5e1; min-width: 140px; width: 140px; }
+        tr:nth-child(even) td.sticky-col { background: #f8f9ff; }
+        tr:nth-child(even) td.sticky-col2 { background: #f1f5f9; }
+
+        .homologation-input {
+            width: 100%; max-width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px;
+            text-align: center; font-size: 0.95em; font-weight: 600; background: white;
+        }
+        .homologation-input:focus { outline: none; border-color: #667eea; }
+        .homologation-input.modified { border-color: #f39c12; background: #fef5e7; color: #b7791f; }
+
+        select.profile-select {
+            width: 100%; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px;
+            text-align: center; font-size: 0.9em; font-weight: bold; background: white; cursor: pointer;
+        }
+        select.profile-select.modified { border-color: #f39c12; background: #fef5e7; color: #b7791f; }
+        
+        .button-group { display: flex; gap: 15px; justify-content: center; margin-top: 30px; }
+        .empty-state { background: white; border-radius: 12px; padding: 60px; text-align: center; color: #999; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="matrix-edit-page preserve-table-colors dm-matrix-page">
+    <div class="header">
+        <button class="btn btn-back" onclick="window.location.href='/battery_menu'">← Changer de Mode</button>
+        <h1 id="page-title">Configuration Autonomie : Mode DM1</h1>
+        <div class="header-actions">
+            <div class="retractable-menu">
+                <details id="actions-details">
+                    <summary> Sommaire / Actions</summary>
+                    <div class="menu-content">
+                        <span class="saved-status" id="saved-status" aria-live="polite"></span>
+                        <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
+                        <button class="btn-menu btn-reset" type="button" id="reset-btn"> Valeurs initiales</button>
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
+                        <button class="btn-menu btn-autonomy" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                        <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
+                        <button class="btn-menu btn-home" type="button" onclick="navigateHome()"> Accueil</button>
+                    </div>
+                </details>
+            </div>
+        </div>
+    </div>
+
+    <nav class="stepper" aria-label="Étapes de configuration DM">
+        <button class="step active" type="button" onclick="window.location.href='/edit_dm_mode'">1. Courants DM</button>
+        <button class="step" type="button" onclick="window.location.href='/fixed_consumption'">2. Consommations forfaitaires</button>
+        <button class="step" type="button" onclick="window.location.href='/sleep_consumption'">3. Consommation en veille</button>
+    </nav>
+
+    <div class="container">
+        <div class="table-wrapper" id="table-wrapper">
+            <table>
+                <thead>
+                    <tr id="main-headers">
+                        <th class="sticky-col">Device Name</th>
+                        <th class="sticky-col2" style="background-color: #4a5568;">Current</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <div class="button-group">
+            <button class="btn btn-back" onclick="window.location.href='/battery_menu'">← Retour</button>
+            <button class="btn btn-results" onclick="window.location.href='/fixed_consumption'">Étape suivante : Consommations Forfaitaires →</button>
+        </div>
+    </div>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const batterySubMode = sessionStorage.getItem('batterySubMode') || 'DM1';
+        document.title = `Configuration ${batterySubMode}`;
+        document.getElementById('page-title').textContent = ` Configuration Autonomie : Mode ${batterySubMode}`;
+
+        const currentStorageKey = `modified${batterySubMode}Currents`;
+        const matrixStorageKey = `${batterySubMode.toLowerCase()}ModeMatrix`;
+
+        const daysColumns = ["0,0 jours", "0,3 jours"];
+        for(let d = 1.0; d <= 90.0; d += 0.5) {
+            daysColumns.push(d.toFixed(1).replace('.', ',') + " jours");
+        }
+
+        const headerRow = document.getElementById('main-headers');
+        daysColumns.forEach(day => {
+            const th = document.createElement('th');
+            th.textContent = day;
+            if(day.includes("1,0") || day.includes("3,0") || day.includes("8,0")) {
+                th.className = "highlight-day";
+            }
+            headerRow.appendChild(th);
+        });
+
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        let dmModeMatrix = JSON.parse(sessionStorage.getItem(matrixStorageKey) || '{}');
+        let modifiedDmCurrents = JSON.parse(sessionStorage.getItem(currentStorageKey) || '{}');
+        
+        // SOURCE : 'Device List' prioritaire, sinon 'ECU List'
+        let sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
+        const storedKeys = sessionStorage.getItem('selectedEcuKeys');
+        const selectedKeys = storedKeys !== null ? new Set(JSON.parse(storedKeys)) : null;
+        const tbody = document.getElementById('table-body');
+
+        if (sheet && sheet.data && sheet.data.length > 0) {
+            let renderedCount = 0;
+            sheet.data.forEach((row, rowIndex) => {
+                const itemName = row['Device Name'] || row['ECU Name'] || `Item ${rowIndex + 1}`;
+                const sourceColumn = batterySubMode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
+                
+                const rawVal = row[sourceColumn] ?? row['Current (A)'] ?? row['Sleep Current (mA)'] ?? row['Homologation Current (mA)'];
+                const originalCurrent = rawVal !== null && rawVal !== undefined && rawVal !== '' ? rawVal : 0;
+                
+                const itemKey = `${rowIndex}_${itemName}`;
+                if (selectedKeys !== null && !selectedKeys.has(itemKey)) return;
+                
+                renderedCount++;
+                const tr = document.createElement('tr');
+                
+                const tdName = document.createElement('td');
+                tdName.className = 'sticky-col';
+                tdName.textContent = itemName;
+                tr.appendChild(tdName);
+
+                const tdDark = document.createElement('td');
+                tdDark.className = 'sticky-col2';
+                const currentInput = document.createElement('input');
+                currentInput.type = 'number';
+                currentInput.step = '0.01';
+                currentInput.className = 'homologation-input';
+
+                const savedCurrent = modifiedDmCurrents[itemKey];
+                currentInput.value = savedCurrent !== undefined ? savedCurrent : originalCurrent;
+
+                if (savedCurrent !== undefined && String(savedCurrent) !== String(originalCurrent)) {
+                    currentInput.classList.add('modified');
+                }
+
+                currentInput.addEventListener('change', (e) => {
+                    const val = e.target.value.trim();
+                    if (val === '' || String(val) === String(originalCurrent)) {
+                        currentInput.classList.remove('modified');
+                        delete modifiedDmCurrents[itemKey];
+                    } else {
+                        currentInput.classList.add('modified');
+                        modifiedDmCurrents[itemKey] = val;
+                    }
+                    sessionStorage.setItem(currentStorageKey, JSON.stringify(modifiedDmCurrents));
+                });
+
+                const currentUnitField = document.createElement('span');
+                currentUnitField.className = 'matrix-current-unit';
+                const currentUnitSuffix = document.createElement('span');
+                currentUnitSuffix.className = 'matrix-current-unit-suffix';
+                currentUnitSuffix.textContent = 'mA';
+                currentUnitField.append(currentInput, currentUnitSuffix);
+                tdDark.appendChild(currentUnitField);
+                tr.appendChild(tdDark);
+
+                daysColumns.forEach((day, colIndex) => {
+                    const td = document.createElement('td');
+                    const select = document.createElement('select');
+                    select.className = 'profile-select';
+                    select.innerHTML = '<option value="0">0</option><option value="1">1</option>';
+                    
+                    const matrixKey = `${rowIndex}_${day}`;
+                    let defaultAlternatedValue = (colIndex % 2 === 0) ? "1" : "0";
+                    const savedValue = dmModeMatrix[matrixKey];
+                    select.value = savedValue !== undefined ? savedValue : defaultAlternatedValue;
+
+                    if (savedValue !== undefined && savedValue !== defaultAlternatedValue) {
+                        select.classList.add('modified');
+                    }
+
+                    select.addEventListener('change', (e) => {
+                        if (e.target.value === defaultAlternatedValue) {
+                            select.classList.remove('modified');
+                            delete dmModeMatrix[matrixKey];
+                        } else {
+                            select.classList.add('modified');
+                            dmModeMatrix[matrixKey] = e.target.value;
+                        }
+                        sessionStorage.setItem(matrixStorageKey, JSON.stringify(dmModeMatrix));
+                    });
+
+                    td.appendChild(select);
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+            });
+
+            if (renderedCount === 0) {
+                document.getElementById('table-wrapper').innerHTML = `<div class="empty-state">Aucun composant sélectionné dans Dark Current.</div>`;
+            }
+        } else {
+            document.getElementById('table-wrapper').innerHTML = `<div class="empty-state">Aucune donnée trouvée.</div>`;
+        }
+
+        ProjectStorage.bindSaveButton('project-save', 'saved-status');
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (confirm(`Restaurer les valeurs initiales pour le mode ${batterySubMode} ?`)) {
+                sessionStorage.removeItem(currentStorageKey);
+                sessionStorage.removeItem(matrixStorageKey);
+                window.location.reload();
+            }
+        });
+
+        function navigateHome() {
+            const activeProject = ProjectStorage.getActiveProject();
+            if (activeProject && activeProject.name) {
+                window.location.href = '/';
+            } else {
+                alert("Veuillez d'abord enregistrer le projet pour pouvoir revenir à la page d'accueil.");
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const details = document.getElementById('actions-details');
+            if (details && !details.contains(e.target)) details.removeAttribute('open');
+        });
+    </script>
+    <script src="/static/battery_mode_editor.js"></script>
+</body>
+</html>

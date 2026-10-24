@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard de mesure</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+    <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" id="backSetup" href="{{ url_for('dashboard_setup') }}">Modifier l’analyse</a>
+        <div>
+            <p class="eyebrow">ESP32-C3 multi INA226 / Résultats réels</p>
+            <h1 id="pageTitle">Dashboard de mesure</h1>
+        </div>
+        <div class="actions right">
+            <button class="success" type="button" id="saveDashboard">Enregistrer le dashboard</button>
+            <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
+        </div>
+    </header>
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span id="projectName">PROJET : —</span>
+            <span id="sessionId">SESSION : —</span>
+            <span id="temperature">TEMPÉRATURE : —</span>
+            <span id="dayRange" hidden>PLAGE DE JOURS : —</span>
+            <span id="feedingName" hidden>BIBERONNAGE : —</span>
+            <span id="frequencyA">FRÉQUENCE CANAL A : —</span>
+            <span id="frequencyB">FRÉQUENCE CANAL B : —</span>
+        </div>
+        <section class="dashboard-grid" id="kpis"></section>
+        <div class="message" id="saveDashboardMessage" hidden></div>
+        <div id="notice" class="empty-notice">Chargement des données réelles…</div>
+        <section class="panel" id="liveControls" hidden>
+            <div class="panel-title"><h2>Commandes de la mesure numérique en direct</h2></div>
+            <div class="actions">
+                <button class="danger" type="button" data-stop-channel="A">Arrêter canal A</button>
+                <button class="danger" type="button" data-stop-channel="B">Arrêter canal B</button>
+                <button class="danger" type="button" data-stop-channel="ALL">Arrêter les deux canaux</button>
+            </div>
+            <div class="message" id="liveControlMessage">Les canaux peuvent être arrêtés indépendamment.</div>
+        </section>
+
+        <section class="dashboard-content" id="dashboardContent" hidden>
+            <article class="panel chart-panel" id="chartPanelA">
+                <div class="panel-title"><h2>Courant mesuré — INA226 A (0x40)</h2></div>
+                <div class="chart-toolbar" data-toolbar="current-A">
+                    <span>Molette : zoom · Glisser : déplacer · Double-clic : réinitialiser</span>
+                    <button type="button" data-chart-target="current-A" data-chart-action="zoom-in">Zoom +</button>
+                    <button type="button" data-chart-target="current-A" data-chart-action="zoom-out">Zoom −</button>
+                    <button type="button" data-chart-target="current-A" data-chart-action="left">←</button>
+                    <button type="button" data-chart-target="current-A" data-chart-action="right">→</button>
+                    <button type="button" data-chart-target="current-A" data-chart-action="reset">Vue complète</button>
+                </div>
+                <div class="chart-shell"><canvas id="currentChartA"></canvas></div>
+            </article>
+            <article class="panel chart-panel" id="chartPanelB">
+                <div class="panel-title"><h2>Courant mesuré — INA226 B (0x41)</h2></div>
+                <div class="chart-toolbar" data-toolbar="current-B">
+                    <span>Molette : zoom · Glisser : déplacer · Double-clic : réinitialiser</span>
+                    <button type="button" data-chart-target="current-B" data-chart-action="zoom-in">Zoom +</button>
+                    <button type="button" data-chart-target="current-B" data-chart-action="zoom-out">Zoom −</button>
+                    <button type="button" data-chart-target="current-B" data-chart-action="left">←</button>
+                    <button type="button" data-chart-target="current-B" data-chart-action="right">→</button>
+                    <button type="button" data-chart-target="current-B" data-chart-action="reset">Vue complète</button>
+                </div>
+                <div class="chart-shell"><canvas id="currentChartB"></canvas></div>
+            </article>
+            <article class="panel" id="sizingMarginPanel" hidden>
+                <div class="panel-title"><h2>Marge avant la limite DCDC output current</h2></div>
+                <div class="dashboard-grid" id="sizingChannelMargins"></div>
+            </article>
+            <article class="panel chart-panel" id="autonomyPanel" hidden>
+                <div class="panel-title"><h2>Autonomie théorique comparée à l’autonomie mesurée</h2></div>
+                <div class="chart-toolbar">
+                    <span>Zoom, déplacement et recentrage</span>
+                    <button type="button" data-chart-target="autonomy-comparison" data-chart-action="zoom-in">Zoom +</button>
+                    <button type="button" data-chart-target="autonomy-comparison" data-chart-action="zoom-out">Zoom −</button>
+                    <button type="button" data-chart-target="autonomy-comparison" data-chart-action="left">←</button>
+                    <button type="button" data-chart-target="autonomy-comparison" data-chart-action="right">→</button>
+                    <button type="button" data-chart-target="autonomy-comparison" data-chart-action="reset">Vue complète</button>
+                </div>
+                <div class="chart-shell"><canvas id="autonomyComparisonChart"></canvas></div>
+                <div class="panel-title"><h3>Consommation journalière avec profils ECU 0/1</h3></div>
+                <div class="chart-toolbar">
+                    <span>Molette : zoom · Glisser : déplacer · Double-clic : réinitialiser</span>
+                    <button type="button" data-chart-target="autonomy-profile" data-chart-action="zoom-in">Zoom +</button>
+                    <button type="button" data-chart-target="autonomy-profile" data-chart-action="zoom-out">Zoom −</button>
+                    <button type="button" data-chart-target="autonomy-profile" data-chart-action="left">←</button>
+                    <button type="button" data-chart-target="autonomy-profile" data-chart-action="right">→</button>
+                    <button type="button" data-chart-target="autonomy-profile" data-chart-action="reset">Vue complète</button>
+                </div>
+                <div class="chart-shell"><canvas id="autonomyProfileChart"></canvas></div>
+            </article>
+            <section id="feedingSummaryPanel" hidden>
+                <div class="device-report-grid" id="feedingChannelSummaries"></div>
+            </section>
+            <article class="panel">
+                <div class="panel-title"><h2>Devices / ECU inclus dans la mesure</h2></div>
+                <div class="device-report-grid" id="deviceReports"></div>
+            </article>
+            <article class="panel methodology">
+                <div class="panel-title"><h2>Traçabilité du calcul</h2></div>
+                <div id="methodology"></div>
+            </article>
+        </section>
+    </main>
+    <dialog class="dashboard-save-dialog" id="saveDashboardDialog">
+        <form method="dialog" id="saveDashboardForm">
+            <div class="panel-title"><h2>Enregistrer le dashboard</h2></div>
+            <label class="field">Nom dans l’historique
+                <input id="saveDashboardName" maxlength="120" autocomplete="off" required>
+            </label>
+            <div class="actions">
+                <button class="secondary" type="button" id="cancelSaveDashboard">Annuler</button>
+                <button class="success" type="submit">Enregistrer</button>
+            </div>
+        </form>
+    </dialog>
+    <script>
+        const endpoint = {{ url_for('api_dashboard_report')|tojson }};
+        const saveEndpoint = {{ url_for('save_dashboard')|tojson }};
+        const controlEndpoint = {{ url_for('control_esp_acquisition')|tojson }};
+        const setupUrl = {{ url_for('dashboard_setup')|tojson }};
+        const query = new URLSearchParams(location.search);
+        const sessionId = query.get('session_id') || '';
+        document.getElementById('backSetup').href = `${setupUrl}?session_id=${encodeURIComponent(sessionId)}`;
+
+        const colors = ['#69b9d0', '#d9776a', '#78ba8b', '#b58bd2'];
+        const value = (number, digits = 2) => number === null || number === undefined || !Number.isFinite(Number(number))
+            ? '—' : Number(number).toLocaleString('fr-FR', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+        const duration = seconds => {
+            seconds = Number(seconds || 0);
+            if (seconds >= 86400) return `${value(seconds / 86400, 2)} j`;
+            if (seconds >= 3600) return `${value(seconds / 3600, 2)} h`;
+            if (seconds >= 60) return `${value(seconds / 60, 2)} min`;
+            return `${value(seconds, 1)} s`;
+        };
+        const escapeHtml = text => {
+            const node = document.createElement('span');
+            node.textContent = text ?? '';
+            return node.innerHTML;
+        };
+        const metric = (label, content, status = '') => `
+            <div class="metric"><span>${label}</span><strong class="${status ? `score ${status}` : ''}">${content}</strong></div>`;
+        const formattedCurrent = currentA => {
+            const numeric = Number(currentA);
+            if (!Number.isFinite(numeric)) return '—';
+            return Math.abs(numeric) < 1
+                ? `${value(numeric * 1000, 3)} mA`
+                : `${value(numeric, 3)} A`;
+        };
+        const verdict = status => status === 'pass'
+            ? '<span class="verdict-badge pass">OK</span>'
+            : status === 'fail'
+                ? '<span class="verdict-badge fail">PAS OK</span>'
+                : '<span class="verdict-badge no_data">SANS DONNÉE</span>';
+
+        const timeUnitDefinitions = {
+            s: { divisor: 1, label: 'secondes', suffix: 's' },
+            min: { divisor: 60, label: 'minutes', suffix: 'min' },
+            h: { divisor: 3600, label: 'heures', suffix: 'h' },
+            j: { divisor: 86400, label: 'jours', suffix: 'j' }
+        };
+        const interactiveCharts = new Map();
+
+        function selectTimeUnit(seconds) {
+            seconds = Math.max(0, Number(seconds) || 0);
+            if (seconds <= 120) return 's';
+            if (seconds <= 7200) return 'min';
+            if (seconds <= 172800) return 'h';
+            return 'j';
+        }
+        function formatAxisTime(seconds, unit) {
+            const definition = timeUnitDefinitions[unit];
+            return `${value(Number(seconds) / definition.divisor, unit === 's' ? 1 : 2)} ${definition.suffix}`;
+        }
+        function selectCurrentUnit(points) {
+            const maximum = Math.max(0, ...points.map(point => Math.abs(Number(point.current_A) || 0)));
+            return maximum < 1 ? 'mA' : 'A';
+        }
+        function commonChartOptions(timeUnit, yTitle, yUnit) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                parsing: false,
+                animation: false,
+                normalized: true,
+                interaction: { intersect: false, mode: 'nearest', axis: 'x' },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: `Temps depuis le début (${timeUnitDefinitions[timeUnit].label})`, color: '#e8ecec', font: { weight: 'bold' } },
+                        ticks: { color: '#c9d0d1', maxTicksLimit: 10, callback: tick => formatAxisTime(tick, timeUnit) },
+                        grid: { color: '#30383b' }
+                    },
+                    y: {
+                        title: { display: true, text: yTitle, color: '#e8ecec', font: { weight: 'bold' } },
+                        ticks: { color: '#c9d0d1', maxTicksLimit: 8, callback: tick => `${value(tick, 3)} ${yUnit}` },
+                        grid: { color: '#30383b' },
+                        grace: '8%'
+                    }
+                },
+                plugins: {
+                    decimation: { enabled: true, algorithm: 'min-max', samples: 1200 },
+                    legend: { labels: { color: '#f4f1e8', usePointStyle: true, boxWidth: 10 } },
+                    tooltip: {
+                        displayColors: true,
+                        callbacks: {
+                            title: items => items.length ? `Temps : ${formatAxisTime(items[0].parsed.x, timeUnit)}` : '',
+                            label: context => `${context.dataset.label} : ${value(context.parsed.y, 4)} ${yUnit}`
+                        }
+                    }
+                }
+            };
+        }
+        function clampChartRange(chart, minimum, maximum) {
+            const bounds = chart.$dataBounds;
+            if (!bounds || bounds.max <= bounds.min) return;
+            let range = maximum - minimum;
+            const fullRange = bounds.max - bounds.min;
+            range = Math.max(fullRange / 10000, Math.min(range, fullRange));
+            if (minimum < bounds.min) {
+                minimum = bounds.min;
+                maximum = minimum + range;
+            }
+            if (maximum > bounds.max) {
+                maximum = bounds.max;
+                minimum = maximum - range;
+            }
+            chart.options.scales.x.min = minimum;
+            chart.options.scales.x.max = maximum;
+            chart.$userNavigated = true;
+            chart.update('none');
+        }
+        function resetChartView(chart) {
+            delete chart.options.scales.x.min;
+            delete chart.options.scales.x.max;
+            chart.$userNavigated = false;
+            chart.update('none');
+        }
+        function zoomChart(chart, factor, ratio = 0.5) {
+            const scale = chart.scales.x;
+            const range = scale.max - scale.min;
+            const anchor = scale.min + range * ratio;
+            const nextRange = range * factor;
+            clampChartRange(chart, anchor - nextRange * ratio, anchor + nextRange * (1 - ratio));
+        }
+        function panChart(chart, ratio) {
+            const scale = chart.scales.x;
+            const shift = (scale.max - scale.min) * ratio;
+            clampChartRange(chart, scale.min + shift, scale.max + shift);
+        }
+        function transformVisualChart(chart, action) {
+            const state = chart.$visualNavigation || { scale: 1, offsetX: 0 };
+            if (action === 'zoom-in') state.scale = Math.min(4, state.scale * 1.25);
+            if (action === 'zoom-out') state.scale = Math.max(0.65, state.scale / 1.25);
+            if (action === 'left') state.offsetX -= 30;
+            if (action === 'right') state.offsetX += 30;
+            if (action === 'reset') {
+                state.scale = 1;
+                state.offsetX = 0;
+            }
+            chart.$visualNavigation = state;
+            chart.canvas.style.transformOrigin = 'center center';
+            chart.canvas.style.transform = `translateX(${state.offsetX}px) scale(${state.scale})`;
+        }
+        function attachChartNavigation(chart, key) {
+            const canvas = chart.canvas;
+            interactiveCharts.set(key, chart);
+            canvas._interactiveChart = chart;
+            if (canvas._navigationAttached) return;
+            canvas._navigationAttached = true;
+            canvas.addEventListener('wheel', event => {
+                event.preventDefault();
+                const activeChart = canvas._interactiveChart;
+                const scale = activeChart.scales.x;
+                const ratio = Math.max(0, Math.min(1, (event.offsetX - scale.left) / scale.width));
+                zoomChart(activeChart, event.deltaY < 0 ? 0.8 : 1.25, ratio);
+            }, { passive: false });
+            canvas.addEventListener('dblclick', () => resetChartView(canvas._interactiveChart));
+            canvas.addEventListener('mousedown', event => {
+                if (event.button !== 0) return;
+                const activeChart = canvas._interactiveChart;
+                const scale = activeChart.scales.x;
+                const start = {
+                    clientX: event.clientX,
+                    min: scale.min,
+                    max: scale.max,
+                    width: scale.width
+                };
+                canvas.classList.add('is-panning');
+                const move = moveEvent => {
+                    const shift = -(moveEvent.clientX - start.clientX) / start.width * (start.max - start.min);
+                    clampChartRange(activeChart, start.min + shift, start.max + shift);
+                };
+                const stop = () => {
+                    canvas.classList.remove('is-panning');
+                    window.removeEventListener('mousemove', move);
+                    window.removeEventListener('mouseup', stop);
+                };
+                window.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', stop);
+            });
+        }
+        function createOrUpdateChart(key, canvas, datasets, options, bounds) {
+            let chart = interactiveCharts.get(key);
+            const previousView = chart?.$userNavigated
+                ? { min: chart.scales.x.min, max: chart.scales.x.max }
+                : null;
+            if (chart) {
+                chart.data.datasets = datasets;
+                chart.options = options;
+                chart.$dataBounds = bounds;
+                if (previousView) {
+                    chart.options.scales.x.min = previousView.min;
+                    chart.options.scales.x.max = previousView.max;
+                    chart.$userNavigated = true;
+                }
+                chart.update('none');
+            } else {
+                chart = new Chart(canvas, { type: 'line', data: { datasets }, options });
+                chart.$dataBounds = bounds;
+            }
+            attachChartNavigation(chart, key);
+            return chart;
+        }
+
+        function renderCurrentChart(item, intervals, isSizing, timeUnit, currentUnit, visibleDuration) {
+            const currentFactor = currentUnit === 'mA' ? 1000 : 1;
+            const channelIndex = item.channel === 'A' ? 0 : 1;
+            const channelDataset = {
+                label: `INA226 ${item.channel} (${item.channel === 'A' ? '0x40' : '0x41'})`,
+                data: item.points.map(point => ({ x: point.time_s, y: point.current_A * currentFactor })),
+                borderColor: colors[channelIndex],
+                backgroundColor: `${colors[channelIndex]}18`,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                tension: 0,
+                fill: false
+            };
+            const datasets = [channelDataset];
+            if (isSizing) {
+                const theoretical = [];
+                (intervals || []).forEach(interval => {
+                    const start = Math.max(0, Number(interval.start_s) || 0);
+                    const end = Math.min(visibleDuration, Number(interval.end_s) || visibleDuration);
+                    if (end <= start) return;
+                    theoretical.push(
+                        { x: start, y: interval.theoretical_A * currentFactor },
+                        { x: end, y: interval.theoretical_A * currentFactor }
+                    );
+                });
+                if (theoretical.length) datasets.push({
+                    label: 'Limite théorique',
+                    data: theoretical,
+                    borderColor: '#e3b62c',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    stepped: true,
+                    spanGaps: false
+                });
+            }
+            const options = commonChartOptions(timeUnit, `Courant (${currentUnit})`, currentUnit);
+            const sampleCount = Number(item.raw_samples || item.points.length);
+            options.plugins.subtitle = {
+                display: true,
+                text: `${sampleCount.toLocaleString('fr-FR')} mesures · affichage optimisé conservant les pics`,
+                color: '#9da8aa'
+            };
+            const lastTime = Number(item.points.at(-1)?.time_s || 0);
+            const bounds = { min: 0, max: Math.max(visibleDuration, lastTime, 0.001) };
+            createOrUpdateChart(
+                `current-${item.channel}`,
+                document.getElementById(`currentChart${item.channel}`),
+                datasets,
+                options,
+                bounds
+            );
+        }
+
+        const feedingPieCharts = new Map();
+        function renderFeedingSummary(feeding, displayChannels) {
+            const name = feeding.name || 'Biberonnage mesuré';
+            const channels = (feeding.channels || [])
+                .filter(item => displayChannels.includes(item.channel));
+            channels.forEach(item => {
+                const chartKey = `feeding-soc-${item.channel}`;
+                const previousChart = interactiveCharts.get(chartKey);
+                if (previousChart) previousChart.destroy();
+                interactiveCharts.delete(chartKey);
+            });
+            document.getElementById('feedingChannelSummaries').innerHTML = channels.map(item => {
+                const key = item.channel;
+                return `
+                <article class="feeding-channel-summary">
+                    <div class="device-report-heading">
+                        <h2>${escapeHtml(name)} — canal ${key} / ${escapeHtml(item.address || '')}</h2>
+                        <span>Résultats théoriques et mesurés indépendants du canal ${key}</span>
+                    </div>
+                    <div class="feeding-channel-grid">
+                        <section class="feeding-summary-card">
+                            <h3>Évolution du %SOC batterie — canal ${key}</h3>
+                            <div class="chart-toolbar">
+                                <button type="button" data-chart-target="feeding-soc-${key}" data-chart-action="zoom-in">Zoom +</button>
+                                <button type="button" data-chart-target="feeding-soc-${key}" data-chart-action="zoom-out">Zoom −</button>
+                                <button type="button" data-chart-target="feeding-soc-${key}" data-chart-action="left">←</button>
+                                <button type="button" data-chart-target="feeding-soc-${key}" data-chart-action="right">→</button>
+                                <button type="button" data-chart-target="feeding-soc-${key}" data-chart-action="reset">Vue complète</button>
+                            </div>
+                            <div class="chart-shell"><canvas id="feedingSocChart${key}"></canvas></div>
+                            <p class="chart-caption">SOC initial ${value(feeding.starting_soc_percent, 2)} % · final théorique ${value(item.theoretical_ending_soc_percent, 2)} % · final mesuré ${value(item.ending_soc_percent, 2)} %</p>
+                        </section>
+                        <section class="feeding-summary-card">
+                            <h3>Bilan énergétique — canal ${key}</h3>
+                            <div class="table-scroll">
+                                <table class="report-table">
+                                    <thead><tr><th>Indicateur</th><th>Théorique</th><th>Mesuré</th><th>Écart</th></tr></thead>
+                                    <tbody>
+                                        <tr><td><strong>Énergie transférée</strong></td><td>${value(item.theoretical_Ah, 5)} Ah</td><td>${value(item.transferred_Ah, 5)} Ah</td><td>${value(item.difference_Ah, 5)} Ah</td></tr>
+                                        <tr><td><strong>Bilan à ${value(feeding.supply_voltage_V, 1)} V</strong></td><td>${value(item.theoretical_Wh, 3)} Wh</td><td>${value(item.energy_Wh, 3)} Wh</td><td>${value(item.difference_Wh, 3)} Wh</td></tr>
+                                        <tr><td><strong>SOC final</strong></td><td>${value(item.theoretical_ending_soc_percent, 3)} %</td><td>${value(item.ending_soc_percent, 3)} %</td><td>${value(Number(item.ending_soc_percent) - Number(item.theoretical_ending_soc_percent), 3)} point(s)</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                        <section class="feeding-summary-card">
+                            <h3>Répartition coût EF — canal ${key}</h3>
+                            <div class="chart-toolbar">
+                                <button type="button" data-chart-target="feeding-pie-${key}" data-chart-action="zoom-in">Zoom +</button>
+                                <button type="button" data-chart-target="feeding-pie-${key}" data-chart-action="zoom-out">Zoom −</button>
+                                <button type="button" data-chart-target="feeding-pie-${key}" data-chart-action="left">←</button>
+                                <button type="button" data-chart-target="feeding-pie-${key}" data-chart-action="right">→</button>
+                                <button type="button" data-chart-target="feeding-pie-${key}" data-chart-action="reset">Vue complète</button>
+                            </div>
+                            <div class="chart-shell"><canvas id="feedingPieChart${key}"></canvas></div>
+                            <p class="chart-caption">Bleu : besoin Batt12V · orange : énergie perdue.</p>
+                        </section>
+                    </div>
+                </article>`;
+            }).join('');
+
+            channels.forEach(item => {
+                const channel = item.channel;
+                const socPoints = item.soc_points || [];
+                const theoreticalSocPoints = item.theoretical_soc_points || [];
+                const visibleDuration = Math.max(
+                    Number(socPoints.at(-1)?.time_s || 0),
+                    Number(item.duration_s || 0),
+                    0.001
+                );
+                const socOptions = commonChartOptions(selectTimeUnit(visibleDuration), 'SOC batterie (%)', '%');
+                socOptions.scales.y = {
+                    min: 0, max: 100,
+                    title: { display: true, text: 'SOC batterie (%)', color: '#e8ecec' },
+                    ticks: { color: '#c9d0d1', callback: tick => `${value(tick, 0)} %` },
+                    grid: { color: '#30383b' }
+                };
+                createOrUpdateChart(
+                    `feeding-soc-${channel}`,
+                    document.getElementById(`feedingSocChart${channel}`),
+                    [
+                        {
+                            label: 'SOC théorique',
+                            data: theoreticalSocPoints.map(point => ({ x: point.time_s, y: point.soc_percent })),
+                            borderColor: '#e3b62c', backgroundColor: 'transparent',
+                            borderDash: [9, 6], fill: false, borderWidth: 3, pointRadius: 0
+                        },
+                        {
+                            label: 'SOC mesuré',
+                            data: socPoints.map(point => ({ x: point.time_s, y: point.soc_percent })),
+                            borderColor: '#2d79e6', backgroundColor: '#2d79e622',
+                            fill: true, borderWidth: 3, pointRadius: 0, tension: 0.08
+                        }
+                    ],
+                    socOptions,
+                    { min: 0, max: visibleDuration }
+                );
+
+                const pieKey = `feeding-pie-${channel}`;
+                const pieValues = [
+                    Math.max(0, Number(item.battery_need_Wh || 0)),
+                    Math.max(0, Number(item.energy_lost_Wh || 0))
+                ];
+                const existingPie = feedingPieCharts.get(channel);
+                if (existingPie) existingPie.destroy();
+                const pie = new Chart(document.getElementById(`feedingPieChart${channel}`), {
+                    type: 'doughnut',
+                    data: {
+                        labels: [
+                            `%Batt12V (${value(item.battery_need_percent, 1)} %)`,
+                            `% énergie perdue (${value(item.energy_lost_percent, 1)} %)`
+                        ],
+                        datasets: [{
+                            data: pieValues,
+                            backgroundColor: ['#2d68e6', '#ed6811'],
+                            borderColor: '#f4f1e8',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, animation: false, cutout: '54%',
+                        plugins: {
+                            legend: { position: 'bottom', labels: { color: '#f4f1e8', padding: 18 } },
+                            tooltip: { callbacks: { label: context => `${context.label} : ${value(context.parsed, 3)} Wh` } }
+                        }
+                    }
+                });
+                feedingPieCharts.set(channel, pie);
+                interactiveCharts.set(pieKey, pie);
+            });
+        }
+
+        let autonomyComparisonChart = null;
+        function renderAutonomyCharts(autonomy, startDay, endDay) {
+            const comparisonCanvas = document.getElementById('autonomyComparisonChart');
+            const comparisonData = [
+                Number.isFinite(Number(autonomy.theoretical_days)) ? Number(autonomy.theoretical_days) : null,
+                Number.isFinite(Number(autonomy.days)) ? Number(autonomy.days) : null
+            ];
+            if (autonomyComparisonChart) {
+                autonomyComparisonChart.data.datasets[0].data = comparisonData;
+                autonomyComparisonChart.update('none');
+            } else {
+                autonomyComparisonChart = new Chart(comparisonCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Autonomie théorique', 'Autonomie mesurée'],
+                        datasets: [{
+                            label: 'Autonomie estimée (jours)',
+                            data: comparisonData,
+                            backgroundColor: ['#69b9d0cc', autonomy.status === 'worse' ? '#d9776acc' : '#78ba8bcc'],
+                            borderColor: ['#69b9d0', autonomy.status === 'worse' ? '#d9776a' : '#78ba8b'],
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        scales: {
+                            x: { ticks: { color: '#e8ecec' }, grid: { display: false } },
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: 'Autonomie (jours)', color: '#e8ecec' },
+                                ticks: { color: '#c9d0d1', callback: tick => `${value(tick, 1)} j` },
+                                grid: { color: '#30383b' }
+                            }
+                        },
+                        plugins: {
+                            legend: { labels: { color: '#f4f1e8' } },
+                            tooltip: { callbacks: { label: context => `${value(context.parsed.y, 2)} jours` } }
+                        }
+                    }
+                });
+            }
+            interactiveCharts.set('autonomy-comparison', autonomyComparisonChart);
+
+            const profile = autonomy.profile || [];
+            const steppedPoints = key => profile.flatMap((point, index) => {
+                const points = [{ x: point.start_day, y: point[key] }];
+                if (index === profile.length - 1) points.push({ x: point.end_day, y: point[key] });
+                return points;
+            });
+            const profileOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                parsing: false,
+                animation: false,
+                normalized: true,
+                interaction: { intersect: false, mode: 'nearest', axis: 'x' },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: 'Jour de la période sélectionnée', color: '#e8ecec', font: { weight: 'bold' } },
+                        ticks: { color: '#c9d0d1', maxTicksLimit: 12, callback: tick => `${value(tick, 1)} j` },
+                        grid: { color: '#30383b' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Consommation journalière (Ah/j)', color: '#e8ecec', font: { weight: 'bold' } },
+                        ticks: { color: '#c9d0d1', callback: tick => `${value(tick, 3)} Ah/j` },
+                        grid: { color: '#30383b' }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: '#f4f1e8', usePointStyle: true } },
+                    tooltip: {
+                        callbacks: {
+                            title: items => items.length ? `Jour ${value(items[0].parsed.x, 1)}` : '',
+                            label: context => `${context.dataset.label} : ${value(context.parsed.y, 4)} Ah/j`
+                        }
+                    }
+                }
+            };
+            const datasets = [
+                {
+                    label: 'Profil théorique',
+                    data: steppedPoints('theoretical_daily_Ah'),
+                    borderColor: '#69b9d0', backgroundColor: '#69b9d022',
+                    borderWidth: 3, pointRadius: 3, stepped: true, fill: false
+                },
+                {
+                    label: 'Profil issu des mesures',
+                    data: steppedPoints('measured_daily_Ah'),
+                    borderColor: autonomy.status === 'worse' ? '#d9776a' : '#78ba8b',
+                    backgroundColor: autonomy.status === 'worse' ? '#d9776a22' : '#78ba8b22',
+                    borderWidth: 3, pointRadius: 3, stepped: true, fill: false
+                }
+            ];
+            createOrUpdateChart(
+                'autonomy-profile',
+                document.getElementById('autonomyProfileChart'),
+                datasets,
+                profileOptions,
+                { min: Number(startDay), max: Number(endDay) }
+            );
+        }
+
+        let liveRefreshTimer = null;
+        function loadReport() {
+            liveRefreshTimer = null;
+            return fetch(`${endpoint}?session_id=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+            .then(async response => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Rapport indisponible.');
+                return data;
+            })
+            .then(report => {
+                const analysis = report.analysis || {};
+                const measurement = report.measurement || {};
+                const session = report.session || {};
+                const saveButton = document.getElementById('saveDashboard');
+                const dashboardSource = session.dashboard_source
+                    || (session.acquisition_mode === 'can' || session.status === 'imported' ? 'can' : 'digital');
+                const dashboardSourceLabel = dashboardSource === 'can' ? 'CAN' : 'valeurs numériques';
+                saveButton.dataset.savedName = session.dashboard_name || '';
+                saveButton.textContent = session.dashboard_saved
+                    ? `Enregistré en ${dashboardSourceLabel} : ${session.dashboard_name || 'Dashboard'}`
+                    : `Enregistrer le dashboard en ${dashboardSourceLabel}`;
+                const scheduleNextRefresh = () => {
+                    if (session.status === 'running' && !liveRefreshTimer) {
+                        liveRefreshTimer = window.setTimeout(loadReport, 1000);
+                    }
+                };
+                const isSizing = ['dcdc', 'wltc'].includes(analysis.type);
+                const isAutonomy = ['dm1', 'dm2', 'customer'].includes(analysis.type);
+                const isFeeding = analysis.type === 'biberonnage';
+                const isComparison = isSizing || isAutonomy || isFeeding;
+                const displayChannels = (analysis.dashboard_channels || ['A', 'B'])
+                    .filter(channel => ['A', 'B'].includes(channel));
+                const chartTimeUnit = selectTimeUnit(report.duration?.actual_s || 0);
+                const chartCurrentUnit = Math.abs(Number(measurement.peak_current_A || 0)) < 1 ? 'mA' : 'A';
+                const feeding = report.feeding || {};
+                document.getElementById('pageTitle').textContent = isFeeding
+                    ? `Biberonnage — ${feeding.name || 'Biberonnage mesuré'}`
+                    : (analysis.label || 'Dashboard de mesure');
+                document.getElementById('projectName').textContent = `PROJET : ${session.project?.name || 'Non renseigné'}`;
+                document.getElementById('sessionId').textContent = `SESSION : ${session.id || '—'}`;
+                document.getElementById('temperature').textContent = `TEMPÉRATURE : ${value(analysis.temperature_c, 1)} °C`;
+                document.getElementById('temperature').hidden = isAutonomy || isFeeding;
+                document.getElementById('dayRange').hidden = !isAutonomy;
+                document.getElementById('dayRange').textContent =
+                    `PLAGE DE JOURS : ${value(analysis.start_day, 1)} à ${value(analysis.end_day, 1)} j`;
+                document.getElementById('feedingName').hidden = !isFeeding;
+                document.getElementById('feedingName').textContent =
+                    `BIBERONNAGE : ${feeding.name || 'Biberonnage mesuré'}`;
+                const channelA = (measurement.channels || []).find(channel => channel.channel === 'A');
+                const channelB = (measurement.channels || []).find(channel => channel.channel === 'B');
+                document.getElementById('frequencyA').textContent =
+                    `FRÉQUENCE CANAL A : ${value(channelA?.actual_frequency_hz, 0)} Hz`;
+                document.getElementById('frequencyB').textContent =
+                    `FRÉQUENCE CANAL B : ${value(channelB?.actual_frequency_hz, 0)} Hz`;
+                document.getElementById('frequencyA').hidden = !displayChannels.includes('A');
+                document.getElementById('frequencyB').hidden = !displayChannels.includes('B');
+                const liveControls = document.getElementById('liveControls');
+                liveControls.hidden = !(
+                    session.status === 'running'
+                    && session.acquisition_mode === 'digital'
+                );
+                const stopButtons = Object.fromEntries(
+                    [...liveControls.querySelectorAll('[data-stop-channel]')]
+                        .map(button => [button.dataset.stopChannel, button])
+                );
+                const channelSettings = session.channel_settings || {};
+                const runningA = channelSettings.A?.running ?? channelA?.running;
+                const runningB = channelSettings.B?.running ?? channelB?.running;
+                stopButtons.A.disabled = !runningA;
+                stopButtons.B.disabled = !runningB;
+                stopButtons.ALL.disabled = !runningA && !runningB;
+
+                let kpis = '';
+                if (isSizing) {
+                    const status = report.sizing.status;
+                    const verdict = status === 'pass' ? 'OUTPUT CURRENT OK' : status === 'fail' ? 'OUTPUT CURRENT NOT OK' : 'SANS DONNÉE';
+                    const remainingCurrent = formattedCurrent(report.sizing.current_to_output_A);
+                    const verdictWithMargin = status === 'no_data'
+                        ? verdict
+                        : `${verdict}<span class="metric-detail">Courant restant avant la limite : ${remainingCurrent}</span>`;
+                    kpis = metric('Énergie mesurée', `${value(measurement.energy_Ah, 4)} Ah`) +
+                        metric('Verdict et marge DCDC output', verdictWithMargin, status) +
+                        metric('DCDC output current', `${value(report.sizing.output_current_A, 2)} A`) +
+                        metric('Température du profil', `${value(analysis.temperature_c, 1)} °C`);
+                } else if (isAutonomy) {
+                    const autonomyStatus = report.autonomy.status === 'worse' ? 'fail'
+                        : (report.autonomy.status === 'better' ? 'pass' : 'no_data');
+                    const autonomyVerdict = report.autonomy.status === 'worse'
+                        ? `AUTONOMIE MOINS BONNE<span class="metric-detail">Perte : ${value(Math.abs(report.autonomy.difference_days), 2)} jours</span>`
+                        : report.autonomy.status === 'better'
+                            ? `AUTONOMIE MEILLEURE<span class="metric-detail">Gain : ${value(report.autonomy.difference_days, 2)} jours</span>`
+                            : 'AUTONOMIE NON CALCULABLE';
+                    kpis = metric('Autonomie issue des mesures', `${value(report.autonomy.days, 2)} jours`) +
+                        metric('Autonomie théorique', `${value(report.autonomy.theoretical_days, 2)} jours`) +
+                        metric('Comparaison d’autonomie', autonomyVerdict, autonomyStatus) +
+                        metric('Excès sur la plage sélectionnée', `${value(report.autonomy.excess_days, 2)} jours`) +
+                        metric('Jours comparés', `${value(analysis.start_day, 1)} à ${value(analysis.end_day, 1)} j`);
+                } else {
+                    kpis = metric('Nom du biberonnage', escapeHtml(feeding.name || 'Biberonnage mesuré')) +
+                        metric('Énergie transférée mesurée', `${value(feeding.total_transferred_Ah, 5)} Ah`) +
+                        metric('Coût EF mesuré', `${value(feeding.total_cost_ef_Wh, 3)} Wh`) +
+                        metric('Évolution du SOC', `${value(feeding.starting_soc_percent, 2)} → ${value(feeding.ending_soc_percent, 2)} %`) +
+                        metric('ECU suivis', `${analysis.selected_count}`) +
+                        metric('Durée du profil', duration(analysis.profile_duration_s));
+                }
+                kpis += (measurement.channels || []).map(channel =>
+                    metric(
+                        `Courant moyen canal ${channel.channel} / ${channel.address}`,
+                        formattedCurrent(channel.average_current_A)
+                    ) +
+                    (isAutonomy ? '' : metric(
+                        `INA226 ${channel.channel} / ${channel.address} — pic`,
+                        formattedCurrent(channel.peak_current_A),
+                        channel.samples ? '' : 'fail'
+                    )) +
+                    metric(
+                        `Fréquence canal ${channel.channel} — réelle / demandée`,
+                        `${value(channel.actual_frequency_hz, 0)} / ${value(channel.requested_frequency_hz, 0)} Hz`
+                    ) +
+                    metric(
+                        `Durée canal ${channel.channel} — réelle / demandée`,
+                        `${duration(channel.actual_duration_s)} / ${duration(channel.requested_duration_s)}`
+                    )
+                ).join('');
+                document.getElementById('kpis').innerHTML = kpis;
+
+                const notice = document.getElementById('notice');
+                if (!report.has_data) {
+                    notice.textContent = session.status === 'running'
+                        ? 'Mesure en cours : attente des premiers échantillons…'
+                        : 'Aucune donnée réelle n’est associée à cette session.';
+                    scheduleNextRefresh();
+                    return;
+                }
+                notice.hidden = true;
+                document.getElementById('dashboardContent').hidden = false;
+                ['A', 'B'].forEach(channel => {
+                    const item = (measurement.series || []).find(series => series.channel === channel);
+                    const channelMetric = (measurement.channels || []).find(metric => metric.channel === channel);
+                    document.getElementById(`chartPanel${channel}`).hidden =
+                        !displayChannels.includes(channel) || !item?.points?.length;
+                    if (item?.points?.length) {
+                        const visibleDuration = Math.max(
+                            Number(channelMetric?.requested_duration_s || 0),
+                            Number(channelMetric?.actual_duration_s || 0),
+                            Number(item.points.at(-1)?.time_s || 0)
+                        );
+                        renderCurrentChart(
+                            item,
+                            analysis.intervals || [],
+                            isSizing,
+                            selectTimeUnit(visibleDuration),
+                            selectCurrentUnit(item.points),
+                            visibleDuration
+                        );
+                    }
+                });
+                if (isFeeding) {
+                    document.getElementById('feedingSummaryPanel').hidden = false;
+                    renderFeedingSummary(feeding, displayChannels);
+                }
+
+                if (isAutonomy) {
+                    document.getElementById('autonomyPanel').hidden = false;
+                    renderAutonomyCharts(report.autonomy || {}, analysis.start_day, analysis.end_day);
+                }
+
+                if (isSizing) {
+                    document.getElementById('sizingMarginPanel').hidden = false;
+                    document.getElementById('sizingChannelMargins').innerHTML =
+                        (report.sizing.channels || [])
+                            .filter(item => displayChannels.includes(item.channel))
+                            .map(item => {
+                                if (item.status === 'no_data') return metric(
+                                    `Canal ${item.channel} / ${item.address}`,
+                                    'SANS DONNÉE',
+                                    'no_data'
+                                );
+                                const failed = item.status === 'fail';
+                                const detail = failed
+                                    ? `Excès de ${formattedCurrent(item.excess_current_A)}`
+                                    : `${formattedCurrent(item.remaining_current_A)} restant avant la limite`;
+                                return metric(
+                                    `Marge DCDC output — canal ${item.channel}`,
+                                    `${failed ? 'DÉPASSEMENT' : 'OK'}<span class="metric-detail">Courant utilisé : ${formattedCurrent(item.used_current_A)} · ${detail}</span>`,
+                                    item.status
+                                );
+                            }).join('');
+                }
+
+                document.getElementById('deviceReports').innerHTML = (analysis.selected_devices || []).map(device => {
+                    if (!isComparison) return `
+                        <article class="device-report-card">
+                            <h3>${escapeHtml(device.name)}</h3>
+                            <p>Courant nominal : <strong>${value(device.nominal_A, 4)} A</strong></p>
+                            <p>Pic du profil : <strong>${value(device.profile_peak_A, 4)} A</strong></p>
+                        </article>`;
+                    return displayChannels.map(channel => {
+                        const rows = (device.intervals || []).map(interval => {
+                            const status = interval[`status_channel_${channel}`];
+                            if (isAutonomy) return `
+                            <tr class="${status}">
+                                <td>${escapeHtml(interval.label)}</td>
+                                <td>${Number(interval.profile || 0)}</td>
+                                <td>${formattedCurrent(interval.expected_A)}</td>
+                                <td>${formattedCurrent(interval[`measured_allocated_channel_${channel}`])}</td>
+                                <td>${verdict(status)}</td>
+                            </tr>`;
+                            return `
+                            <tr class="${status}">
+                                <td>${escapeHtml(interval.label)}</td>
+                                <td>${value(interval.expected_A, 4)} A</td>
+                                <td>${value(interval[`measured_allocated_channel_${channel}`], 4)} A</td>
+                                <td>${verdict(status)}</td>
+                            </tr>`;
+                        }).join('');
+                        return `
+                        <article class="device-report-card">
+                            <div class="device-report-heading">
+                                <h3>${escapeHtml(device.name)} — canal ${channel}</h3>
+                                <span>Courant d’homologation nominal : ${value(device.nominal_A, 4)} A</span>
+                            </div>
+                            <div class="table-scroll">
+                                <table class="report-table mini-report-table">
+                                    <thead>${isAutonomy
+                                        ? `<tr><th>Plage de jours</th><th>Profil 0/1</th><th>Courant théorique</th><th>Mesure canal ${channel} ventilée</th><th>Verdict</th></tr>`
+                                        : `<tr><th>Intervalle</th><th>Théorique profilé</th><th>Mesure canal ${channel} ventilée</th><th>Verdict</th></tr>`}
+                                    </thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>
+                        </article>`;
+                    }).join('');
+                }).join('');
+                const profileText = isAutonomy
+                    ? `La consommation est intégrée sur ${value(Number(analysis.end_day) - Number(analysis.start_day), 1)} jour(s) sélectionné(s).`
+                    : analysis.profile_duration_s > 0
+                    ? `La durée réelle représente ${value(analysis.profile_repetitions, 2)} répétition(s) du profil de ${duration(analysis.profile_duration_s)}.`
+                    : 'Aucun profil temporel n’est défini pour ce mode ; la durée réelle complète est utilisée.';
+                const temperatureText = isAutonomy
+                    ? `L’analyse porte uniquement du jour ${value(analysis.start_day, 1)} au jour ${value(analysis.end_day, 1)}. Les états 0/1 configurés pour chaque ECU sont appliqués à la théorie et aux courants mesurés.`
+                    : isFeeding
+                    ? `Le calcul du biberonnage « ${escapeHtml(feeding.name || 'Biberonnage mesuré')} » utilise directement les paramètres énergétiques du biberonnage sélectionné, sans température ni plage DM.`
+                    : `La température de ${value(analysis.temperature_c, 1)} °C détermine le profil saisonnier utilisé pour la référence ECU.`;
+                const autonomyText = isAutonomy
+                    ? `<p>L’autonomie mesurée et l’autonomie théorique utilisent la même capacité batterie, le même SOC disponible et exactement la même séquence de profils 0/1. L’excès correspond à la consommation mesurée dépassant la référence théorique sur la plage choisie.</p>`
+                    : '';
+                const feedingText = isFeeding
+                    ? `<p>Pour « ${escapeHtml(feeding.name || 'Biberonnage mesuré')} », les Ah de chaque canal sont intégrés par la méthode des trapèzes à partir des échantillons réels. Le bilan signé fait diminuer le SOC en décharge et l’augmente en charge. Le coût EF et sa répartition utilisent les transferts absolus mesurés à ${value(feeding.supply_voltage_V, 1)} V.</p>`
+                    : '';
+                document.getElementById('methodology').innerHTML = `
+                    <p>${temperatureText}</p><p>${profileText}</p>
+                    ${autonomyText}
+                    ${feedingText}
+                    <p>Le dashboard affiche uniquement ${displayChannels.length === 2 ? 'les canaux A et B' : `le canal ${displayChannels[0]}`}.
+                    Chaque graphe et chaque tableau utilise uniquement les échantillons bruts de son canal.</p>
+                    ${isSizing ? `<p>Le verdict électrique global compare la somme utilisée pour le dimensionnement à la limite théorique,
+                    tandis que les tableaux A et B restent entièrement séparés. Dans les tableaux ECU,
+                    chaque canal est ventilé proportionnellement au poids théorique de l’ECU.</p>` : ''}`;
+                scheduleNextRefresh();
+            })
+            .catch(error => {
+                const notice = document.getElementById('notice');
+                notice.textContent = error.message;
+                notice.hidden = false;
+            });
+        }
+        document.addEventListener('click', event => {
+            const button = event.target.closest('[data-chart-action]');
+            if (!button) return;
+            const chart = interactiveCharts.get(button.dataset.chartTarget);
+            if (!chart) return;
+            const action = button.dataset.chartAction;
+            if (chart.$dataBounds && chart.scales?.x?.type === 'linear') {
+                if (action === 'zoom-in') zoomChart(chart, 0.7);
+                if (action === 'zoom-out') zoomChart(chart, 1.4);
+                if (action === 'left') panChart(chart, -0.2);
+                if (action === 'right') panChart(chart, 0.2);
+                if (action === 'reset') resetChartView(chart);
+            } else {
+                transformVisualChart(chart, action);
+            }
+        });
+        document.querySelectorAll('[data-stop-channel]').forEach(button => {
+            button.addEventListener('click', async () => {
+                const buttons = [...document.querySelectorAll('[data-stop-channel]')];
+                buttons.forEach(item => item.disabled = true);
+                const payload = new FormData();
+                payload.set('action', 'stop');
+                payload.set('sensor', button.dataset.stopChannel);
+                const message = document.getElementById('liveControlMessage');
+                try {
+                    const response = await fetch(controlEndpoint, { method: 'POST', body: payload });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.message || 'Arrêt refusé.');
+                    message.textContent = data.message;
+                    message.className = 'message ok';
+                    if (liveRefreshTimer) window.clearTimeout(liveRefreshTimer);
+                    liveRefreshTimer = null;
+                    await loadReport();
+                } catch (error) {
+                    message.textContent = error.message;
+                    message.className = 'message error';
+                    buttons.forEach(item => item.disabled = false);
+                }
+            });
+        });
+        const saveDialog = document.getElementById('saveDashboardDialog');
+        const saveForm = document.getElementById('saveDashboardForm');
+        const saveNameInput = document.getElementById('saveDashboardName');
+        document.getElementById('saveDashboard').addEventListener('click', () => {
+            const button = document.getElementById('saveDashboard');
+            const currentName = button.dataset.savedName || document.getElementById('pageTitle').textContent;
+            saveNameInput.value = currentName;
+            saveDialog.showModal();
+            saveNameInput.focus();
+            saveNameInput.select();
+        });
+        document.getElementById('cancelSaveDashboard').addEventListener('click', () => saveDialog.close());
+        saveForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            const name = saveNameInput.value.trim();
+            if (!name) {
+                saveNameInput.focus();
+                return;
+            }
+            const button = document.getElementById('saveDashboard');
+            const message = document.getElementById('saveDashboardMessage');
+            button.disabled = true;
+            try {
+                const response = await fetch(saveEndpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, name })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Enregistrement impossible.');
+                const sourceLabel = data.dashboard.source === 'can' ? 'CAN' : 'valeurs numériques';
+                button.dataset.savedName = data.dashboard.name;
+                button.textContent = `Enregistré en ${sourceLabel} : ${data.dashboard.name}`;
+                message.textContent = data.message;
+                message.className = 'message ok';
+                message.hidden = false;
+                saveDialog.close();
+            } catch (error) {
+                message.textContent = error.message;
+                message.className = 'message error';
+                message.hidden = false;
+            } finally {
+                button.disabled = false;
+            }
+        });
+        loadReport();
+    </script>
+</body>
+</html>

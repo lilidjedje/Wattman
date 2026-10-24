@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Analyseur de Pics de Courant CAN</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f8fafc; color: #1e293b; }
+        h1 { text-align: center; color: #0f172a; margin-bottom: 25px; }
+        .return-menu { position: fixed; top: 18px; left: 18px; z-index: 10; padding: 9px 13px; border: 1px solid #94a3b8; border-radius: 6px; color: #334155; background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+        .return-menu:hover { color: #fff; border-color: #1d4ed8; background: #2563eb; }
+        .grid-layout { display: grid; grid-template-columns: 1fr; gap: 20px; max-width: 1200px; margin: 0 auto; }
+        @media(min-width: 768px) { .grid-layout { grid-template-columns: 350px 1fr; } }
+        .panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; }
+        .panel h2 { margin-top: 0; font-size: 1.2rem; color: #334155; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; margin-bottom: 15px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 0.9rem; color: #475569; }
+        input[type="number"], input[type="datetime-local"] { width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 1rem; color: #334155; }
+        .btn-primary { width: 100%; padding: 10px; background-color: #2563eb; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+        .btn-primary:hover { background-color: #1d4ed8; }
+        .sensor-status { display: grid; gap: 10px; margin: 12px 0; }
+        .sensor-row { border-top: 1px solid #d1fae5; padding-top: 10px; }
+        .sensor-row:first-child { border-top: 0; padding-top: 0; }
+        .sensor-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .sensor-state { font-size: 0.85rem; font-weight: 700; color: #64748b; }
+        .sensor-progress { width: 100%; height: 8px; overflow: hidden; background: #d1d5db; border-radius: 4px; }
+        .sensor-progress > div { height: 100%; width: 0; background: #0f766e; transition: width 0.3s ease; }
+        .sensor-details { margin: 5px 0 0; color: #475569; font-size: 0.8rem; }
+        .btn-stop-sensor { width: auto; margin-top: 8px; padding: 6px 10px; background: #dc2626; }
+        .graph-container { position: relative; height: 450px; width: 100%; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background-color: #f8fafc; font-weight: 600; color: #64748b; }
+        .placeholder { text-align: center; padding: 40px; color: #94a3b8; font-style: italic; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body>
+
+    <button class="return-menu" type="button" onclick="window.location.href='{{ url_for('index') }}'">Retour à la Workstation</button>
+    <h1> Système d'Analyse Consommation de Courant</h1>
+
+    <div class="grid-layout">
+        
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            
+            <!-- 1. Gestion de la base de données -->
+            <section class="panel" style="text-align: center; display: flex; flex-direction: column; gap: 10px;">
+                <h2>1. Gestion de la base de données</h2>
+                <button onclick="purgerBaseDeDonnees()" class="btn-primary" style="background: #dc2626;">
+                     Réinitialiser la Base de donnée
+                </button>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 5px 0;">
+                <p style="font-size: 0.85rem; color: #64748b; margin: 0;">Sélectionnez les fichiers .asc locaux :</p>
+                <input type="file" id="fileInputASC" multiple accept=".asc" style="display: none;" onchange="uploaderEtIngererLogs()">
+                <button onclick="document.getElementById('fileInputASC').click()" class="btn-primary" style="background: #2563eb;">
+                     Sélectionner et Ingérer (.asc)
+                </button>
+            </section>
+
+            <section class="panel">
+                <h2>2. Contexte de validation</h2>
+                <p style="font-size:.9rem;color:#64748b;line-height:1.5">
+                    Choisissez la période dans les filtres. L’usage, la température et les ECU inclus
+                    seront demandés sur l’écran suivant.
+                </p>
+                <button type="button" onclick="ouvrirDashboardConformite()" class="btn-primary" style="background:#765500">
+                    Préparer le dashboard
+                </button>
+                <p id="analysisContextMessage" style="font-size:.85rem;color:#64748b"></p>
+            </section>
+
+            <!-- 2. Filtres -->
+            <section class="panel">
+                <h2>3. Filtres</h2>
+                <div class="form-group">
+                    <label for="seuilCourant">Seuil critique :</label>
+                    <div style="display: inline-flex; gap: 5px; width: 100%;">
+                        <input type="number" id="seuilCourant" value="0" step="0.01" style="width: 120px;">
+                        <select id="uniteCourant" onchange="appliquerFiltres()" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex-grow: 1;">
+                            <option value="A" selected>Ampères (A)</option>
+                            <option value="mA">Milliampères (mA)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="canalSelect">Canal</label>
+                    <select id="canalSelect" onchange="appliquerFiltres()" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+                        <option value="">Tous</option>
+                        <option value="A">Canal A</option>
+                        <option value="B">Canal B</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="dateDebut">Date & Heure de Début</label>
+                    <input type="datetime-local" id="dateDebut">
+                </div>
+                <div class="form-group">
+                    <label for="dateFin">Date & Heure de Fin</label>
+                    <input type="datetime-local" id="dateFin">
+                </div>
+                <button onclick="appliquerFiltres()" class="btn-primary" style="background: #2563eb;">
+                    Appliquer les filtres
+                </button>
+                <div style="margin-top: 16px; display: grid; gap: 10px;">
+                    <button onclick="telechargerCSVCompletes()" class="btn-primary" style="background: #0f766e;">
+                         Export CSV des mesures brutes
+                    </button>
+                    <button onclick="chargerResume1m()" class="btn-primary" style="background: #1d4ed8;">
+                         Charger le résumé 1 min
+                    </button>
+                </div>
+            </section>
+
+            <!-- Rapport Global -->
+            <section class="panel" style="background: #fff7ed; border: 1px solid #ffedd5;">
+                <h2 style="color: #c2410c;"> Rapport Global des Pics (Multi-Jours)</h2>
+                <p style="font-size: 0.85rem; color: #7c2d12; margin-bottom: 15px;">Extrait instantanément la liste de tous les courants correspondants aux filtres appliqués.</p>
+                <button onclick="genererRapportPics()" class="btn-primary" style="background: #ea580c;">
+                     Afficher tous les Pics
+                </button>
+
+                <div style="margin-top: 15px; max-height: 250px; overflow-y: auto; background: white; border-radius: 6px; border: 1px solid #fed7aa;">
+                    <table>
+                        <thead style="background: #f97316; color: white; position: sticky; top: 0;">
+                            <tr>
+                                <th>Capteur</th>
+                                <th>Date & Heure</th>
+                                <th>Courant</th>
+                                <th>Durée</th>
+                            </tr>
+                        </thead>
+                        <tbody id="picsReportTableBody">
+                            <tr>
+                                <td colspan="4" style="text-align: center; padding: 15px; color: #94a3b8; font-style: italic;">
+                                    Aucun scan lancé.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Résumé 1 min -->
+            <section class="panel">
+                <h2>3. Résumé 1 min</h2>
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 12px;">
+                    <p style="margin: 0; color: #334155; font-size: 0.9rem;">Ce résumé vous permet de visualiser l’évolution des mesures avec un pas de 1 minute, sans charger toutes les valeurs détaillées à 1000 Hz.</p>
+                </div>
+                <div style="max-height: 270px; overflow-y: auto; background: white; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    <table>
+                        <thead style="background: #0ea5e9; color: white; position: sticky; top: 0;">
+                            <tr>
+                                <th>Date & Heure</th>
+                                <th>Canal</th>
+                                <th>Min</th>
+                                <th>Max</th>
+                                <th>Moyenne</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resume1mTableBody">
+                            <tr>
+                                <td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8; font-style: italic;">
+                                    Cliquez sur « Charger le résumé 1 min ».
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            <main class="panel" style="flex-grow: 1;">
+                <h2> Graphe</h2>
+                <div class="graph-container">
+                    <canvas id="monGraphique"></canvas>
+                </div>
+                <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 10px; text-align: center;">
+                     Utilisez le <strong>Trackpad / Glissement tactile</strong> pour vous déplacer. Maintenez <strong>Ctrl + Molette</strong> pour zoomer sur l'axe X.
+                </p>
+            </main>
+        </div>
+
+    </div>
+
+    <!-- Script logique global d'origine -->
+    <script src="static/js/app.js"></script>
+
+    <!-- Script logique de la télécommande ESP32 -->
+    <script>
+        const theory = {{ theory|tojson }};
+        async function ouvrirDashboardConformite() {
+            const message = document.getElementById('analysisContextMessage');
+            const start = document.getElementById('dateDebut').value;
+            const end = document.getElementById('dateFin').value;
+            if (!start || !end) {
+                message.textContent = 'Indiquez d’abord les dates de début et de fin dans les filtres.';
+                return;
+            }
+            const channel = document.getElementById('canalSelect').value;
+            const payload = {
+                start,
+                end,
+                channels: channel ? [channel] : ['A', 'B']
+            };
+            try {
+                const response = await fetch({{ url_for('create_analysis_session')|tojson }}, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || 'Comparaison impossible.');
+                window.location.href = result.dashboard_url;
+            } catch (error) {
+                message.textContent = error.message;
+            }
+        }
+
+        const analysisStateKey = 'canLogAnalysisState';
+        const analysisResultsKey = 'canLogAnalysisResults';
+
+        function saveAndReturnToModeSelection() {
+            const values = {};
+            document.querySelectorAll('input:not([type="file"]), select').forEach((field) => {
+                const key = field.id || field.name;
+                if (!key) return;
+                values[key] = field.type === 'checkbox' ? field.checked : field.value;
+            });
+            localStorage.setItem(analysisStateKey, JSON.stringify(values));
+            const unit = document.getElementById('uniteCourant').value || 'A';
+            const coefficient = unit === 'mA' ? 1000 : 1;
+            const chartPoints = { A: [], B: [] };
+            (monChart?.data?.datasets || []).forEach((dataset) => {
+                const channel = String(dataset.label || '').includes('Canal B') ? 'B' : 'A';
+                chartPoints[channel] = (dataset.data || []).map(point => ({ timestamp: point.x, current: point.y / coefficient }));
+            });
+            try {
+                localStorage.setItem(analysisResultsKey, JSON.stringify({
+                    unit,
+                    chartPoints,
+                    peaksReportHtml: document.getElementById('picsReportTableBody').innerHTML,
+                    summaryHtml: document.getElementById('resume1mTableBody').innerHTML
+                }));
+            } catch (error) {
+                console.warn('Le graphe de logs est trop volumineux pour être mémorisé intégralement.', error);
+            }
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.location.href = '/';
+            }
+        }
+
+        function restoreAnalysisState() {
+            const values = JSON.parse(localStorage.getItem(analysisStateKey) || '{}');
+            Object.entries(values).forEach(([key, value]) => {
+                const field = document.getElementById(key) || document.querySelector(`[name="${key}"]`);
+                if (!field) return;
+                if (field.type === 'checkbox') field.checked = Boolean(value);
+                else field.value = value;
+            });
+            const results = JSON.parse(localStorage.getItem(analysisResultsKey) || 'null');
+            if (results?.peaksReportHtml) document.getElementById('picsReportTableBody').innerHTML = results.peaksReportHtml;
+            if (results?.summaryHtml) document.getElementById('resume1mTableBody').innerHTML = results.summaryHtml;
+            if (results?.chartPoints && (results.chartPoints.A?.length || results.chartPoints.B?.length)) {
+                mettreAJourGraphique({ points_A: results.chartPoints.A || [], points_B: results.chartPoints.B || [] }, results.unit || 'A');
+            }
+        }
+
+        restoreAnalysisState();
+
+    </script>
+</body>
+</html>

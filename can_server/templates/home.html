@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CAN Measurement Workstation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" href="/mode_selection">Retour au choix des analyses</a>
+        <div>
+            <p class="eyebrow">ESP32-C3 / INA226 / CAN et acquisition numérique</p>
+            <h1>CAN Measurement Workstation</h1>
+        </div>
+        <span class="right status-led">Système disponible</span>
+    </header>
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span>PASSERELLE : 10.42.0.1</span>
+            <span>RÉFÉRENTIEL : {{ theory.project.name if theory.project else 'Aucun projet synchronisé' }}</span>
+            <span>ESP32-C3 multi INA226</span>
+        </div>
+
+        <section class="panel measurement-mode-selector">
+            <div class="panel-title"><h2>Sélectionnez le mode de mesure</h2></div>
+            <p class="form-intro">Ce choix s’applique à l’acquisition et au bouton Dashboard.</p>
+            <div class="mode-selector-buttons">
+                <button type="button" class="mode-selector-button" data-measurement-mode="digital">
+                    <strong>Mesure numérique</strong>
+                    <span>ESP32-C3 → Wi-Fi direct → enregistrement local → dashboard</span>
+                </button>
+                <button type="button" class="mode-selector-button" data-measurement-mode="can">
+                    <strong>Mesure CAN</strong>
+                    <span>ESP32-C3 → bus CAN → CANalyzer → fichier ASC</span>
+                </button>
+            </div>
+            <div class="message" id="modeMessage">Sélectionnez Mesure numérique ou Mesure CAN pour continuer.</div>
+        </section>
+
+        <section class="module-grid">
+            <article class="module-card">
+                <span class="module-index">MODULE 01 / ACQUISITION</span>
+                <h2>Démarrer une mesure</h2>
+                <p id="acquisitionDescription">Le parcours sera adapté au mode sélectionné ci-dessus.</p>
+                <a class="button disabled-link" id="acquisitionButton" href="#" aria-disabled="true">Ouvrir l’acquisition</a>
+            </article>
+            <article class="module-card">
+                <span class="module-index">MODULE 02 / EXPLOITATION</span>
+                <h2>Dashboard</h2>
+                <p id="dashboardDescription">Le dashboard utilisera la source sélectionnée ci-dessus.</p>
+                <a class="button disabled-link" id="dashboardButton" href="#" aria-disabled="true">Ouvrir le dashboard</a>
+            </article>
+        </section>
+
+        <section class="panel dashboard-history">
+            <div class="panel-title">
+                <div>
+                    <p class="eyebrow">ARCHIVES CONSERVÉES</p>
+                    <h2>Historique des dashboards enregistrés</h2>
+                </div>
+                <span>{{ dashboard_history|length }} dashboard{{ 's' if dashboard_history|length != 1 else '' }}</span>
+            </div>
+            {% if dashboard_history %}
+            <div class="history-source-section">
+                <div class="history-source-heading">
+                    <h3>Dashboards en valeurs numériques</h3>
+                    <span>{{ digital_dashboard_history|length }} enregistré{{ 's' if digital_dashboard_history|length != 1 else '' }}</span>
+                </div>
+                {% if digital_dashboard_history %}
+                <div class="history-grid">
+                    {% for item in digital_dashboard_history %}
+                    <a class="history-card history-digital" href="{{ url_for('dashboard', session_id=item.id) }}">
+                        <strong>{{ item.dashboard_name }}</strong>
+                        <span>{{ (item.analysis or {}).get('label', 'Analyse de mesure') }}</span>
+                        <small>Valeurs numériques · Enregistré le {{ (item.dashboard_saved_at or '')[:16]|replace('T', ' à ') }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-notice">Aucun dashboard numérique enregistré.</div>
+                {% endif %}
+            </div>
+            <div class="history-source-section">
+                <div class="history-source-heading">
+                    <h3>Dashboards issus du CAN</h3>
+                    <span>{{ can_dashboard_history|length }} enregistré{{ 's' if can_dashboard_history|length != 1 else '' }}</span>
+                </div>
+                {% if can_dashboard_history %}
+                <div class="history-grid">
+                    {% for item in can_dashboard_history %}
+                    <a class="history-card history-can" href="{{ url_for('dashboard', session_id=item.id) }}">
+                        <strong>{{ item.dashboard_name }}</strong>
+                        <span>{{ (item.analysis or {}).get('label', 'Analyse de mesure') }}</span>
+                        <small>Mesure CAN · Enregistré le {{ (item.dashboard_saved_at or '')[:16]|replace('T', ' à ') }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-notice">Aucun dashboard CAN enregistré.</div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="empty-notice">
+                Aucun dashboard enregistré. Les mesures temporaires seront supprimées au démarrage de la prochaine acquisition ou du prochain import CAN.
+            </div>
+            {% endif %}
+        </section>
+    </main>
+    <script>
+        const measurementUrls = {
+            digital: {{ url_for('measurement', mode='digital')|tojson }},
+            can: {{ url_for('measurement', mode='can')|tojson }}
+        };
+        const dashboardUrls = {
+            digital: {{ url_for('dashboard_entry', mode='digital')|tojson }},
+            can: {{ url_for('dashboard_entry', mode='can')|tojson }}
+        };
+        const acquisitionButton = document.getElementById('acquisitionButton');
+        const dashboardButton = document.getElementById('dashboardButton');
+        const modeMessage = document.getElementById('modeMessage');
+
+        function selectMeasurementMode(mode) {
+            sessionStorage.setItem('measurementSourceMode', mode);
+            document.querySelectorAll('[data-measurement-mode]').forEach(button => {
+                button.classList.toggle('selected', button.dataset.measurementMode === mode);
+            });
+            [acquisitionButton, dashboardButton].forEach(button => {
+                button.classList.remove('disabled-link');
+                button.removeAttribute('aria-disabled');
+            });
+            acquisitionButton.href = measurementUrls[mode];
+            dashboardButton.href = dashboardUrls[mode];
+            if (mode === 'digital') {
+                modeMessage.textContent = 'Mode numérique sélectionné : les mesures ESP32-C3 seront enregistrées directement, sans CAN ni fichier ASC.';
+                modeMessage.className = 'message ok';
+                document.getElementById('acquisitionDescription').textContent =
+                    'Acquérir directement les valeurs INA226 de l’ESP32-C3 et les enregistrer dans la base locale.';
+                document.getElementById('dashboardDescription').textContent =
+                    'Ouvrir directement les choix du dashboard avec la dernière mesure numérique enregistrée.';
+            } else {
+                modeMessage.textContent = 'Mode CAN sélectionné : les mesures seront émises sur le bus CAN et exploitées depuis un fichier CANalyzer ASC.';
+                modeMessage.className = 'message ok';
+                document.getElementById('acquisitionDescription').textContent =
+                    'Émettre les valeurs INA226 sur le bus CAN afin de les visualiser et de les enregistrer dans CANalyzer.';
+                document.getElementById('dashboardDescription').textContent =
+                    'Ouvrir la page de gestion et de décodage des fichiers ASC.';
+            }
+        }
+
+        document.querySelectorAll('[data-measurement-mode]').forEach(button => {
+            button.addEventListener('click', () => selectMeasurementMode(button.dataset.measurementMode));
+        });
+        const savedMode = sessionStorage.getItem('measurementSourceMode');
+        if (savedMode === 'digital' || savedMode === 'can') selectMeasurementMode(savedMode);
+    </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CAN Measurement Workstation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <span></span>
+        <div>
+            <p class="eyebrow">Raspberry Pi / CAN acquisition node</p>
+            <h1>CAN Measurement Workstation</h1>
+        </div>
+        <span class="right status-led">Système disponible</span>
+    </header>
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span>PASSERELLE : 10.42.0.1</span>
+            <span>RÉFÉRENTIEL : {{ theory.project.name if theory.project else 'Aucun projet synchronisé' }}</span>
+            <span>ESP32-C3 / INA226</span>
+        </div>
+        <section class="module-grid">
+            <article class="module-card">
+                <span class="module-index">MODULE 01 / ACQUISITION</span>
+                <h2>Démarrer une mesure</h2>
+                <p>Configurer la fréquence d’acquisition, la durée, les canaux INA226 et le Device ou ECU contrôlé. Le Raspberry Pi pilote directement l’ESP32-C3 et suit la mesure en temps réel.</p>
+                <a class="button" href="{{ url_for('measurement') }}">Ouvrir l’acquisition</a>
+            </article>
+            <article class="module-card">
+                <span class="module-index">MODULE 02 / EXPLOITATION</span>
+                <h2>Analyse de logs</h2>
+                <p>Utiliser l’outil d’analyse existant pour ingérer les fichiers ASC, filtrer les mesures, visualiser les courants et préparer le rapport de conformité.</p>
+                <a class="button" href="{{ url_for('logs') }}">Ouvrir l’analyseur</a>
+            </article>
+        </section>
+    </main>
+</body>
+</html>

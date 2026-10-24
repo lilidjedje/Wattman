@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consommation en veille</title>
+    <style>
+        :root { --navy: #1f4e78; --muted: #61738e; --primary: #2f63df; --surface: #fff; --canvas: #edf3f7; --line: #b7c9d6; --calculated: #064bc0; }
+        * { box-sizing: border-box; }
+        body { min-height: 100vh; margin: 0; padding: 24px; font-family: "Segoe UI", Tahoma, sans-serif; color: #1e2d45; background: var(--canvas); }
+        main { width: min(1180px, 100%); margin: 0 auto; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+        h1 { margin: 0; color: var(--navy); font-size: 1.8rem; } .subtitle { margin: 4px 0 0; color: var(--muted); }
+
+        /* STEPPER / MENU DÉFILANT ÉTAPES */
+        .stepper { 
+            width: 100%; margin: 0 auto 24px; 
+            display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); 
+            gap: 12px; padding: 14px; border-radius: 12px; background: white; 
+            box-shadow: 0 4px 15px rgba(0, 0, 0, .08); border: 1px solid #cbd5e1;
+        }
+        .step { 
+            border: 0; border-radius: 8px; padding: 12px; color: #52647d; 
+            background: #f1f5f9; font: inherit; font-weight: 700; cursor: pointer; text-align: center; 
+        }
+        .step:hover { background: #e4e8ff; color: #4f46e5; }
+        .step.active { color: white; background: #4f46e5; }
+        
+        /* SOMMAIRE RÉTRACTABLE */
+        .retractable-menu { position: relative; display: inline-block; }
+        .retractable-menu details { background: white; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .retractable-menu summary { padding: 10px 18px; font-weight: 700; cursor: pointer; color: var(--navy); list-style: none; display: flex; align-items: center; gap: 8px; background: #ffffff; border-radius: 8px; user-select: none; }
+        .menu-content { position: absolute; right: 0; top: 110%; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 100; min-width: 220px; }
+        .btn-menu { border: 0; border-radius: 5px; padding: 9px 14px; color: white; font: inherit; font-weight: 700; cursor: pointer; text-align: left; width: 100%; display: flex; align-items: center; gap: 8px; }
+        .btn-save { background: #087f5b; } .btn-reset { background: #b45309; } .btn-autonomy { background: #64748b; } .btn-mode { background: #667eea; } .btn-home { background: #1e293b; }
+
+        .back, .continue { min-height: 42px; border: 1px solid #bac8dd; border-radius: 7px; padding: 0 15px; background: #fff; color: #4c607d; font: inherit; font-weight: 700; cursor: pointer; }
+        .continue { color: #fff; border-color: var(--primary); background: var(--primary); }
+        .panel { padding: 22px; border-radius: 8px; background: var(--surface); box-shadow: 0 6px 20px rgba(30,45,69,.08); border: 1px solid var(--line); margin-bottom: 20px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: .88rem; }
+        th, td { padding: 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+        th { color: #526781; background: #f7f9fc; }
+        th:first-child, td:first-child { width: 310px; font-weight: 700; }
+        .manual { min-width: 150px; }
+        .manual input { width: 100%; min-width: 125px; min-height: 34px; padding: 7px 9px; border: 1px solid #697a91; border-radius: 4px; font: inherit; text-align: left; }
+        .calculated { color: var(--calculated); background: #eaf2ff; font-weight: 800; line-height: 1.35; }
+        .section td { padding: 13px 9px; color: var(--navy); background: #eef3ff; font-weight: 800; }
+        .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+        .saved { min-height: 20px; margin: 14px 0 0; color: #15803d; font-size: .9rem; }
+        
+        .tech-wake-panel { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .tech-wake-panel h3 { margin: 0 0 12px; color: var(--navy); font-size: 1rem; }
+        .tech-wake-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .tech-wake-grid label { display: grid; gap: 7px; color: #526781; font-size: .88rem; font-weight: 700; }
+        .tech-wake-grid input { width: 100%; min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 5px; color: #1e2d45; background: #fff; font: inherit; text-align: left; }
+        @media (max-width: 720px) {
+            .tech-wake-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="sleep-consumption-page">
+    <main>
+        <header>
+            <button class="back" type="button" onclick="window.location.href='/fixed_consumption'">← Retour</button>
+            <div><h1>Consommation en veille</h1></div>
+
+            <div class="retractable-menu">
+                <details id="actions-details">
+                    <summary> Sommaire / Actions</summary>
+                    <div class="menu-content">
+                        <span class="saved" id="saved-status" aria-live="polite"></span>
+                        <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
+                        <button class="btn-menu btn-reset" type="button" id="reset-btn"> Valeurs initiales</button>
+                        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
+                        <button class="btn-menu btn-autonomy" id="autonomy-menu-button" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                        <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
+                        <button class="btn-menu btn-home" type="button" onclick="navigateHome()"> Accueil</button>
+                    </div>
+                </details>
+            </div>
+        </header>
+
+        <!-- MENU DÉFILANT ÉTAPES (INJECTÉ EN DYNAMIQUE DANS LE SCRIPT) -->
+        <nav class="stepper" id="mode-stepper" aria-label="Étapes du parcours"></nav>
+
+        <!-- SECTION RÉVEIL TECHNIQUE PÉRIODIQUE SOC PROPRE AU MODE -->
+        <section class="panel tech-wake-panel">
+            <h3 id="wake-title">Réveil Technique Périodique SOC</h3>
+            <div class="tech-wake-grid">
+                <label>Périodicité
+                    <span class="battery-unit-field"><input id="wakePeriodHours" type="number" min="0" step="0.1"><span class="battery-unit-suffix">h</span></span>
+                </label>
+                <label>Durée
+                    <span class="battery-unit-field"><input id="wakeDurationSeconds" type="number" min="0" step="0.1"><span class="battery-unit-suffix">s</span></span>
+                </label>
+                <label>Conso
+                    <span class="battery-unit-field"><input id="wakeCurrentMa" type="number" min="0" step="0.1"><span class="battery-unit-suffix">mA</span></span>
+                </label>
+                <label>Durée Cell Balancing
+                    <span class="battery-unit-field"><input id="wakeCellBalancingDurationSeconds" type="number" min="0" step="0.1"><span class="battery-unit-suffix">s</span></span>
+                </label>
+                <label>Conso Cell Balancing
+                    <span class="battery-unit-field"><input id="wakeCellBalancingCurrentMa" type="number" min="0" step="0.1"><span class="battery-unit-suffix">mA</span></span>
+                </label>
+            </div>
+        </section>
+
+        <section class="panel current-summary-panel">
+            <h2>Courant de veille</h2>
+            <div class="sleep-current-summary">
+                <div><span id="instant-current-title">Conso veille instantanée</span><strong id="instant-current-value"></strong></div>
+                <div><span>Consommation courant veille</span><strong id="sleep-current-energy"></strong></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="table-wrap"><table><thead><tr><th>Fonction</th><th>Base LAB</th><th>Avec alarme</th><th>Sans alarme avec TACHY</th><th>Avec alarme avec TACHY</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+            <div class="custom-form sleep-custom-form">
+                <label>Nom de la fonction<input id="new-sleep-function-name" type="text"></label>
+                <label>Courant<span class="battery-unit-field"><input id="new-sleep-function-current" type="number" min="0" step="0.01" value="0"><span class="battery-unit-suffix">mA</span></span></label>
+                <button class="continue" id="add-sleep-function" type="button">Ajouter une fonction</button>
+            </div>
+            <p class="saved" id="saved"></p>
+            <div class="actions"><button class="continue" id="continue" type="button">Enregistrer et voir les résultats →</button></div>
+        </section>
+    </main>
+
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const batterySubMode = sessionStorage.getItem('batterySubMode') || 'Customer Mode';
+        const isDmMode = batterySubMode === 'DM1' || batterySubMode === 'DM2';
+        if (!isDmMode) document.getElementById('autonomy-menu-button')?.remove();
+        const sleepStorageKey = isDmMode ? `sleepConsumption${batterySubMode}` : 'sleepConsumption';
+        const wakeStorageKey = `wakeParams_${batterySubMode}`;
+
+        document.getElementById('wake-title').textContent = `Réveil Technique Périodique SOC (Spécifique ${batterySubMode})`;
+
+        // Rendu dynamique du Stepper
+        const stepperEl = document.getElementById('mode-stepper');
+        const firstStepUrl = isDmMode ? '/edit_dm_mode' : '/edit_customer_mode';
+        const firstStepLabel = isDmMode ? `1. Courants ${batterySubMode}` : '1. Courants Customer';
+
+        stepperEl.innerHTML = `
+            <button class="step" type="button" onclick="window.location.href='${firstStepUrl}'">${firstStepLabel}</button>
+            <button class="step" type="button" onclick="window.location.href='/fixed_consumption'">2. Consommations forfaitaires</button>
+            <button class="step active" type="button" onclick="window.location.href='/sleep_consumption'">3. Consommation en veille</button>
+        `;
+
+        const wakePeriodEl = document.getElementById('wakePeriodHours');
+        const wakeDurationEl = document.getElementById('wakeDurationSeconds');
+        const wakeCurrentEl = document.getElementById('wakeCurrentMa');
+        const wakeBalancingDurationEl = document.getElementById('wakeCellBalancingDurationSeconds');
+        const wakeBalancingCurrentEl = document.getElementById('wakeCellBalancingCurrentMa');
+
+        const savedWake = JSON.parse(sessionStorage.getItem(wakeStorageKey) || '{}');
+        const globalBatteryConfig = JSON.parse(sessionStorage.getItem('batteryConfiguration') || '{}');
+
+        wakePeriodEl.value = savedWake.wakePeriodHours ?? globalBatteryConfig.wakePeriodHours ?? 8;
+        wakeDurationEl.value = savedWake.wakeDurationSeconds ?? globalBatteryConfig.wakeDurationSeconds ?? 2;
+        wakeCurrentEl.value = savedWake.wakeCurrentMa ?? globalBatteryConfig.wakeCurrentMa ?? 536;
+        wakeBalancingDurationEl.value = savedWake.wakeCellBalancingDurationSeconds ?? globalBatteryConfig.wakeCellBalancingDurationSeconds ?? 60;
+        wakeBalancingCurrentEl.value = savedWake.wakeCellBalancingCurrentMa ?? globalBatteryConfig.wakeCellBalancingCurrentMa ?? 4359;
+
+        function saveWakeParams() {
+            sessionStorage.setItem(wakeStorageKey, JSON.stringify({
+                wakePeriodHours: Number(wakePeriodEl.value) || 0,
+                wakeDurationSeconds: Number(wakeDurationEl.value) || 0,
+                wakeCurrentMa: Number(wakeCurrentEl.value) || 0,
+                wakeCellBalancingDurationSeconds: Number(wakeBalancingDurationEl.value) || 0,
+                wakeCellBalancingCurrentMa: Number(wakeBalancingCurrentEl.value) || 0
+            }));
+        }
+
+        [wakePeriodEl, wakeDurationEl, wakeCurrentEl, wakeBalancingDurationEl, wakeBalancingCurrentEl].forEach(input => {
+            input.addEventListener('input', () => { saveWakeParams(); render(); });
+        });
+
+        const scenarios = [['baseLab', 'Base LAB'], ['withAlarm', 'Avec alarme'], ['withoutAlarmTachy', 'Sans alarme avec TACHY'], ['alarmTachy', 'Avec alarme avec TACHY']];
+        const defaultTwt = () => ({
+            single: { ivcCurrent: 0, powerlatchCurrent: 0, durationSeconds: 0 }
+        });
+        const defaultValues = { sansEbdu: 0, alarm: 0, aid: 0, tachy: 0, agingSoc: 0.08 };
+        const saved = document.getElementById('saved');
+        const toNumber = (value, fallback = 0) => { const number = Number(String(value ?? '').replace(',', '.')); return Number.isFinite(number) ? number : fallback; };
+        const format = (value, suffix) => `${toNumber(value).toFixed(4).replace(/\.?0+$/, '').replace('.', ',')} ${suffix}`;
+        
+        const batteryConfiguration = JSON.parse(sessionStorage.getItem('batteryConfiguration') || '{}');
+        const batteryCapacity = toNumber(batteryConfiguration.capacityAh, 60);
+        
+        const stored = JSON.parse(sessionStorage.getItem(sleepStorageKey) || (isDmMode ? sessionStorage.getItem('sleepConsumption') : null) || '{}');
+        const sleepConsumption = Object.fromEntries(scenarios.map(([key]) => {
+            const savedScenario = stored[key] || {};
+            const twt = defaultTwt();
+            const legacyTwt = savedScenario.twt?.single || savedScenario.twt?.periodic || savedScenario.twt?.movement || {};
+            twt.single = { ...twt.single, ...legacyTwt };
+            return [key, { ...defaultValues, ...savedScenario, twt }];
+        }));
+        const deletedSleepKey = `deletedSleepFunctionIds_${batterySubMode}`;
+        let deletedSleepIds = new Set(JSON.parse(sessionStorage.getItem(deletedSleepKey) || '[]'));
+        const customSleepKey = `customSleepFunctions_${batterySubMode}`;
+        let customSleepFunctions = JSON.parse(sessionStorage.getItem(customSleepKey) || '[]');
+
+        function homologationCurrent() {
+            const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+            const currentStorageKey = batterySubMode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${batterySubMode}Currents`;
+            const sourceCurrentColumn = batterySubMode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
+            const modifiedCurrents = JSON.parse(sessionStorage.getItem(currentStorageKey) || '{}');
+            const storedEcuKeys = sessionStorage.getItem('selectedEcuKeys');
+            const selectedEcuKeys = new Set(JSON.parse(storedEcuKeys || '[]'));
+            const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
+            const deletedDevices = new Set(JSON.parse(sessionStorage.getItem('deletedDarkDeviceKeys') || '[]'));
+            const customDevices = JSON.parse(sessionStorage.getItem('customDarkDevices') || '[]');
+            let total = (sheet?.data || []).reduce((sum, row, rowIndex) => {
+                const name = row['Device Name'] || row['ECU Name'] || `ECU ${rowIndex + 1}`;
+                const key = `${rowIndex}_${name}`;
+                if (deletedDevices.has(key)) return sum;
+                if (storedEcuKeys !== null && !selectedEcuKeys.has(key)) return sum;
+                const value = modifiedCurrents[key] ?? row[sourceCurrentColumn];
+                return sum + toNumber(value);
+            }, 0);
+            customDevices.forEach(device => {
+                const key = `custom:${device.id}`;
+                total += toNumber(modifiedCurrents[key] ?? device.current);
+            });
+            return total;
+        }
+
+        function removeButton(label, callback) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'device-row-delete';
+            button.textContent = '×';
+            button.title = `Supprimer ${label}`;
+            button.addEventListener('click', () => {
+                if (window.confirm(`Êtes-vous sûr de vouloir supprimer « ${label} » ?`)) callback();
+            });
+            return button;
+        }
+
+        function addRow(label, valueForScenario, suffix, editable, onChange, removeCallback = null) {
+            const row = document.createElement('tr'); const heading = document.createElement('td'); heading.textContent = label; row.appendChild(heading);
+            scenarios.forEach(([key]) => {
+                const cell = document.createElement('td');
+                const value = valueForScenario(key);
+                if (editable) {
+                    cell.className = 'manual';
+                    const wrapper = document.createElement('span');
+                    wrapper.className = 'battery-unit-field';
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = '0';
+                    input.step = '0.0001';
+                    input.value = value;
+                    input.addEventListener('change', () => { onChange(key, input.value); save(); render(); });
+                    wrapper.append(input);
+                    const unit = document.createElement('span');
+                    unit.className = 'battery-unit-suffix';
+                    unit.textContent = suffix;
+                    wrapper.append(unit);
+                    cell.append(wrapper);
+                } else {
+                    cell.className = 'calculated';
+                    cell.textContent = format(value, suffix);
+                }
+                row.appendChild(cell);
+            });
+            const action = document.createElement('td');
+            if (removeCallback) action.appendChild(removeButton(label, removeCallback));
+            row.appendChild(action);
+            document.getElementById('rows').appendChild(row);
+        }
+
+        function addSection(label) {
+            const row = document.createElement('tr');
+            row.className = 'section';
+            const cell = document.createElement('td');
+            cell.colSpan = scenarios.length + 2;
+            cell.textContent = label;
+            row.appendChild(cell);
+            document.getElementById('rows').appendChild(row);
+        }
+
+        function twtEnergy(entry) {
+            return ((toNumber(entry.ivcCurrent) + toNumber(entry.powerlatchCurrent)) / 1000) * (toNumber(entry.durationSeconds) / 3600);
+        }
+
+        function addTwtRows() {
+            const removeTwt = () => { deletedSleepIds.add('twt'); sessionStorage.setItem(deletedSleepKey, JSON.stringify([...deletedSleepIds])); render(); };
+            addRow('TWT - conso IVC', (key) => sleepConsumption[key].twt.single.ivcCurrent, 'mA', true, (key, value) => sleepConsumption[key].twt.single.ivcCurrent = value, removeTwt);
+            addRow('TWT - Powerlatch VH', (key) => sleepConsumption[key].twt.single.powerlatchCurrent, 'mA', true, (key, value) => sleepConsumption[key].twt.single.powerlatchCurrent = value);
+            addRow("TWT - durée d’envoi", (key) => sleepConsumption[key].twt.single.durationSeconds, 's', true, (key, value) => sleepConsumption[key].twt.single.durationSeconds = value);
+            addRow('TWT - Ah/jour', (key) => twtEnergy(sleepConsumption[key].twt.single), 'Ah/j', false);
+            addRow('TWT - énergie', (key) => twtEnergy(sleepConsumption[key].twt.single), 'Ah', false);
+        }
+
+        function render() {
+            document.getElementById('rows').replaceChildren();
+            const current = homologationCurrent();
+            
+            const pHours = Math.max(Number(wakePeriodEl.value) || 8, 0.001);
+            const wSec = Number(wakeDurationEl.value) || 0;
+            const wCurr = Number(wakeCurrentEl.value) || 0;
+            const bSec = Number(wakeBalancingDurationEl.value) || 0;
+            const bCurr = Number(wakeBalancingCurrentEl.value) || 0;
+            const wakesPerDay = 24 / pHours;
+            const techWakeEnergyAhj = ((wCurr / 1000) * (wSec / 3600) + (bCurr / 1000) * (bSec / 3600)) * wakesPerDay;
+
+            document.getElementById('instant-current-title').textContent = `Conso veille instantanée ${batterySubMode}`;
+            document.getElementById('instant-current-value').textContent = format(current, 'mA');
+            document.getElementById('sleep-current-energy').textContent = format(current / 1000 * 24, 'Ah/j');
+
+            addSection('Réveil périodique');
+            addRow('Réveil technique périodique SOC (Énergie)', () => techWakeEnergyAhj, 'Ah/j', false);
+            addSection('Équipements et fonctions');
+            if (!deletedSleepIds.has('sansEbdu')) {
+                addRow('Sans e-BDU S53 - conso PCU + IVC + CDC', (key) => sleepConsumption[key].sansEbdu, 'mA', true, (key, value) => sleepConsumption[key].sansEbdu = value, () => { deletedSleepIds.add('sansEbdu'); sessionStorage.setItem(deletedSleepKey, JSON.stringify([...deletedSleepIds])); render(); });
+                addRow('Consommation sans e-BDU S53', (key) => sleepConsumption[key].sansEbdu / 1000 * 24, 'Ah/j', false);
+            }
+            if (!deletedSleepIds.has('alarm')) {
+                addRow('ALARME - conso alarme', (key) => sleepConsumption[key].alarm, 'mA', true, (key, value) => sleepConsumption[key].alarm = value, () => { deletedSleepIds.add('alarm'); sessionStorage.setItem(deletedSleepKey, JSON.stringify([...deletedSleepIds])); render(); });
+                addRow('Consommation alarme', (key) => sleepConsumption[key].alarm / 1000 * 24, 'Ah/j', false);
+            }
+            
+            if (isDmMode) {
+                if (!deletedSleepIds.has('twt')) {
+                    addSection('Fonction TWT');
+                    addTwtRows();
+                }
+            } else {
+                if (!deletedSleepIds.has('aid')) {
+                    addRow('AID - conso AID', (key) => sleepConsumption[key].aid, 'mA', true, (key, value) => sleepConsumption[key].aid = value, () => { deletedSleepIds.add('aid'); sessionStorage.setItem(deletedSleepKey, JSON.stringify([...deletedSleepIds])); render(); });
+                    addRow('Consommation AID', (key) => sleepConsumption[key].aid / 1000 * 24, 'Ah/j', false);
+                }
+                if (!deletedSleepIds.has('tachy')) {
+                    addRow('TACHYMETRE - conso Tachy', (key) => sleepConsumption[key].tachy, 'mA', true, (key, value) => sleepConsumption[key].tachy = value, () => { deletedSleepIds.add('tachy'); sessionStorage.setItem(deletedSleepKey, JSON.stringify([...deletedSleepIds])); render(); });
+                    addRow('Consommation tachymètre', (key) => sleepConsumption[key].tachy / 1000 * 24, 'Ah/j', false);
+                }
+            }
+            customSleepFunctions.forEach((item) => {
+                item.values ||= {};
+                addRow(item.name, (key) => item.values[key] ?? item.current ?? 0, 'mA', true, (key, value) => item.values[key] = value, () => {
+                    customSleepFunctions = customSleepFunctions.filter(entry => entry.id !== item.id);
+                    sessionStorage.setItem(customSleepKey, JSON.stringify(customSleepFunctions));
+                    render();
+                });
+                addRow(`${item.name} - Ah/jour et énergie`, (key) => toNumber(item.values[key] ?? item.current) / 1000 * 24, 'Ah/j', false);
+            });
+            if (!deletedSleepIds.has('aging')) {
+                addSection('Vieillissement batterie');
+                addRow('Vieillissement batterie - SOC vieillissement', (key) => sleepConsumption[key].agingSoc, '%', true, (key, value) => sleepConsumption[key].agingSoc = value, () => { deletedSleepIds.add('aging'); sessionStorage.setItem(deletedSleepKey, JSON.stringify([...deletedSleepIds])); render(); });
+                addRow('Consommation vieillissement batterie', (key) => sleepConsumption[key].agingSoc / 100 * batteryCapacity, 'Ah/j', false);
+            }
+        }
+
+        function save() { 
+            saveWakeParams();
+            sessionStorage.setItem(sleepStorageKey, JSON.stringify(sleepConsumption)); 
+            sessionStorage.setItem(customSleepKey, JSON.stringify(customSleepFunctions));
+            saved.textContent = 'Enregistré'; 
+        }
+
+        document.getElementById('continue').addEventListener('click', () => { 
+            save(); 
+            window.location.href = isDmMode ? '/dm_results' : '/battery_results_menu'; 
+        });
+
+        document.getElementById('add-sleep-function').addEventListener('click', () => {
+            const nameInput = document.getElementById('new-sleep-function-name');
+            const currentInput = document.getElementById('new-sleep-function-current');
+            const name = nameInput.value.trim();
+            if (!name) return nameInput.focus();
+            customSleepFunctions.push({
+                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                name,
+                current: toNumber(currentInput.value),
+                values: Object.fromEntries(scenarios.map(([key]) => [key, toNumber(currentInput.value)]))
+            });
+            sessionStorage.setItem(customSleepKey, JSON.stringify(customSleepFunctions));
+            nameInput.value = '';
+            currentInput.value = '0';
+            render();
+        });
+
+        ProjectStorage.bindSaveButton('project-save', 'saved-status');
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            if (confirm('Restaurer la consommation en veille initiale ?')) {
+                sessionStorage.removeItem(sleepStorageKey);
+                sessionStorage.removeItem(wakeStorageKey);
+                window.location.reload();
+            }
+        });
+
+        function navigateHome() {
+            const activeProject = ProjectStorage.getActiveProject();
+            if (activeProject && activeProject.name) {
+                window.location.href = '/';
+            } else {
+                alert("Veuillez d'abord enregistrer le projet pour pouvoir revenir à la page d'accueil.");
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            const details = document.getElementById('actions-details');
+            if (details && !details.contains(e.target)) details.removeAttribute('open');
+        });
+
+        render();
+    </script>
+</body>
+</html>

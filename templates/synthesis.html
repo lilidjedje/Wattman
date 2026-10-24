@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthèse Homologation</title>
+    <!-- Intégration de Chart.js pour les graphiques dynamiques -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+        .header {
+            max-width: 1800px; margin: 0 auto 20px; color: white;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 { font-size: 2.2em; }
+        .section-title {
+            max-width: 1800px; margin: 30px auto 15px; color: white;
+            font-size: 1.6em; border-bottom: 2px solid rgba(255,255,255,0.3); padding-bottom: 5px;
+        }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: 600; transition: all 0.3s ease; font-size: 1em;
+        }
+        .btn-back { background: rgba(255, 255, 255, 0.2); color: white; border: 2px solid white; }
+        .btn-back:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
+        .btn-menu { background: #3182ce; color: white; }
+        .btn-menu:hover { background: #2563eb; transform: translateY(-2px); }
+        
+        .synthesis-grid {
+            display: flex; gap: 20px; max-width: 1800px; margin: 0 auto 10px; overflow-x: auto; align-items: flex-start;
+        }
+        .table-card {
+            flex: 1; min-width: 500px; background: white; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15); overflow: hidden; margin-bottom: 20px;
+            display: flex; flex-direction: column;
+        }
+        .table-header-title {
+            padding: 15px; color: white; font-weight: 700; text-align: center; font-size: 1.2em;
+        }
+        
+        /* Styles pour les onglets internes (Données vs Graphe) */
+        .card-tabs {
+            display: flex; background: #edf2f7; border-bottom: 1px solid #cbd5e1;
+        }
+        .card-tab {
+            flex: 1; padding: 10px; border: none; background: none; font-weight: 600;
+            color: #4a5568; cursor: pointer; transition: all 0.2s; font-size: 0.9em;
+        }
+        .card-tab:hover { background: #e2e8f0; }
+        .card-tab.active { background: white; color: #667eea; border-bottom: 3px solid #667eea; }
+        
+        .tab-content { padding: 10px; display: none; }
+        .tab-content.active { display: block; }
+        
+        table { width: 100%; border-collapse: collapse; text-align: center; font-size: 0.9em; }
+        thead th { background-color: #f8fafc; color: #2d3748; padding: 12px 8px; border: 1px solid #cbd5e1; font-weight: 700; }
+        tbody td { padding: 10px 6px; border: 1px solid #e2e8f0; color: #333; font-weight: 500; }
+        tbody tr:nth-child(even) { background-color: #f8fafc; }
+        
+        .highlight-val { font-weight: bold; color: #1a202c; }
+        .chart-container { width: 100%; height: 320px; position: relative; padding: 10px; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="homologation-step-page synthesis-page preserve-table-colors">
+    <div class="header">
+        <button class="btn btn-back" onclick="window.location.href='/edit_gmv'">← Retour</button>
+        <h1>Synthèse Homologation</h1>
+        <div class="header-actions">
+            <button class="btn btn-results" type="button" id="export-excel">Export Excel</button>
+            <div class="retractable-menu"><details id="actions-details"><summary>Sommaire / Actions</summary><div class="menu-content">
+                <span class="saved-status" id="saved-status" aria-live="polite"></span>
+                <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
+                <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
+                <hr>
+                <button class="btn-menu btn-autonomy" type="button" onclick="window.location.href='/battery_menu'">Menu Autonomie</button>
+                <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'">Sélection du mode</button>
+                <button class="btn-menu btn-home" type="button" id="homologation-home">Accueil</button>
+            </div></details></div>
+        </div>
+    </div>
+
+    <!-- ================= PARTIE 1 : DEVICE LIST ================= -->
+    <div class="section-title">Synthèse DCDC Sizing</div>
+    <div class="synthesis-grid">
+        <!-- Tableau 1 : Device List Winter -->
+        <div class="table-card" id="card-dev-winter">
+            <div class="table-header-title" style="background-color: #48bb78;">Winter<br><span style="font-size: 0.8em; font-weight: normal;"><-5°C</span></div>
+            <div class="card-tabs">
+                <button class="card-tab active" onclick="switchCardTab('dev-winter', 'data')"> Données</button>
+                <button class="card-tab" onclick="switchCardTab('dev-winter', 'chart')"> Graphique</button>
+            </div>
+            <div class="tab-content data-tab active">
+                <table>
+                    <thead>
+                        <tr><th>Time (Mint)</th><th>Base<br>Vehicle global (A)</th><th>Upper<br>Vehicle global (A)</th><th>DCDC output</th></tr>
+                    </thead>
+                    <tbody id="tbody-dev-winter"></tbody>
+                </table>
+            </div>
+            <div class="tab-content chart-tab">
+                <div class="chart-container"><canvas id="chart-dev-winter"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Tableau 2 : Device List Mid-season -->
+        <div class="table-card" id="card-dev-midseason">
+            <div class="table-header-title" style="background-color: #3182ce;">Mid-season<br><span style="font-size: 0.8em; font-weight: normal;">5°C < T < 15°C</span></div>
+            <div class="card-tabs">
+                <button class="card-tab active" onclick="switchCardTab('dev-midseason', 'data')"> Données</button>
+                <button class="card-tab" onclick="switchCardTab('dev-midseason', 'chart')"> Graphique</button>
+            </div>
+            <div class="tab-content data-tab active">
+                <table>
+                    <thead>
+                        <tr><th>Time (Mint)</th><th>Base<br>Vehicle global (A)</th><th>Upper<br>Vehicle global (A)</th><th>DCDC output</th></tr>
+                    </thead>
+                    <tbody id="tbody-dev-midseason"></tbody>
+                </table>
+            </div>
+            <div class="tab-content chart-tab">
+                <div class="chart-container"><canvas id="chart-dev-midseason"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Tableau 3 : Device List Summer -->
+        <div class="table-card" id="card-dev-summer">
+            <div class="table-header-title" style="background-color: #dd6b20;">Summer<br><span style="font-size: 0.8em; font-weight: normal;">T > 15°C</span></div>
+            <div class="card-tabs">
+                <button class="card-tab active" onclick="switchCardTab('dev-summer', 'data')"> Données</button>
+                <button class="card-tab" onclick="switchCardTab('dev-summer', 'chart')"> Graphique</button>
+            </div>
+            <div class="tab-content data-tab active">
+                <table>
+                    <thead>
+                        <tr><th>Time (Mint)</th><th>Base<br>Vehicle global (A)</th><th>Upper<br>Vehicle global (A)</th><th>DCDC output</th></tr>
+                    </thead>
+                    <tbody id="tbody-dev-summer"></tbody>
+                </table>
+            </div>
+            <div class="tab-content chart-tab">
+                <div class="chart-container"><canvas id="chart-dev-summer"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= PARTIE 2 : ALTERNATOR DATA ================= -->
+    <div class="section-title">Synthèse WLTC (-7 °C)</div>
+    <div class="synthesis-grid">
+        <!-- Tableau 4 : Alternator Winter -->
+        <div class="table-card" id="card-alt-winter">
+            <div class="table-header-title" style="background-color: #38a169;">Cycle 1</div>
+            <div class="card-tabs">
+                <button class="card-tab active" onclick="switchCardTab('alt-winter', 'data')"> Données</button>
+                <button class="card-tab" onclick="switchCardTab('alt-winter', 'chart')"> Graphique</button>
+            </div>
+            <div class="tab-content data-tab active">
+                <table>
+                    <thead>
+                        <tr><th>Time (Mint)</th><th>Base<br>Vehicle global (A)</th><th>Upper<br>Vehicle global (A)</th><th>DCDC output</th></tr>
+                    </thead>
+                    <tbody id="tbody-alt-winter"></tbody>
+                </table>
+            </div>
+            <div class="tab-content chart-tab">
+                <div class="chart-container"><canvas id="chart-alt-winter"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Tableau 5 : Alternator Mid-season -->
+        <div class="table-card" id="card-alt-midseason">
+            <div class="table-header-title" style="background-color: #2b6cb0;">Cycle 2</div>
+            <div class="card-tabs">
+                <button class="card-tab active" onclick="switchCardTab('alt-midseason', 'data')"> Données</button>
+                <button class="card-tab" onclick="switchCardTab('alt-midseason', 'chart')"> Graphique</button>
+            </div>
+            <div class="tab-content data-tab active">
+                <table>
+                    <thead>
+                        <tr><th>Time (Mint)</th><th>Base<br>Vehicle global (A)</th><th>Upper<br>Vehicle global (A)</th><th>DCDC output</th></tr>
+                    </thead>
+                    <tbody id="tbody-alt-midseason"></tbody>
+                </table>
+            </div>
+            <div class="tab-content chart-tab">
+                <div class="chart-container"><canvas id="chart-alt-midseason"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Tableau 6 : Alternator Summer -->
+        <div class="table-card" id="card-alt-summer">
+            <div class="table-header-title" style="background-color: #c05621;">Cycle 3</div>
+            <div class="card-tabs">
+                <button class="card-tab active" onclick="switchCardTab('alt-summer', 'data')"> Données</button>
+                <button class="card-tab" onclick="switchCardTab('alt-summer', 'chart')"> Graphique</button>
+            </div>
+            <div class="tab-content data-tab active">
+                <table>
+                    <thead>
+                        <tr><th>Time (Mint)</th><th>Base<br>Vehicle global (A)</th><th>Upper<br>Vehicle global (A)</th><th>DCDC output</th></tr>
+                    </thead>
+                    <tbody id="tbody-alt-summer"></tbody>
+                </table>
+            </div>
+            <div class="tab-content chart-tab">
+                <div class="chart-container"><canvas id="chart-alt-summer"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/project_storage.js"></script>
+    <script src="/static/homologation_ui.js"></script>
+    <script src="/static/homologation_defaults.js"></script>
+    <script>
+        // Timelines d'intervalles
+        const devTimeline = [
+            { time: 0, intIdx: 0 }, { time: 5, intIdx: 0 },
+            { time: 5, intIdx: 1 }, { time: 10, intIdx: 1 },
+            { time: 10, intIdx: 2 }, { time: 15, intIdx: 2 },
+            { time: 15, intIdx: 3 }, { time: 25, intIdx: 3 },
+            { time: 25, intIdx: 4 }, { time: 30, intIdx: 4 }
+        ];
+
+        const altTimeline = [
+            { time: 0, intIdx: 0 },     { time: 1.67, intIdx: 0 },
+            { time: 1.68, intIdx: 1 },  { time: 4, intIdx: 1 },
+            { time: 4, intIdx: 2 },     { time: 7, intIdx: 2 },
+            { time: 7, intIdx: 3 },     { time: 8.16, intIdx: 3 },
+            { time: 12.25, intIdx: 4 }, { time: 25, intIdx: 4 },
+            { time: 25, intIdx: 5 },    { time: 30, intIdx: 5 }
+        ];
+
+        const devIntervals = HomologationDefaults.dcdcIntervals.slice(0, 5);
+        const altIntervals = HomologationDefaults.wltcIntervals;
+        const devProfiles = ['winter', 'midseason', 'summer'];
+        const wltcProfiles = [
+            { key: 'cycle1', dom: 'winter' },
+            { key: 'cycle2', dom: 'midseason' },
+            { key: 'cycle3', dom: 'summer' }
+        ];
+
+        // Chargement des configurations session
+        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
+        const profileMatrix = JSON.parse(sessionStorage.getItem('profileMatrix') || '{}');
+        const alternatorMatrix = JSON.parse(sessionStorage.getItem('alternatorMatrix') || '{}');
+        const modifiedCurrents = JSON.parse(sessionStorage.getItem('modifiedCurrents') || '{}');
+        const modifiedLowers = JSON.parse(sessionStorage.getItem('modifiedLowers') || '{}');
+        const modifiedUppers = JSON.parse(sessionStorage.getItem('modifiedUppers') || '{}');
+        const paoData = JSON.parse(sessionStorage.getItem('paoData') || '[]');
+        const gmvData = JSON.parse(sessionStorage.getItem('gmvData') || '[]');
+        const homologationConfiguration = JSON.parse(sessionStorage.getItem('homologationConfiguration') || '{}');
+        const configuredDcdcOutput = Number(homologationConfiguration.dcdcOutputCurrentA);
+        const dcdcOutputCurrent = Number.isFinite(configuredDcdcOutput) && configuredDcdcOutput >= 0 ? configuredDcdcOutput : 250;
+        const formattedDcdcOutput = Number.isInteger(dcdcOutputCurrent) ? String(dcdcOutputCurrent) : dcdcOutputCurrent.toFixed(2);
+        const storedDeviceKeys = sessionStorage.getItem('selectedDeviceKeys');
+        const selectedDeviceKeys = new Set(JSON.parse(storedDeviceKeys || '[]'));
+        const deletedDeviceKeys = new Set(JSON.parse(sessionStorage.getItem('deletedHomologationDeviceKeys') || '[]'));
+        const customDevices = JSON.parse(sessionStorage.getItem('customHomologationDevices') || '[]');
+        const synthesisExportData = { dcdc: {}, wltc: {} };
+
+        const sheet = excelData['Device List'] || Object.values(excelData)[0];
+
+        function parsePercent(val) {
+            if (val === undefined || val === null || val === '') return 1.0;
+            let str = String(val).replace('%', '').trim();
+            let num = parseFloat(str);
+            return isNaN(num) ? 1.0 : num / 100;
+        }
+
+        // Fonction pour basculer l'affichage des onglets
+        function switchCardTab(cardId, mode) {
+            const card = document.getElementById('card-' + cardId);
+            if (!card) return;
+            
+            card.querySelectorAll('.card-tab').forEach(t => t.classList.remove('active'));
+            card.querySelectorAll('.tab-content').forEach(c => contentHide(c));
+
+            if (mode === 'data') {
+                card.querySelector('.card-tab:nth-child(1)').classList.add('active');
+                card.querySelector('.data-tab').classList.add('active');
+            } else {
+                card.querySelector('.card-tab:nth-child(2)').classList.add('active');
+                card.querySelector('.chart-tab').classList.add('active');
+            }
+        }
+        function contentHide(el) { el.classList.remove('active'); }
+
+        // Fonction pour configurer un graphique Chart.js
+        function buildChart(canvasId, xData, baseData, upperData) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: xData,
+                    datasets: [
+                        { label: 'Base Vehicle global conso', data: baseData, borderColor: '#086dcc', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, lineTension: 0 },
+                        { label: 'Upper Vehicle global conso', data: upperData, borderColor: '#159447', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, lineTension: 0 },
+                        { label: 'DCDC output', data: Array(xData.length).fill(dcdcOutputCurrent), borderColor: '#d71920', backgroundColor: 'transparent', borderWidth: 4.5, pointRadius: 0, lineTension: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: 'Temps', font: { weight: 'bold' } } },
+                        y: { min: 0, suggestedMax: Math.max(280, dcdcOutputCurrent * 1.12), title: { display: true, text: 'Courant', font: { weight: 'bold' } } }
+                    },
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 15, font: { size: 11 } } } }
+                }
+            });
+        }
+
+        // ================= CALCULS & GRAPHES PARTIE 1 : DEVICES =================
+        devProfiles.forEach(prof => {
+            const tbody = document.getElementById(`tbody-dev-${prof}`);
+            let xPoints = [], basePoints = [], upperPoints = [];
+            synthesisExportData.dcdc[prof] = [];
+
+            devTimeline.forEach(point => {
+                let totalBase = 0, totalUpper = 0;
+                const intLabel = devIntervals[point.intIdx];
+
+                if (sheet && sheet.data) {
+                    sheet.data.forEach((row, rowIndex) => {
+                        const dName = row['Device Name'] || `Device ${rowIndex + 1}`;
+                        const deviceKey = `${rowIndex}_${dName}`;
+                        if (deletedDeviceKeys.has(deviceKey) || HomologationDefaults.normalize(dName).includes('GMV REFROIDISSEMENT FACE AVANT')) return;
+                        if (storedDeviceKeys !== null && !selectedDeviceKeys.has(deviceKey)) return;
+                        const origCurr = parseFloat(row['Current (A)'] ?? row['Homologation Current (A)']);
+                        const current = modifiedCurrents[deviceKey] !== undefined ? modifiedCurrents[deviceKey] : (isNaN(origCurr) ? 0 : origCurr);
+                        
+                        const lowerActive = modifiedLowers[deviceKey] !== undefined ? parseInt(modifiedLowers[deviceKey]) : 1;
+                        const upperActive = modifiedUppers[deviceKey] !== undefined ? parseInt(modifiedUppers[deviceKey]) : 0;
+                        const factor = parsePercent(profileMatrix[`${rowIndex}_${prof}_${intLabel}`]);
+
+                        if (lowerActive === 1) totalBase += current * factor;
+                        if (upperActive === 1) totalUpper += current * factor;
+                    });
+
+                    customDevices.forEach((device) => {
+                        const deviceKey = `custom_${device.id}`;
+                        if (deletedDeviceKeys.has(deviceKey)) return;
+                        const current = parseFloat(modifiedCurrents[deviceKey] ?? device.current) || 0;
+                        const lowerActive = parseInt(modifiedLowers[deviceKey] ?? device.lower ?? 1);
+                        const upperActive = parseInt(modifiedUppers[deviceKey] ?? device.upper ?? 0);
+                        const factor = parsePercent(profileMatrix[`custom_${device.id}_${prof}_${intLabel}`]);
+                        if (lowerActive === 1) totalBase += current * factor;
+                        if (upperActive === 1) totalUpper += current * factor;
+                    });
+
+                    paoData.forEach(pao => {
+                        const current = parseFloat(pao.current) || 0;
+                        if (parseInt(pao.lower) === 1) totalBase += current * parsePercent(pao.devProfiles[`${prof}_${intLabel}`]);
+                        if (parseInt(pao.upper) === 1) totalUpper += current * parsePercent(pao.devProfiles[`${prof}_${intLabel}`]);
+                    });
+
+                    gmvData.forEach(gmv => {
+                        const current = parseFloat(gmv.current) || 0;
+                        if (parseInt(gmv.lower) === 1) totalBase += current * parsePercent(gmv.devProfiles[`${prof}_${intLabel}`]);
+                        if (parseInt(gmv.upper) === 1) totalUpper += current * parsePercent(gmv.devProfiles[`${prof}_${intLabel}`]);
+                    });
+                }
+
+                xPoints.push(point.time);
+                basePoints.push(parseFloat(totalBase.toFixed(2)));
+                upperPoints.push(parseFloat(totalUpper.toFixed(2)));
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${point.time} min</td><td class="highlight-val">${totalBase.toFixed(2)} A</td><td class="highlight-val">${totalUpper.toFixed(2)} A</td><td style="color: #4a5568; font-weight: 600;">${formattedDcdcOutput} A</td>`;
+                tbody.appendChild(tr);
+                synthesisExportData.dcdc[prof].push({ time: point.time, base: Number(totalBase.toFixed(2)), upper: Number(totalUpper.toFixed(2)), dcdcOutput: dcdcOutputCurrent });
+            });
+
+            buildChart(`chart-dev-${prof}`, xPoints, basePoints, upperPoints);
+        });
+
+        // ================= CALCULS & GRAPHES PARTIE 2 : ALTERNATOR =================
+        wltcProfiles.forEach(({ key: prof, dom }) => {
+            const tbody = document.getElementById(`tbody-alt-${dom}`);
+            let xPoints = [], basePoints = [], upperPoints = [];
+            synthesisExportData.wltc[prof] = [];
+
+            altTimeline.forEach(point => {
+                let totalBase = 0, totalUpper = 0;
+                const intLabel = altIntervals[point.intIdx];
+
+                if (sheet && sheet.data) {
+                    sheet.data.forEach((row, rowIndex) => {
+                        const dName = row['Device Name'] || `Device ${rowIndex + 1}`;
+                        const deviceKey = `${rowIndex}_${dName}`;
+                        if (deletedDeviceKeys.has(deviceKey) || HomologationDefaults.normalize(dName).includes('GMV REFROIDISSEMENT FACE AVANT')) return;
+                        if (storedDeviceKeys !== null && !selectedDeviceKeys.has(deviceKey)) return;
+                        const origCurr = parseFloat(row['Current (A)'] ?? row['Homologation Current (A)']);
+                        const current = modifiedCurrents[deviceKey] !== undefined ? modifiedCurrents[deviceKey] : (isNaN(origCurr) ? 0 : origCurr);
+                        
+                        const lowerActive = modifiedLowers[deviceKey] !== undefined ? parseInt(modifiedLowers[deviceKey]) : 1;
+                        const upperActive = modifiedUppers[deviceKey] !== undefined ? parseInt(modifiedUppers[deviceKey]) : 0;
+                        const factor = parsePercent(alternatorMatrix[`${rowIndex}_${prof}_${intLabel}`]);
+
+                        if (lowerActive === 1) totalBase += current * factor;
+                        if (upperActive === 1) totalUpper += current * factor;
+                    });
+
+                    customDevices.forEach((device) => {
+                        const deviceKey = `custom_${device.id}`;
+                        if (deletedDeviceKeys.has(deviceKey)) return;
+                        const current = parseFloat(modifiedCurrents[deviceKey] ?? device.current) || 0;
+                        const lowerActive = parseInt(modifiedLowers[deviceKey] ?? device.lower ?? 1);
+                        const upperActive = parseInt(modifiedUppers[deviceKey] ?? device.upper ?? 0);
+                        const factor = parsePercent(alternatorMatrix[`custom_${device.id}_${prof}_${intLabel}`]);
+                        if (lowerActive === 1) totalBase += current * factor;
+                        if (upperActive === 1) totalUpper += current * factor;
+                    });
+
+                    paoData.forEach(pao => {
+                        const current = parseFloat(pao.current) || 0;
+                        if (parseInt(pao.lower) === 1) totalBase += current * parsePercent(pao.altProfiles[`${prof}_${intLabel}`]);
+                        if (parseInt(pao.upper) === 1) totalUpper += current * parsePercent(pao.altProfiles[`${prof}_${intLabel}`]);
+                    });
+
+                    gmvData.forEach(gmv => {
+                        const current = parseFloat(gmv.current) || 0;
+                        if (parseInt(gmv.lower) === 1) totalBase += current * parsePercent(gmv.altProfiles[`${prof}_${intLabel}`]);
+                        if (parseInt(gmv.upper) === 1) totalUpper += current * parsePercent(gmv.altProfiles[`${prof}_${intLabel}`]);
+                    });
+                }
+
+                xPoints.push(point.time);
+                basePoints.push(parseFloat(totalBase.toFixed(2)));
+                upperPoints.push(parseFloat(totalUpper.toFixed(2)));
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${point.time} min</td><td class="highlight-val">${totalBase.toFixed(2)} A</td><td class="highlight-val">${totalUpper.toFixed(2)} A</td><td style="color: #4a5568; font-weight: 600;">${formattedDcdcOutput} A</td>`;
+                tbody.appendChild(tr);
+                synthesisExportData.wltc[prof].push({ time: point.time, base: Number(totalBase.toFixed(2)), upper: Number(totalUpper.toFixed(2)), dcdcOutput: dcdcOutputCurrent });
+            });
+
+            buildChart(`chart-alt-${dom}`, xPoints, basePoints, upperPoints);
+        });
+
+        document.querySelectorAll('.table-card thead tr').forEach((row) => {
+            row.innerHTML = '<th>Time</th><th>Base<br>Vehicle global</th><th>Upper<br>Vehicle global</th><th>DCDC output</th>';
+        });
+
+        function buildExcelExportDevices() {
+            const result = [];
+            const addDevice = (deviceKey, name, current, lower, upper, dcdcValue, wltcValue) => {
+                result.push({
+                    name,
+                    current: Number(modifiedCurrents[deviceKey] ?? current) || 0,
+                    lower: Number(modifiedLowers[deviceKey] ?? lower ?? 1),
+                    upper: Number(modifiedUppers[deviceKey] ?? upper ?? 0),
+                    dcdcProfiles: Object.fromEntries(devProfiles.map((profile) => [
+                        profile,
+                        devIntervals.map((interval) => parsePercent(dcdcValue(profile, interval)))
+                    ])),
+                    wltcProfiles: Object.fromEntries(wltcProfiles.map(({ key }) => [
+                        key,
+                        altIntervals.map((interval) => parsePercent(wltcValue(key, interval)))
+                    ]))
+                });
+            };
+
+            if (sheet?.data) {
+                sheet.data.forEach((row, rowIndex) => {
+                    const name = row['Device Name'] || `Device ${rowIndex + 1}`;
+                    const deviceKey = `${rowIndex}_${name}`;
+                    const category = String(row['current_category'] || row['Current Category'] || '').trim().toUpperCase();
+                    if (deletedDeviceKeys.has(deviceKey) || HomologationDefaults.normalize(name).includes('GMV REFROIDISSEMENT FACE AVANT')) return;
+                    if (storedDeviceKeys !== null ? !selectedDeviceKeys.has(deviceKey) : category !== 'H') return;
+                    addDevice(
+                        deviceKey,
+                        name,
+                        row['Current (A)'] ?? row['Homologation Current (A)'],
+                        row['Lower'] ?? 1,
+                        row['Upper'] ?? 0,
+                        (profile, interval) => profileMatrix[`${rowIndex}_${profile}_${interval}`],
+                        (profile, interval) => alternatorMatrix[`${rowIndex}_${profile}_${interval}`]
+                    );
+                });
+            }
+
+            customDevices.forEach((device) => {
+                const deviceKey = `custom_${device.id}`;
+                if (deletedDeviceKeys.has(deviceKey)) return;
+                addDevice(
+                    deviceKey,
+                    device.name,
+                    device.current,
+                    device.lower,
+                    device.upper,
+                    (profile, interval) => profileMatrix[`custom_${device.id}_${profile}_${interval}`],
+                    (profile, interval) => alternatorMatrix[`custom_${device.id}_${profile}_${interval}`]
+                );
+            });
+
+            [...paoData, ...gmvData].forEach((device) => {
+                addDevice(
+                    `generated_${device.id || device.name}`,
+                    device.name,
+                    device.current,
+                    device.lower,
+                    device.upper,
+                    (profile, interval) => device.devProfiles?.[`${profile}_${interval}`],
+                    (profile, interval) => device.altProfiles?.[`${profile}_${interval}`]
+                );
+            });
+            return result;
+        }
+
+        document.getElementById('export-excel').addEventListener('click', async () => {
+            const activeProject = ProjectStorage.getActiveProject() || {};
+            const response = await fetch('/export_dcdc_template_excel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project: {
+                        name: activeProject.name || '',
+                        date: activeProject.date || '',
+                        pilotWattman: activeProject.pilotWattman || ''
+                    },
+                    synthesis: synthesisExportData,
+                    devices: buildExcelExportDevices()
+                })
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                alert(error.error || "Impossible de générer l'export Excel.");
+                return;
+            }
+            const blob = await response.blob();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Synthese_Homologation_DCDC_${activeProject.name || 'projet'}.xlsx`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        });
+    </script>
+</body>
+</html>

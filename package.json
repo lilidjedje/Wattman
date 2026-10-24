@@ -1,0 +1,50 @@
+{
+  "name": "engineering-calculator-desktop",
+  "version": "2.0.0",
+  "description": "Application bureau autonome de calcul et de mesure ESP32-C3 multi-INA226",
+  "main": "desktop/main.js",
+  "author": "Engineering Calculator",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:backend": "powershell -ExecutionPolicy Bypass -File desktop/build-backend.ps1",
+    "dist": "powershell -ExecutionPolicy Bypass -File desktop/build-installer.ps1"
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.engineering.calculator",
+    "productName": "Engineering Calculator",
+    "asar": true,
+    "files": [
+      "desktop/main.js",
+      "desktop/preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop-build/dist/engineering-backend.exe",
+        "to": "backend/engineering-backend.exe"
+      },
+      {
+        "from": "can_server/esp32C3-multi-INA226",
+        "to": "firmware/esp32C3-multi-INA226"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

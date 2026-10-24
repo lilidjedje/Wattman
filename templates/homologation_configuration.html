@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Homologation</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { min-height: 100vh; padding: 24px; }
+        .page { width: min(900px, 100%); margin: 0 auto; }
+        .panel { margin-bottom: 24px; padding: 28px; border: 1px solid #515659; background: #141617; }
+        .panel h2 { margin: 0 0 22px; color: #fff8df; }
+        label { display: grid; gap: 10px; color: #f4f0e6; font-size: 1rem; font-weight: 700; }
+        input { width: 100%; min-height: 48px; padding: 10px 12px; color: #17191b; background: #fffdf5; border: 1px solid #83898c; font: inherit; font-weight: 700; }
+        .unit-field { display: block; position: relative; }
+        .unit-field::after { content: "A"; position: absolute; top: 50%; right: 16px; color: #6b7280; font-size: 1rem; font-weight: 800; transform: translateY(-50%); pointer-events: none; }
+        .unit-field input { padding-right: 42px; }
+        .actions { display: flex; justify-content: flex-end; }
+        .button { min-height: 48px; padding: 0 24px; border: 1px solid #9a7009; color: #fff8df; background: #775300; font: inherit; font-weight: 800; cursor: pointer; }
+        .homologation-config-page .header > .btn-back { padding: 10px 20px; font-size: 1rem; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+</head>
+<body class="homologation-step-page homologation-config-page">
+    <main class="page">
+        <header class="header">
+            <button class="btn btn-back" type="button" onclick="window.location.href='/mode_selection'">← Retour</button>
+            <h1>Configuration Homologation</h1>
+            <div class="header-actions">
+                <div class="retractable-menu"><details id="actions-details"><summary>Sommaire / Actions</summary><div class="menu-content">
+                    <span class="saved-status" id="saved-status" aria-live="polite"></span>
+                    <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
+                    <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
+                    <hr>
+                    <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'">Sélection du mode</button>
+                    <button class="btn-menu btn-home" type="button" id="homologation-home">Accueil</button>
+                </div></details></div>
+            </div>
+        </header>
+
+        <form id="homologation-form">
+            <section class="panel">
+                <h2>Paramètre de sortie DCDC</h2>
+                <label for="dcdc-output-current">DCDC Output Current
+                    <span class="unit-field">
+                        <input id="dcdc-output-current" name="dcdcOutputCurrentA" type="number" min="0" step="0.01" required value="250">
+                    </span>
+                </label>
+            </section>
+            <div class="actions"><button class="button" type="submit">Enregistrer et continuer →</button></div>
+        </form>
+    </main>
+
+    <script src="/static/project_storage.js"></script>
+    <script src="/static/homologation_ui.js"></script>
+    <script>
+        const form = document.getElementById('homologation-form');
+        const field = document.getElementById('dcdc-output-current');
+        const savedConfiguration = JSON.parse(sessionStorage.getItem('homologationConfiguration') || '{}');
+        if (savedConfiguration.dcdcOutputCurrentA !== undefined) field.value = savedConfiguration.dcdcOutputCurrentA;
+
+        function saveConfiguration() {
+            sessionStorage.setItem('homologationConfiguration', JSON.stringify({
+                dcdcOutputCurrentA: field.value
+            }));
+        }
+
+        form.addEventListener('input', saveConfiguration);
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            saveConfiguration();
+            window.location.href = '/edit_current';
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Importer les logs CAN ASC</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+</head>
+<body>
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
+        <div>
+            <p class="eyebrow">Étape 1 / Données mesurées</p>
+            <h1>Importer et décoder les logs CAN</h1>
+        </div>
+        <span class="right status-led" id="databaseState">Lecture de la base…</span>
+    </header>
+
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span>FORMAT ACCEPTÉ : VECTOR ASCII LOG (.ASC)</span>
+            <span>TRAMES : 0x100 À 0x105</span>
+            <span>ESP32-C3 MULTI INA226</span>
+        </div>
+
+        <section class="import-layout">
+            <article class="panel">
+                <div class="panel-title"><h2>1. Sélectionner les logs ASC</h2></div>
+                <p class="form-intro">
+                    Les valeurs mesurées sont lues exclusivement dans les trames CAN.
+                    Le fichier est décodé localement puis enregistré dans la base de mesures.
+                </p>
+                <form id="uploadForm" class="form-grid">
+                    <label class="asc-drop-zone" id="dropZone" for="ascFiles">
+                        <strong>Déposer les fichiers `.asc` ici</strong>
+                        <span>ou cliquer pour les sélectionner</span>
+                        <small id="selectedFiles">Aucun fichier sélectionné</small>
+                    </label>
+                    <input id="ascFiles" name="files" type="file" accept=".asc" multiple required hidden>
+                    <div class="actions">
+                        <button type="submit" id="decodeButton">Importer et décoder</button>
+                    </div>
+                </form>
+                <div class="message" id="message">
+                    Le dashboard restera verrouillé jusqu’à ce que des mesures CAN soient disponibles.
+                </div>
+                <div class="decode-progress" id="progress" hidden>
+                    <span></span>
+                </div>
+            </article>
+
+            <aside class="panel">
+                <div class="panel-title"><h2>Base de données locale</h2></div>
+                <div class="database-stats">
+                    <div class="metric"><span>Mesures</span><strong id="measurementCount">—</strong></div>
+                    <div class="metric"><span>Fichiers ASC</span><strong id="fileCount">—</strong></div>
+                    <div class="metric"><span>Durée couverte</span><strong id="databaseDuration">—</strong></div>
+                    <div class="metric"><span>Canaux</span><strong id="channelCount">—</strong></div>
+                </div>
+                <div class="source-list" id="sourceList">Aucun fichier dans la base.</div>
+                <button class="danger database-reset" type="button" id="resetButton">
+                    Réinitialiser la base de données
+                </button>
+            </aside>
+        </section>
+
+        <section class="panel setup-panel" id="decodeResult" hidden>
+            <div class="panel-title"><h2>2. Résultat du décodage CAN</h2></div>
+            <div class="dashboard-grid">
+                <div class="metric"><span>Mesures décodées</span><strong id="decodedCount">—</strong></div>
+                <div class="metric"><span>Canaux détectés</span><strong id="decodedChannels">—</strong></div>
+                <div class="metric"><span>Fréquence canal A</span><strong id="decodedFrequencyA">—</strong></div>
+                <div class="metric"><span>Durée canal A</span><strong id="decodedDurationA">—</strong></div>
+                <div class="metric"><span>Fréquence canal B</span><strong id="decodedFrequencyB">—</strong></div>
+                <div class="metric"><span>Durée canal B</span><strong id="decodedDurationB">—</strong></div>
+            </div>
+            <div class="table-scroll">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Fichier ASC</th><th>Mesures</th><th>Canaux</th>
+                            <th>Fréquence A</th><th>Durée A</th>
+                            <th>Fréquence B</th><th>Durée B</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fileResults"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel setup-panel workflow-next">
+            <div>
+                <p class="eyebrow">Étape suivante</p>
+                <h2>Choisir le type de dashboard, la température et les ECU</h2>
+            </div>
+            <a class="button success disabled-link" id="continueButton" aria-disabled="true">
+                Continuer vers les options du dashboard
+            </a>
+        </section>
+    </main>
+
+    <script>
+        const endpoints = {
+            upload: {{ url_for('upload_and_ingest_measures')|tojson }},
+            purge: {{ url_for('purge_database')|tojson }},
+            status: {{ url_for('database_status')|tojson }}
+        };
+        const filesInput = document.getElementById('ascFiles');
+        const dropZone = document.getElementById('dropZone');
+        const message = document.getElementById('message');
+        const continueButton = document.getElementById('continueButton');
+        const progress = document.getElementById('progress');
+
+        function escapeHtml(value) {
+            const node = document.createElement('span');
+            node.textContent = value ?? '';
+            return node.innerHTML;
+        }
+        function formatNumber(value) {
+            return new Intl.NumberFormat('fr-FR').format(Number(value || 0));
+        }
+        function formatDuration(seconds) {
+            const total = Math.max(0, Number(seconds || 0));
+            if (total < 60) return `${total.toFixed(2)} s`;
+            return `${(total / 60).toFixed(2)} min`;
+        }
+        function setMessage(text, type = '') {
+            message.textContent = text;
+            message.className = `message ${type}`.trim();
+        }
+        function setContinue(url) {
+            if (url) {
+                continueButton.href = url;
+                continueButton.classList.remove('disabled-link');
+                continueButton.setAttribute('aria-disabled', 'false');
+            } else {
+                continueButton.removeAttribute('href');
+                continueButton.classList.add('disabled-link');
+                continueButton.setAttribute('aria-disabled', 'true');
+            }
+        }
+        function renderSelectedFiles() {
+            const names = [...filesInput.files].map(file => file.name);
+            document.getElementById('selectedFiles').textContent =
+                names.length ? names.join(' · ') : 'Aucun fichier sélectionné';
+        }
+        function renderDatabase(data) {
+            document.getElementById('measurementCount').textContent = formatNumber(data.measurement_count);
+            document.getElementById('fileCount').textContent = formatNumber(data.file_count);
+            document.getElementById('databaseDuration').textContent = formatDuration(data.duration_s);
+            document.getElementById('channelCount').textContent = formatNumber(data.channel_count);
+            document.getElementById('sourceList').innerHTML = data.source_files?.length
+                ? data.source_files.map(name => `<span>${escapeHtml(name)}</span>`).join('')
+                : 'Aucun fichier dans la base.';
+            document.getElementById('databaseState').textContent = data.measurement_count
+                ? `${formatNumber(data.measurement_count)} mesures disponibles`
+                : 'Base vide';
+            setContinue(data.dashboard_setup_url);
+        }
+        async function refreshDatabase() {
+            const response = await fetch(endpoints.status, {cache: 'no-store'});
+            if (!response.ok) throw new Error('Impossible de lire la base de données.');
+            renderDatabase(await response.json());
+        }
+
+        filesInput.addEventListener('change', renderSelectedFiles);
+        ['dragenter', 'dragover'].forEach(name => dropZone.addEventListener(name, event => {
+            event.preventDefault();
+            dropZone.classList.add('dragging');
+        }));
+        ['dragleave', 'drop'].forEach(name => dropZone.addEventListener(name, event => {
+            event.preventDefault();
+            dropZone.classList.remove('dragging');
+        }));
+        dropZone.addEventListener('drop', event => {
+            const ascFiles = [...event.dataTransfer.files].filter(file => file.name.toLowerCase().endsWith('.asc'));
+            if (!ascFiles.length) {
+                setMessage('Déposez uniquement des fichiers au format .asc.', 'error');
+                return;
+            }
+            const transfer = new DataTransfer();
+            ascFiles.forEach(file => transfer.items.add(file));
+            filesInput.files = transfer.files;
+            renderSelectedFiles();
+        });
+
+        document.getElementById('uploadForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!filesInput.files.length) return;
+            const button = document.getElementById('decodeButton');
+            const formData = new FormData();
+            [...filesInput.files].forEach(file => formData.append('files', file));
+            try {
+                button.disabled = true;
+                progress.hidden = false;
+                setContinue(null);
+                setMessage('Import et décodage des trames CAN en cours…');
+                const response = await fetch(endpoints.upload, {method: 'POST', body: formData});
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Le décodage ASC a échoué.');
+                document.getElementById('decodeResult').hidden = false;
+                document.getElementById('decodedCount').textContent = formatNumber(data.measurements_count);
+                document.getElementById('decodedChannels').textContent = data.channels.join(' + ');
+                const channelSettings = data.channel_settings || data.session?.channel_settings || {};
+                ['A', 'B'].forEach(channel => {
+                    const settings = channelSettings[channel];
+                    document.getElementById(`decodedFrequency${channel}`).textContent = settings
+                        ? `${formatNumber(settings.actual_frequency_hz)} Hz`
+                        : '—';
+                    document.getElementById(`decodedDuration${channel}`).textContent = settings
+                        ? formatDuration(settings.actual_duration_s)
+                        : '—';
+                });
+                document.getElementById('fileResults').innerHTML = data.files_processed.map(file => {
+                    const channelA = file.channel_settings?.A;
+                    const channelB = file.channel_settings?.B;
+                    return `
+                        <tr>
+                            <td>${escapeHtml(file.name)}</td>
+                            <td>${formatNumber(file.measurements)}</td>
+                            <td>${file.channels.map(escapeHtml).join(' + ')}</td>
+                            <td>${channelA ? `${formatNumber(channelA.actual_frequency_hz)} Hz` : '—'}</td>
+                            <td>${channelA ? formatDuration(channelA.actual_duration_s) : '—'}</td>
+                            <td>${channelB ? `${formatNumber(channelB.actual_frequency_hz)} Hz` : '—'}</td>
+                            <td>${channelB ? formatDuration(channelB.actual_duration_s) : '—'}</td>
+                        </tr>`;
+                }).join('');
+                setContinue(data.dashboard_setup_url);
+                setMessage(`${data.measurements_count} mesures décodées. Vous pouvez configurer le dashboard.`, 'ok');
+                filesInput.value = '';
+                renderSelectedFiles();
+                await refreshDatabase();
+            } catch (error) {
+                setMessage(error.message, 'error');
+            } finally {
+                button.disabled = false;
+                progress.hidden = true;
+            }
+        });
+
+        document.getElementById('resetButton').addEventListener('click', async () => {
+            const confirmed = confirm(
+                'Réinitialiser définitivement toutes les mesures décodées et toutes les sessions de dashboard ?'
+            );
+            if (!confirmed) return;
+            try {
+                const response = await fetch(endpoints.purge, {method: 'POST'});
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Réinitialisation refusée.');
+                document.getElementById('decodeResult').hidden = true;
+                setContinue(null);
+                await refreshDatabase();
+                setMessage(data.message, 'ok');
+            } catch (error) {
+                setMessage(error.message, 'error');
+            }
+        });
+
+        continueButton.addEventListener('click', event => {
+            if (continueButton.getAttribute('aria-disabled') === 'true') event.preventDefault();
+        });
+        refreshDatabase().catch(error => setMessage(error.message, 'error'));
+    </script>
+</body>
+</html>
