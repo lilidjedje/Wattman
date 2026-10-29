@@ -21,11 +21,18 @@ const uint8_t ADDR_INA_B = 0x41;
 const uint8_t REG_CONFIG = 0x00;
 const uint8_t REG_SHUNT  = 0x01;
 
+// I = Vshunt / Rshunt ; INA226 shunt voltage resolution: 2.5 uV/LSB.
+constexpr float SHUNT_VOLTAGE_LSB_V = 2.5e-6f;
+constexpr float RSHUNT_A_OHMS = 0.010f; // R010: 10 mOhm
+constexpr float RSHUNT_B_OHMS = 0.100f; // R100: 100 mOhm
+
 #define CAN_ID_CURRENT_A     0x100  
 #define CAN_ID_STATS_A       0x101  
 #define CAN_ID_CURRENT_B     0x102  
 #define CAN_ID_STATS_B       0x103  
 #define CAN_ID_TIME_SYNC     0x105  
+
+constexpr bool CAN_ZERO_CURRENT_TEST = true;
 
 // L'ESP32-C3 rejoint le point d'accès créé par le Raspberry Pi.
 // Le navigateur parle au Pi ; seul le Pi communique directement avec cette API.
@@ -49,6 +56,7 @@ esp_timer_handle_t acqTimer = nullptr;
 TaskHandle_t taskAcqHandle = nullptr;
 QueueHandle_t streamQueue = nullptr;
 SemaphoreHandle_t streamClientMutex = nullptr;
+SemaphoreHandle_t canMutex = nullptr;
 
 volatile uint32_t testDurationSec = 0;
 volatile uint32_t testDurationSecA = 0, testDurationSecB = 0;
@@ -66,6 +74,10 @@ volatile bool sensorFinishedB = false;
 volatile bool canReady = false;
 volatile uint32_t canTxOk = 0;
 volatile uint32_t canTxErrors = 0;
+volatile uint8_t canLastTxResult = CAN_OK;
+volatile uint16_t canLastTxId = 0;
+volatile uint8_t canErrorFlags = 0;
+volatile uint8_t canTxErrorCount = 0;
 volatile uint8_t canOscillatorMHz = 8;
 volatile bool digitalStreamMode = false;
 
@@ -102,7 +114,15 @@ volatile bool streamConnected = false;
 bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
   bool delivered = false;
   if (!digitalStreamMode) {
-    const bool canDelivered = canReady && CAN.sendMsgBuf(identifier, 0, length, payload) == CAN_OK;
+    xSemaphoreTake(canMutex, portMAX_DELAY);
+    canLastTxId = identifier;
+    canLastTxResult = canReady ? CAN.sendMsgBuf(identifier, 0, length, payload) : CAN_FAILINIT;
+    const bool canDelivered = canLastTxResult == CAN_OK;
+    if (canReady) {
+      canErrorFlags = CAN.getError();
+      canTxErrorCount = CAN.errorCountTX();
+    }
+    xSemaphoreGive(canMutex);
     if (canDelivered) {
       canTxOk++;
       delivered = true;
@@ -125,11 +145,18 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
 }
 
 bool initializeCan(uint8_t oscillatorMHz = 8) {
+  xSemaphoreTake(canMutex, portMAX_DELAY);
   const byte clock = oscillatorMHz == 16 ? MCP_16MHZ : MCP_8MHZ;
   canReady = CAN.begin(MCP_ANY, CAN_500KBPS, clock) == CAN_OK;
   if (canReady) {
-    CAN.setMode(MCP_NORMAL);
+    // begin() leaves this library in loopback: a successful begin alone does
+    // not mean that any frame can leave the controller.
+    canReady = CAN.setMode(MCP_NORMAL) == CAN_OK;
+  }
+  if (canReady) {
     canOscillatorMHz = oscillatorMHz;
+    canErrorFlags = CAN.getError();
+    canTxErrorCount = CAN.errorCountTX();
     Serial.printf("[CAN] MCP2515 pret : 500 kbit/s, quartz %u MHz.\n", canOscillatorMHz);
   } else {
     Serial.printf(
@@ -137,6 +164,7 @@ bool initializeCan(uint8_t oscillatorMHz = 8) {
       oscillatorMHz
     );
   }
+  xSemaphoreGive(canMutex);
   return canReady;
 }
 
@@ -216,15 +244,13 @@ void IRAM_ATTR onAcqTimer(void* arg) {
 }
 
 void taskAcq(void* parameter) {
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(400000);
-
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CS_CAN);
-  SPI.setFrequency(4000000);
-  initializeCan();
-
   uint32_t lastPrintMs = 0;
   uint32_t lastSnapshotA = 0, lastSnapshotB = 0;
+  uint16_t lastDisplayedCanId = 0;
+  float lastDisplayedCanCurrent = 0.0f;
+  byte lastDisplayedCanData[4] = {0};
+  bool lastDisplayedCanSendOk = false;
+  bool hasCanSampleToDisplay = false;
   byte canPacket[8] = {0};
 
   for (;;) {
@@ -272,23 +298,48 @@ void taskAcq(void* parameter) {
     if (acquireA) {
       acqCountA++;
       int16_t rawA = readINA226ShuntRaw(ADDR_INA_A);
-      float IA = rawA * 2.5e-6f / 0.1f;
+      float IA = rawA * SHUNT_VOLTAGE_LSB_V / RSHUNT_A_OHMS;
+      if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawA == 0) {
+        IA = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
+      }
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &IA, sizeof(float));
-      if (!sendCanFrame(CAN_ID_CURRENT_A, 4, canPacket)) lostCountA++;
+      const bool sent = sendCanFrame(CAN_ID_CURRENT_A, 4, canPacket);
+      if (!sent) lostCountA++;
+      if (!digitalStreamMode) {
+        lastDisplayedCanId = CAN_ID_CURRENT_A;
+        lastDisplayedCanCurrent = IA;
+        memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+        lastDisplayedCanSendOk = sent;
+        hasCanSampleToDisplay = true;
+      }
     }
 
     if (acquireB) {
       acqCountB++;
       int16_t rawB = readINA226ShuntRaw(ADDR_INA_B);
-      float IB = rawB * 2.5e-6f / 0.1f;
+      float IB = rawB * SHUNT_VOLTAGE_LSB_V / RSHUNT_B_OHMS;
+      if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawB == 0) {
+        IB = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
+      }
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &IB, sizeof(float));
-      if (!sendCanFrame(CAN_ID_CURRENT_B, 4, canPacket)) lostCountB++;
+      const bool sent = sendCanFrame(CAN_ID_CURRENT_B, 4, canPacket);
+      if (!sent) lostCountB++;
+      if (!digitalStreamMode) {
+        lastDisplayedCanId = CAN_ID_CURRENT_B;
+        lastDisplayedCanCurrent = IB;
+        memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+        lastDisplayedCanSendOk = sent;
+        hasCanSampleToDisplay = true;
+      }
     }
 
     uint32_t nowMs = millis();
     if (nowMs - lastPrintMs >= 1000) {
+      // Recover a bus-off controller using the selected physical crystal.
+      // Missing an ACK never justifies changing the CAN bit timing.
+      if (!digitalStreamMode && (canErrorFlags & 0x20)) initializeCan(canOscillatorMHz);
       if (sensorRunningA) freqReelleA = acqCountA - lastSnapshotA;
       if (sensorRunningB) freqReelleB = acqCountB - lastSnapshotB;
       lastSnapshotA = acqCountA;
@@ -316,6 +367,27 @@ void taskAcq(void* parameter) {
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &calcul_ts, 4);
       sendCanFrame(CAN_ID_TIME_SYNC, 4, canPacket);
+      if (!digitalStreamMode) {
+        if (hasCanSampleToDisplay) {
+          Serial.printf(
+            "[CAN TX] ID=0x%03X DLC=4 DATA=%02X %02X %02X %02X courant=%.1f A statut=%s | OK=%lu erreurs=%lu flags=0x%02X TXerr=%u\n",
+            (unsigned)lastDisplayedCanId,
+            lastDisplayedCanData[0],
+            lastDisplayedCanData[1],
+            lastDisplayedCanData[2],
+            lastDisplayedCanData[3],
+            lastDisplayedCanCurrent,
+            lastDisplayedCanSendOk ? "OK" : "ECHEC",
+            (unsigned long)canTxOk,
+            (unsigned long)canTxErrors,
+            (unsigned)canErrorFlags,
+            (unsigned)canTxErrorCount
+          );
+          hasCanSampleToDisplay = false;
+        } else {
+          Serial.println("[CAN TX] Aucune trame courant a afficher pendant cette seconde.");
+        }
+      }
     }
   }
 }
@@ -493,7 +565,7 @@ void handleSetDuration() {
   // Envoi forcé immédiat du paquet temporel de milliseconde 0 avant les signaux INA
   byte canPacketTime[8] = {0};
   memcpy(&canPacketTime[0], (const void*)&pcBaseTimestamp, 4);
-  CAN.sendMsgBuf(CAN_ID_TIME_SYNC, 0, 4, canPacketTime);
+  sendCanFrame(CAN_ID_TIME_SYNC, 4, canPacketTime);
 
   uint64_t period_us = 1000000ULL / targetFreq;
   testStartMillis = millis();
@@ -520,12 +592,15 @@ void sendAcquisitionStatus(int statusCode = 200) {
   json += ",\"bitrate\":500000,\"oscillator_mhz\":" + String(canOscillatorMHz);
   json += ",\"tx_ok\":" + String(canTxOk);
   json += ",\"tx_errors\":" + String(canTxErrors);
+  json += ",\"last_tx_result\":" + String(canLastTxResult);
+  json += ",\"error_flags\":" + String(canErrorFlags);
+  json += ",\"tx_error_count\":" + String(canTxErrorCount);
   json += ",\"tcp_connected\":" + jsonBool(streamConnected);
   json += "}";
   json += ",\"sensors\":{\"A\":{\"running\":" + jsonBool(sensorRunningA);
   json += ",\"finished\":" + jsonBool(sensorFinishedA);
   json += ",\"duration\":" + String(testDurationSecA);
-  json += ",\"elapsed\":" + String(min(elapsed, testDurationSecA));
+  json += ",\"elapsed\":" + String(min(elapsed, uint32_t(testDurationSecA)));
   json += ",\"requested_frequency\":" + String(targetFrequencyA);
   json += ",\"samples\":" + String(acqCountA);
   json += ",\"lost\":" + String(lostCountA);
@@ -533,7 +608,7 @@ void sendAcquisitionStatus(int statusCode = 200) {
   json += "},\"B\":{\"running\":" + jsonBool(sensorRunningB);
   json += ",\"finished\":" + jsonBool(sensorFinishedB);
   json += ",\"duration\":" + String(testDurationSecB);
-  json += ",\"elapsed\":" + String(min(elapsed, testDurationSecB));
+  json += ",\"elapsed\":" + String(min(elapsed, uint32_t(testDurationSecB)));
   json += ",\"requested_frequency\":" + String(targetFrequencyB);
   json += ",\"samples\":" + String(acqCountB);
   json += ",\"lost\":" + String(lostCountB);
@@ -559,6 +634,14 @@ void handleApiStartAcquisition() {
     return;
   }
   digitalStreamMode = requestedMode == "digital";
+  Serial.printf(
+    "[ACQ] Mode demande: %s%s\n",
+    digitalStreamMode ? "numerique Wi-Fi" : "CAN",
+    digitalStreamMode ? " (aucune trame CAN ne sera emise)" : ""
+  );
+  if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST) {
+    Serial.println("[CAN TEST] Mesure INA brute nulle: envoi de 42.0 a 42.9 A, puis repetition.");
+  }
 
   // Le POST HTTP peut arriver juste après l'ouverture du socket TCP, avant
   // l'itération suivante de taskWeb. Accepter immédiatement ce client évite
@@ -585,7 +668,16 @@ void handleApiStartAcquisition() {
     StreamFrame discardedFrame;
     while (xQueueReceive(streamQueue, &discardedFrame, 0) == pdTRUE) {}
   }
-  if (!digitalStreamMode && !initializeCan(8)) {
+  uint8_t requestedOscillatorMHz = canOscillatorMHz;
+  if (!digitalStreamMode && server.hasArg("oscillator_mhz")) {
+    const int requestedClock = server.arg("oscillator_mhz").toInt();
+    if (requestedClock != 8 && requestedClock != 16) {
+      sendAcquisitionError(400, "Quartz CAN invalide : utilisez 8 ou 16 MHz.");
+      return;
+    }
+    requestedOscillatorMHz = requestedClock;
+  }
+  if (!digitalStreamMode && !initializeCan(requestedOscillatorMHz)) {
     sendAcquisitionError(
       503,
       "CAN obligatoire : MCP2515 indisponible. Verifiez le cablage SPI, "
@@ -647,6 +739,7 @@ void handleApiStartAcquisition() {
   schedulerAccumulatorB = 0;
   canTxOk = 0;
   canTxErrors = 0;
+  canLastTxResult = CAN_OK;
 
   Wire.setClock(timerFrequency >= 2000 ? 1000000 : 400000);
   if (activeA) configureINA226(ADDR_INA_A, frequencyA);
@@ -657,21 +750,22 @@ void handleApiStartAcquisition() {
   byte timePacket[4] = {0};
   memcpy(timePacket, (const void*)&pcBaseTimestamp, sizeof(pcBaseTimestamp));
   bool transportReady = sendCanFrame(CAN_ID_TIME_SYNC, sizeof(timePacket), timePacket);
-  if (!digitalStreamMode && !transportReady) {
-    // Certains modules MCP2515 sont équipés d'un quartz 16 MHz. Si aucune
-    // trame 500 kbit/s n'est acquittée avec 8 MHz, essayer automatiquement 16.
-    Serial.println("[CAN] Aucun ACK avec quartz 8 MHz, essai automatique en 16 MHz.");
-    if (initializeCan(16)) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-      transportReady = sendCanFrame(CAN_ID_TIME_SYNC, sizeof(timePacket), timePacket);
-    }
+  if (!digitalStreamMode) {
+    Serial.printf(
+      "[CAN] Demarrage mesure: canal A=%s (%lu Hz), canal B=%s (%lu Hz), premier envoi=%s\n",
+      activeA ? "ON" : "OFF",
+      (unsigned long)frequencyA,
+      activeB ? "ON" : "OFF",
+      (unsigned long)frequencyB,
+      transportReady ? "OK" : "ECHEC"
+    );
   }
-  if (!transportReady) {
+  // A CAN listener may start after acquisition. A missing first ACK must not
+  // cancel all future samples or silently change an 8 MHz crystal to 16 MHz.
+  if (digitalStreamMode && !transportReady) {
     sendAcquisitionError(
       503,
-      digitalStreamMode
-        ? "L'application ne recoit pas le flux numerique Wi-Fi."
-        : "Aucun ACK CAN. Ouvrez CANalyzer en mode actif a 500 kbit/s, puis verifiez CAN-H, CAN-L et les terminaisons 120 ohms."
+      "L'application ne recoit pas le flux numerique Wi-Fi."
     );
     return;
   }
@@ -702,20 +796,34 @@ void handleApiStopAcquisition() {
   sendAcquisitionStatus();
 }
 
-void taskWeb(void* parameter) {
+// Start the radio before any external peripheral can delay setup().
+bool startAccessPoint() {
   WiFi.persistent(false);
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.setSleep(false);
   WiFi.setHostname(DEVICE_HOSTNAME);
-  WiFi.setAutoReconnect(true);
-
-  WiFi.softAP(ACCESS_POINT_SSID, ACCESS_POINT_PASS);
-  Serial.print("[WIFI] Point d'acces autonome actif, IP: ");
+  // Station mode is only needed when optional router credentials are supplied.
+  if (!WiFi.mode(strlen(WIFI_SSID) > 0 ? WIFI_AP_STA : WIFI_AP)) {
+    Serial.println("[WIFI] Echec de l'activation de la radio.");
+    return false;
+  }
+  WiFi.setSleep(false);
+  const IPAddress apIP(192, 168, 4, 1);
+  const IPAddress subnet(255, 255, 255, 0);
+  if (!WiFi.softAPConfig(apIP, apIP, subnet)
+      || !WiFi.softAP(ACCESS_POINT_SSID, ACCESS_POINT_PASS, 1, 0, 4)) {
+    Serial.println("[WIFI] Echec de creation du point d'acces; nouvelle tentative dans 2 s.");
+    WiFi.mode(WIFI_OFF);
+    return false;
+  }
+  Serial.printf("[WIFI] Point d'acces visible : %s (canal 1), IP: ", ACCESS_POINT_SSID);
   Serial.println(WiFi.softAPIP());
+  return true;
+}
 
+void taskWeb(void* parameter) {
   // La connexion à un réseau local est facultative. Le point d'accès direct
   // reste disponible même si aucun routeur n'est présent.
   if (strlen(WIFI_SSID) > 0) {
+    WiFi.setAutoReconnect(true);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("[WIFI] Connexion optionnelle au reseau ");
     Serial.print(WIFI_SSID);
@@ -770,6 +878,16 @@ void taskWeb(void* parameter) {
 
 void setup() {
   Serial.begin(115200);
+  while (!startAccessPoint()) {
+    delay(2000);
+  }
+  // Complete peripheral initialization before the HTTP task can access it.
+  canMutex = xSemaphoreCreateMutex();
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(400000);
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CS_CAN);
+  // CAN is initialized by handleApiStartAcquisition() only for CAN mode.
+  // A missing MCP2515 must not delay Wi-Fi or digital acquisition.
   esp_timer_create_args_t targs = {};
   targs.callback = &onAcqTimer;
   targs.dispatch_method = ESP_TIMER_TASK;
@@ -779,7 +897,9 @@ void setup() {
   streamClientMutex = xSemaphoreCreateMutex();
   xTaskCreate(taskAcq, "taskAcq", 4096, nullptr, 2, &taskAcqHandle);
   xTaskCreate(taskStream, "taskStream", 4096, nullptr, 2, nullptr);
-  xTaskCreate(taskWeb, "taskWeb", 8192, nullptr, 2, nullptr);
+  if (xTaskCreate(taskWeb, "taskWeb", 8192, nullptr, 2, nullptr) != pdPASS) {
+    Serial.println("[HTTP] Echec de creation de taskWeb : memoire insuffisante.");
+  }
 }
 
 void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }

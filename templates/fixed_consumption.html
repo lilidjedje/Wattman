@@ -51,6 +51,8 @@
         .sleep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="fixed-consumption-page">
     <main>
@@ -58,9 +60,9 @@
             <button class="back" type="button" id="top-back-btn">← Retour</button>
             <div><h1>Consommations forfaitaires</h1></div>
             
-            <div class="retractable-menu">
+            <div class="retractable-menu app-summary">
                 <details id="actions-details">
-                    <summary> Sommaire / Actions</summary>
+                    <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved" id="saved-status" aria-live="polite"></span>
                         <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
@@ -139,7 +141,7 @@
         const scenarioOptions = [['baseLab', 'Base LAB'], ['withAlarm', 'Avec alarme'], ['withoutAlarmTachy', 'Sans alarme avec TACHY'], ['alarmTachy', 'Avec alarme avec TACHY']];
         let definitions = [
             { section: 'Cell Balancing (VE/Hybrides)' },
-            { id: 'cellBalancing', name: 'Cell balancing', current: 200, duration: 15, unit: 's', extra: { periodMin: 480, balancingDays: 30 }, calculation: 'cell' },
+            { id: 'cellBalancing', name: 'Cell balancing', current: 200, duration: 15, unit: 's', extra: { periodMin: 480, balancingDays: isDmMode ? 90 : 30 }, calculation: 'cell' },
             { section: 'PCU, CDC et transport' },
             { id: 'pcuRam', name: 'PCU Suspend to RAM', current: 1, duration: 192, unit: 'h' },
             { id: 'pcuSecure', name: 'PCU Secure reboot (cyber)', current: 3300, duration: 90, unit: 's' },

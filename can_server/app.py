@@ -1234,7 +1234,7 @@ def simulated_esp32_status():
             "can": {
                 "ready": True,
                 "bitrate": 500000,
-                "oscillator_mhz": 8,
+                "oscillator_mhz": simulator_state.get("oscillator_mhz", 8),
                 "tx_ok": sum(sensor.get("samples", 0) for sensor in sensors.values())
                 if simulator_state["acquisition_mode"] == "can"
                 else 0,
@@ -1257,6 +1257,7 @@ def simulated_esp32_request(method, path, params):
             simulator_state["duration"] = int(params["duration"])
             simulator_state["frequency"] = int(params["frequency"])
             simulator_state["acquisition_mode"] = str(params.get("mode") or "digital")
+            simulator_state["oscillator_mhz"] = int(params.get("oscillator_mhz", 8))
             simulator_state["started_at"] = time.time()
             simulator_state["running"] = True
             for name, sensor in simulator_state["sensors"].items():
@@ -1484,6 +1485,9 @@ def control_esp_acquisition():
         acquisition_mode = str(request.form.get("acquisition_mode") or "").strip().lower()
         if acquisition_mode not in {"can", "digital"}:
             raise ValueError("Mode de mesure invalide. Choisissez CAN ou Numérique.")
+        oscillator_mhz = int(request.form.get("oscillator_mhz", 8))
+        if acquisition_mode == "can" and oscillator_mhz not in {8, 16}:
+            raise ValueError("Le quartz du MCP2515 doit être de 8 ou 16 MHz.")
         if acquisition_mode == "can":
             # Une acquisition CAN ne doit conserver aucun socket du collecteur
             # numérique d'une mesure précédente.
@@ -1540,6 +1544,7 @@ def control_esp_acquisition():
                 "activeB": active_b,
                 "timestamp": measurement_epoch,
                 "mode": acquisition_mode,
+                "oscillator_mhz": oscillator_mhz,
             })
         except Exception:
             can_collector.stop()
@@ -1577,7 +1582,12 @@ def control_esp_acquisition():
             "message": (
                 "Mesure numérique démarrée : réception directe des valeurs ESP32-C3 par Wi-Fi, sans CAN."
                 if acquisition_mode == "digital"
-                else "Mesure CAN démarrée : les trames sont émises sur le bus CAN pour l’enregistrement dans CANalyzer."
+                else (
+                    "Acquisition CAN active, en attente d'une émission confirmée. "
+                    "Les compteurs CAN indiquent les échecs et les envois confirmés pour CANalyzer."
+                    if not (status.get("can") or {}).get("tx_ok")
+                    else "Mesure CAN démarrée : les trames sont émises sur le bus CAN pour l’enregistrement dans CANalyzer."
+                )
             ),
             "acquisition": status,
             "session": dict(active_measurement),

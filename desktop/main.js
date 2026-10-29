@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, dialog, protocol } = require('electron');
+const { app, BrowserWindow, Menu, dialog, protocol, ipcMain } = require('electron');
+const { createProjectStore } = require('./project_store');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +19,8 @@ protocol.registerSchemesAsPrivileged([{
 let mainWindow;
 let backend;
 let sequence = 0;
+let allowWindowClose = false;
+let closeSavePending = false;
 const pending = new Map();
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -230,6 +233,41 @@ function createWindow() {
       sandbox: true
     }
   });
+  mainWindow.on('close', event => {
+    if (allowWindowClose) return;
+    event.preventDefault();
+    if (closeSavePending) return;
+    closeSavePending = true;
+    mainWindow.webContents.executeJavaScript(`(async () => {
+      const active = document.activeElement;
+      if (active?.matches('input,textarea,select')) active.dispatchEvent(new Event('change', { bubbles: true }));
+      return window.ProjectStorage?.saveActiveProject();
+    })()`)
+      .then(() => {
+        allowWindowClose = true;
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+      })
+      .catch(async error => {
+        console.error('Échec de la sauvegarde avant fermeture :', error);
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: 'error',
+          title: 'Sauvegarde du projet',
+          message: 'Impossible d’enregistrer les dernières modifications.',
+          detail: error.message,
+          buttons: ['Réessayer', 'Annuler la fermeture', 'Fermer sans enregistrer'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true
+        });
+        closeSavePending = false;
+        if (result.response === 0) {
+          mainWindow.close();
+        } else if (result.response === 2) {
+          allowWindowClose = true;
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+        }
+      });
+  });
   const loadingPage = `<!doctype html><html lang="fr"><meta charset="utf-8">
     <title>Engineering Calculator — démarrage</title>
     <style>
@@ -343,6 +381,14 @@ async function runSmokeTest() {
 }
 
 app.whenReady().then(async () => {
+  const projectStore = createProjectStore(path.join(app.getPath('userData'), 'projects'));
+  ipcMain.on('project-store', (event, operation, payload) => {
+    try {
+      if (!event.senderFrame.url.startsWith('app://local/')) throw new Error('Origine non autorisée.');
+      if (!['read', 'list', 'write', 'delete'].includes(operation)) throw new Error('Opération inconnue.');
+      event.returnValue = { value: projectStore[operation](payload) };
+    } catch (error) { event.returnValue = { error: error.message }; }
+  });
   protocol.handle('app', handleAppRequest);
   createWindow();
   installMenu();

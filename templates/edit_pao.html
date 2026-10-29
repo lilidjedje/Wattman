@@ -67,13 +67,15 @@
         .button-group.show { display: flex; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="homologation-step-page pao-profile-page preserve-table-colors">
     <div class="header">
         <button class="btn btn-back" onclick="navigateTo('/edit_alternator')">← Retour</button>
         <h1>Saisie et Configuration des PAO</h1>
         <div class="header-actions">
-            <div class="retractable-menu"><details id="actions-details"><summary>Sommaire / Actions</summary><div class="menu-content">
+            <div class="retractable-menu app-summary"><details id="actions-details"><summary>Sommaire</summary><div class="menu-content">
                 <span class="saved-status" id="saved-status" aria-live="polite"></span>
                 <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
                 <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
@@ -126,6 +128,7 @@
 
     <script src="/static/project_storage.js"></script>
     <script src="/static/homologation_ui.js"></script>
+    <script src="/static/homologation_defaults.js"></script>
     <script>
         const devIntervals = ['0 - 5 min', '5 - 10 min', '10 - 15 min', '15 - 25 min', '25 - 30 min'];
         const altIntervals = ['0 - 1,67 min', '1,68 - 4 min', '4 - 7 min', '7 - 8,16 min', '12,25 - 25 min', '25 - 30 min'];
@@ -134,9 +137,11 @@
         
         const subHeadersTr = document.getElementById('sub-headers');
         profiles.forEach(() => devIntervals.forEach(int => { const th = document.createElement('th'); th.textContent = int; subHeadersTr.appendChild(th); }));
-        wltcProfiles.forEach(() => altIntervals.forEach(int => { const th = document.createElement('th'); th.textContent = int; subHeadersTr.appendChild(th); }));
+        document.querySelectorAll('.main-header')[3].colSpan = 7;
+        wltcProfiles.forEach(profile => HomologationDefaults.intervalsFor('wltc', profile).forEach(int => { const th = document.createElement('th'); th.textContent = int; subHeadersTr.appendChild(th); }));
 
         let paoData = JSON.parse(sessionStorage.getItem('paoData') || '[]');
+        HomologationDefaults.migrateAuxiliary(paoData);
         const paoCountInput = document.getElementById('pao-count');
         document.getElementById('button-group').classList.add('show');
 
@@ -179,7 +184,8 @@
                         lower: existing.lower || '1',
                         upper: existing.upper || '0',
                         devProfiles: existing.devProfiles || {},
-                        altProfiles: existing.altProfiles || {}
+                        altProfiles: existing.altProfiles || {},
+                        wltcProfileVersion: 2
                     });
                 }
                 paoData = newPaoData;
@@ -230,7 +236,7 @@
 
                 // Alternator Data Profiles
                 wltcProfiles.forEach(p => {
-                    altIntervals.forEach(int => {
+                    HomologationDefaults.intervalsFor('wltc', p).forEach(int => {
                         const td = document.createElement('td'); const input = document.createElement('input'); input.type = 'text';
                         const key = `${p}_${int}`; input.value = pao.altProfiles[key] || '100%';
                         input.addEventListener('change', (e) => {

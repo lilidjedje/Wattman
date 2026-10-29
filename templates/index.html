@@ -45,6 +45,7 @@
         @media (max-width: 560px) { .action { width: 100%; } .search-filters { flex-direction: column; } }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
 </head>
 <body>
     <main>
@@ -138,8 +139,8 @@
                 info.addEventListener('click', async () => {
                     info.querySelector('span').textContent = 'Chargement des données...';
                     try {
-                        await ProjectStorage.restoreProject(project);
-                        window.location.href = '/mode_selection';
+                        const restored = await ProjectStorage.restoreProject(project);
+                        window.location.href = restored.sourceRecovered ? '/select_components' : '/mode_selection';
                     } catch (error) {
                         alert(`Impossible de charger le projet : ${error.message}`);
                     }

@@ -145,6 +145,8 @@
     </style>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="battery-results-page preserve-table-colors">
 
@@ -154,9 +156,9 @@
                 <h1 id="results-title">Synthèse de l'Autonomie Customer</h1>
                 <p class="subtitle">Sélectionnez le livrable ou la matrice d'autonomie à éditer</p>
             </div>
-            <div class="retractable-menu">
+            <div class="retractable-menu app-summary">
                 <details id="actions-details">
-                    <summary>Sommaire / Actions</summary>
+                    <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved-status" id="saved-status" aria-live="polite"></span>
                         <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
@@ -216,6 +218,9 @@
     </div>
 
     <script src="/static/project_storage.js"></script>
+    <script src="/static/sleep_current.js"></script>
+    <script src="/static/customer_reference.js"></script>
+    <script src="/static/customer_autonomy.js"></script>
     <script>
         function cells(values) {
             return values.map(value => String(value).trim().startsWith('<td') ? value : `<td>${value}</td>`).join('');
@@ -225,14 +230,14 @@
             if (value === '' || value === null || value === undefined) {
                 return fallback;
             }
-            const parsedValue = Number(value);
+            const parsedValue = Number(String(value).replace(',', '.'));
             return Number.isFinite(parsedValue) ? parsedValue : fallback;
         }
 
-        function formatConfigurationNumber(value) {
-            const numericValue = Number(value);
+        function formatConfigurationNumber(value, digits = 4) {
+            const numericValue = Number(String(value ?? '').replace(',', '.'));
             if (!Number.isFinite(numericValue)) return '0';
-            return numericValue.toFixed(4).replace(/\.?0+$/, '').replace('.', ',');
+            return numericValue.toFixed(digits).replace(/\.?0+$/, '').replace('.', ',');
         }
 
         function readBatteryConfiguration() {
@@ -301,30 +306,18 @@
             return Object.values(configuration?.twt || {}).reduce((total, entry) => total + twtEnergy(entry), 0);
         }
 
-        function homologationCurrent() {
-            const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
-            const currentStorageKey = batterySubMode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${batterySubMode}Currents`;
-            const sourceCurrentColumn = batterySubMode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
-            const modifiedCurrents = JSON.parse(sessionStorage.getItem(currentStorageKey) || '{}');
-            const storedEcuKeys = sessionStorage.getItem('selectedEcuKeys');
-            const selectedEcuKeys = new Set(JSON.parse(storedEcuKeys || '[]'));
-            const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
-            const deletedDevices = new Set(JSON.parse(sessionStorage.getItem('deletedDarkDeviceKeys') || '[]'));
-            const customDevices = JSON.parse(sessionStorage.getItem('customDarkDevices') || '[]');
-            let total = (sheet?.data || []).reduce((sum, row, rowIndex) => {
-                const ecuName = row['Device Name'] || row['ECU Name'] || `ECU ${rowIndex + 1}`;
-                const key = `${rowIndex}_${ecuName}`;
-                if (deletedDevices.has(key)) return sum;
-                if (storedEcuKeys !== null && !selectedEcuKeys.has(key)) return sum;
-                const current = modifiedCurrents[key] ?? row[sourceCurrentColumn];
-                const numericCurrent = Number(String(current ?? '').replace(',', '.'));
-                return sum + (Number.isFinite(numericCurrent) ? numericCurrent : 0);
-            }, 0);
-            customDevices.forEach(device => {
-                const current = modifiedCurrents[`custom:${device.id}`] ?? device.current;
-                total += readConfigurationNumber(current, 0);
+        function oneDayProfile(matrix, deviceKey) {
+            const prefix = `${deviceKey}_`;
+            const entry = Object.entries(matrix).find(([key]) => {
+                if (!key.startsWith(prefix)) return false;
+                const label = key.slice(prefix.length).replace(/\s*jours?$/i, '').replace(',', '.');
+                return Number(label) === 1;
             });
-            return total;
+            return entry ? readConfigurationNumber(entry[1], 1) : 1;
+        }
+
+        function homologationCurrent() {
+            return SleepCurrent.calculate(batterySubMode).instantaneousUa;
         }
 
         function sleepValue(rowId, scenarioKey) {
@@ -332,8 +325,10 @@
             if (!configuration) return null;
             const current = homologationCurrent();
             const values = {
-                curr_veille_conso: `${formatConfigurationNumber(current)} mA`,
-                curr_veille: `${formatConfigurationNumber(current / 1000 * 24)} Ah/j`,
+                curr_veille_conso: isDmMode
+                    ? `${formatConfigurationNumber(current, 3)} µA`
+                    : `${formatConfigurationNumber(current / 1000, 4)} mA`,
+                curr_veille: `${formatConfigurationNumber(SleepCurrent.calculate(batterySubMode).dailyAh, 8)} Ah/j`,
                 sans_ebdu_conso: `${formatConfigurationNumber(Number(configuration.sansEbdu))} mA`,
                 sans_ebdu_cons: `${formatConfigurationNumber(Number(configuration.sansEbdu) / 1000 * 24)} Ah/j`,
                 alarme_conso: `${formatConfigurationNumber(Number(configuration.alarm))} mA`,
@@ -394,6 +389,12 @@
             const dailyEnergy = (entryKey) => { if (deleted.has(entryKey)) return 0; const entry = entries[entryKey]; return entry ? (Number(entry.current) / 1000) * 24 * Number(entry.duration) : 0; };
             const first8 = deleted.has('first8') ? 0 : entries.first8 ? (Number(entries.first8.current) / 1000) * Number(entries.first8.duration) : 0;
             const customEnergy = (fixedConsumption[scenarioKey]?.custom || []).reduce((total, entry) => total + (Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit), 0);
+            // Consoveille, Delivery!E44 / G44: CDC and IVC3 only without unplug.
+            if (isDmMode) {
+                return cellEnergy + standardEnergy('pcuRam') + dailyEnergy('transport')
+                    + (scenarioKey === 'withoutAlarmTachy' ? standardEnergy('cdcRam') + standardEnergy('ivc3') : 0)
+                    + customEnergy;
+            }
             const standardTotal = isDmMode
                 ? standardEnergy('pcuRam') + standardEnergy('cdcRam') + standardEnergy('ivc3')
                 : standardEnergy('pcuRam') + standardEnergy('pcuSecure') + standardEnergy('cdcRam') + standardEnergy('cdcGarage') + standardEnergy('cdcSecure') + standardEnergy('fota');
@@ -416,7 +417,7 @@
                 : (deletedSleep.has('aid') ? 0 : Number(sleep.aid) / 1000 * 24) + (deletedSleep.has('tachy') ? 0 : Number(sleep.tachy) / 1000 * 24);
             const customSleepConsumption = JSON.parse(sessionStorage.getItem(`customSleepFunctions_${batterySubMode}`) || '[]')
                 .reduce((total, item) => total + readConfigurationNumber(item?.values?.[scenarioKey] ?? item.current, 0) / 1000 * 24, 0);
-            const sleepConsumptionTotal = homologationCurrent() / 1000 * 24
+            const sleepConsumptionTotal = SleepCurrent.calculate(batterySubMode).dailyAh
                 + (deletedSleep.has('sansEbdu') ? 0 : Number(sleep.sansEbdu) / 1000 * 24)
                 + (deletedSleep.has('alarm') ? 0 : Number(sleep.alarm) / 1000 * 24)
                 + optionalSleepConsumption
@@ -839,7 +840,7 @@
 
                         <!-- SECTION CONSOMMATION EN VEILLE -->
                         <tr class="section-row section-sleep"><td colspan="${totalColumns}">Consommation en veille</td></tr>
-                        <tr><td class="sub-section-title" rowspan="2">Courant veille</td><td class="lbl-col">Conso Veille Instantanée - Customer Mode</td><td class="param-col">0,000 mA</td>${modeBodyValuesFunction('curr_veille_conso')}</tr>
+                        <tr><td class="sub-section-title" rowspan="2">Courant veille</td><td class="lbl-col">Conso Veille Instantanée - Customer Mode</td><td class="param-col">0,000 µA</td>${modeBodyValuesFunction('curr_veille_conso')}</tr>
                         <tr class="energy-row"><td colspan="2" style="text-align:left; font-weight:normal;">Consommation</td>${modeBodyValuesFunction('curr_veille')}</tr>
                         <tr><td class="sub-section-title" rowspan="6">Réveil technique périodique<br>SOC</td><td class="lbl-col">périodicité réveil technique</td><td class="param-col">${formatConfigurationNumber(batteryConfiguration.wakePeriodHours)} heures</td>${modeBodyValuesFunction('rev_tech_period')}</tr>
                         <tr><td class="lbl-col">durée réveil technique SOC</td><td class="param-col">${formatConfigurationNumber(batteryConfiguration.wakeDurationSeconds)} s</td>${modeBodyValuesFunction('rev_tech_soc_duree')}</tr>
@@ -868,11 +869,73 @@
             `;
         }
 
+        function renderCustomerReport(mode, target) {
+            const read = (key, fallback = {}) => JSON.parse(sessionStorage.getItem(key) || JSON.stringify(fallback));
+            const excel = read('excelData');
+            const columns = CustomerAutonomy.calculate(mode, {
+                battery: read('batteryConfiguration'), wake: read('wakeParams_Customer Mode'),
+                vehicle: read('vehicleSleep_Customer Mode'), fixed: read('fixedConsumption'), sleep: read('sleepConsumption'),
+                deletedFixed: read('deletedFixedFunctionIds_Customer Mode', []),
+                deletedSleep: read('deletedSleepFunctionIds_Customer Mode', []),
+                customSleep: read('customSleepFunctions_Customer Mode', []),
+                dailyAh: Object.keys(excel).length ? SleepCurrent.calculate('Customer Mode').dailyAh : undefined
+            });
+            activeScenarioKeys = columns.map(column => column.key);
+            const rowMap = {
+                capa: [8, 'Ah'], soc_dep: [10, '%', 100], soc_min: [11, '%', 100], energy_brute: [13, 'Ah'],
+                endor_nbre: [15, ''], endor_energy: [16, 'Ah'], endor_tot: [17, 'Ah'],
+                cb_per: [19, 'min'], cb_conso: [20, 'mA'], cb_duree: [21, 's'], cb_ahj: [22, 'Ah/j'], cb_dur_bal: [23, 'jours'], cb_energy_tot: [24, 'Ah'],
+                pcu_ram_conso: [26, 'mA'], pcu_ram_duree: [27, 'h'], pcu_ram_energy: [28, 'Ah'],
+                pcu_sec_conso: [30, 'mA'], pcu_sec_duree: [31, 's'], pcu_sec_energy: [32, 'Ah'],
+                cdc_ram_conso: [34, 'mA'], cdc_ram_duree: [35, 'h'], cdc_ram_energy: [36, 'Ah'],
+                cdc_gar_conso: [38, 'mA'], cdc_gar_duree: [39, 'min'], cdc_gar_energy: [40, 'Ah'],
+                cdc_sec_conso: [42, 'mA'], cdc_sec_duree: [43, 'min'], cdc_sec_energy: [44, 'Ah'],
+                sa_mqtt_conso: [46, 'mA'], sa_mqtt_ahj: [47, 'Ah/j'], sa_mqtt_dur: [48, 'jours'], sa_mqtt_eng: [49, 'Ah'],
+                sa_drx_conso: [50, 'mA'], sa_drx_ahj: [51, 'Ah/j'], sa_drx_dur: [52, 'jours'], sa_drx_eng: [53, 'Ah'],
+                sa_remote_eng: [54, 'Ah'], sa_tot_eng: [55, 'Ah'], fota_conso: [57, 'mA'], fota_duree: [58, 'min'], fota_energy: [59, 'Ah'],
+                test_conso: [61, 'mA'], test_ahj: [62, 'Ah/j'], test_duree: [63, 'jours'], test_energy: [64, 'Ah'],
+                hfk3_conso: [66, 'mA'], hfk3_ahj: [67, 'Ah/j'], hfk3_duree: [68, 'jours'], hfk3_energy: [69, 'Ah'],
+                hfk48_conso: [71, 'mA'], hfk48_ahj: [72, 'Ah/j'], hfk48_duree: [73, 'jours'], hfk48_energy: [74, 'Ah'],
+                first8_conso: [76, 'mA'], first8_ah: [77, 'Ah'], first8_duree: [78, 'h'], first8_energy: [79, 'Ah'],
+                blm_conso: [81, 'mA'], blm_ahj: [82, 'Ah/j'], blm_duree: [83, 'jours'], blm_energy: [84, 'Ah'],
+                energy_debut_veille: [86, 'Ah'], curr_veille_conso: [88, 'mA'], curr_veille: [89, 'Ah/j'],
+                rev_tech_period: [91, 'heures'], rev_tech_soc_duree: [92, 's'], rev_tech_soc_conso: [93, 'mA'],
+                rev_tech_cb_duree: [94, 's'], rev_tech_cb_conso: [95, 'mA'], rev_tech: [96, 'Ah/j'],
+                sans_ebdu_conso: [106, 'mA'], sans_ebdu_cons: [107, 'Ah/j'], alarme_conso: [109, 'mA'], alarme: [110, 'Ah/j'],
+                aid_conso: [112, 'mA'], aid: [113, 'Ah/j'], tachy_conso: [115, 'mA'], tachy: [116, 'Ah/j'],
+                aging_soc: [118, '%', 100], aging_cons: [119, 'Ah/j'], veille_tot: [121, 'Ah/j']
+            };
+            const escape = text => String(text).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+            const headers = `<tr><th colspan="3"></th>${columns.map(column => `<th>${escape(column.label)}</th>`).join('')}</tr>
+                <tr class="kpi-row"><td colspan="3">DURÉE DE TENUE EN VEILLE</td>${cells(columns.map(column => column.autonomy === null ? 'Non calculable' : `${formatConfigurationNumber(column.autonomy, 4)} jours`))}</tr>
+                <tr><td colspan="3">SANS BIBERONNAGE</td>${cells(columns.map(column => `${formatConfigurationNumber(column.value(8))} Ah`))}</tr>`;
+            target.innerHTML = generateCommonRows(headers, rowId => {
+                const mapping = rowMap[rowId];
+                if (!mapping) return cells(columns.map(() => '—'));
+                const [row, unit, factor = 1] = mapping;
+                return cells(columns.map(column => `${formatConfigurationNumber(column.value(row) * factor, 8)}${unit ? ' ' + unit : ''}`));
+            }, columns.length);
+            if (mode === 'CustomerPIE') {
+                // The Excel PIE columns describe technical cases, not accessory combinations.
+                target.innerHTML = target.innerHTML.replace('>ALARME</td>', '>Surconsommation cas 1</td>')
+                    .replace('>conso alarme</td>', '>Courant supplémentaire cas 1</td>')
+                    .replace('>AID</td>', '>Surconsommation cas 2</td>').replace('>conso AID</td>', '>Courant supplémentaire cas 2</td>')
+                    .replace('>TACHYMETRE</td>', '>Surconsommation cas 3 / DSM</td>').replace('>conso Tachy</td>', '>Courant supplémentaire cas 3 / DSM</td>');
+            }
+            const title = mode === 'Customer' ? 'Customer Mode - Standard' : mode === 'CustomerWO' ? 'Customer Mode - Without Unplug' : 'Customer PIE - Analyse des cas';
+            document.getElementById('m-title').textContent = title;
+            document.getElementById('resultModal').classList.add('show');
+        }
+
         function openReportModal(mode) {
             batteryConfiguration = readBatteryConfiguration();
             readFixedConsumption();
             readSleepConsumption();
             const target = document.getElementById('modal-body-target');
+            if (!isDmMode) {
+                renderCustomerReport(mode, target);
+                return;
+            }
             let titleText = "";
             let headersHtml = "";
 
@@ -951,7 +1014,7 @@
                     if (rowId === 'blm_duree') return cells(['0 jours', '0 jours', '0 jours', '0 jours']);
                     if (rowId === 'blm_energy') return cells(['0,00 Ah', '0,00 Ah', '0,00 Ah', '0,00 Ah']);
                     if (rowId === 'energy_debut_veille') return cells(['9,33 Ah', '9,33 Ah', '9,33 Ah', '9,33 Ah']);
-                    if (rowId === 'curr_veille_conso') return cells(['0,000 mA', '0,000 mA', '0,000 mA', '0,000 mA']);
+                    if (rowId === 'curr_veille_conso') return cells(['0,000 µA', '0,000 µA', '0,000 µA', '0,000 µA']);
                     if (rowId === 'curr_veille') return cells(['0,00 Ah/j', '0,00 Ah/j', '0,00 Ah/j', '0,00 Ah/j']);
                     if (rowId === 'rev_tech_period') return cells(['8 heures', '8 heures', '8 heures', '8 heures']);
                     if (rowId === 'rev_tech_soc_duree') return cells(['2 s', '2 s', '2 s', '2 s']);

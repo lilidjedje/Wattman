@@ -27,6 +27,7 @@
     let currents = JSON.parse(sessionStorage.getItem('modifiedCurrents') || '{}');
     let lowers = JSON.parse(sessionStorage.getItem('modifiedLowers') || '{}');
     let uppers = JSON.parse(sessionStorage.getItem('modifiedUppers') || '{}');
+    defaults.migrateMatrix(mode, sourceDevices(), matrix);
 
     const tbody = document.getElementById('table-body');
     const subHeaders = document.getElementById('sub-headers');
@@ -51,6 +52,17 @@
         sessionStorage.setItem('modifiedUppers', JSON.stringify(uppers));
         sessionStorage.setItem('customHomologationDevices', JSON.stringify(customDevices));
         sessionStorage.setItem('deletedHomologationDeviceKeys', JSON.stringify(Array.from(deletedKeys)));
+        if (mode === 'dcdc') {
+            const activeDevices = sourceDevices().map((device) => ({
+                key: device.key,
+                name: device.name,
+                rowIndex: device.rowIndex,
+                current: currents[device.key] ?? device.originalCurrent,
+                lower: lowers[device.key] ?? device.lower ?? 1,
+                upper: uppers[device.key] ?? device.upper ?? 0
+            }));
+            sessionStorage.setItem('homologationDevices', JSON.stringify(activeDevices));
+        }
     }
 
     function createUnitInput(input, unit) {
@@ -128,12 +140,13 @@
     function renderHeaders() {
         subHeaders.innerHTML = '';
         config.profileTitles.forEach((title, index) => {
+            const intervals = defaults.intervalsFor(mode, config.profiles[index]);
             const header = mainHeaderRow.children[index + 4];
             if (header) {
-                header.colSpan = config.intervals.length;
+                header.colSpan = intervals.length;
                 header.textContent = title;
             }
-            config.intervals.forEach((interval) => {
+            intervals.forEach((interval) => {
                 const th = document.createElement('th');
                 th.textContent = interval;
                 subHeaders.appendChild(th);
@@ -191,9 +204,9 @@
         tr.appendChild(upperCell);
 
         config.profiles.forEach((profile, profileIndex) => {
-            config.intervals.forEach((interval, intervalIndex) => {
+            defaults.intervalsFor(mode, profile).forEach((interval, intervalIndex) => {
                 const key = matrixKey(device, profile, interval);
-                const initial = values?.[profileIndex * config.intervals.length + intervalIndex] ?? 100;
+                const initial = values?.[defaults.profileOffset(mode, profile) + intervalIndex] ?? 100;
                 if (matrix[key] === undefined) matrix[key] = `${initial}%`;
                 const saved = matrix[key];
                 const cell = document.createElement('td');

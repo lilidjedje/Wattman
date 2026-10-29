@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.utils import secure_filename
 import json
+import shutil
 
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -160,6 +161,34 @@ def project_file(project_id, filename):
     """Télécharger la fiche Wattman conservée côté serveur pour un projet."""
     folder = os.path.join(app.config['UPLOAD_FOLDER'], 'projects', secure_filename(project_id))
     return send_from_directory(folder, secure_filename(filename), as_attachment=True)
+
+@app.route('/recover-project-source', methods=['POST'])
+def recover_project_source():
+    payload = request.get_json(silent=True) or {}
+    filename = secure_filename(str(payload.get('filename') or ''))
+    project_id = secure_filename(str(payload.get('projectId') or ''))
+    if not filename or not allowed_file(filename):
+        return jsonify({'error': 'Nom de fiche Excel invalide.'}), 400
+    candidates = []
+    if project_id:
+        candidates.append(os.path.join(app.config['UPLOAD_FOLDER'], 'projects', project_id, filename))
+    candidates.append(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    candidates.append(os.path.join(os.path.dirname(__file__), 'uploads', filename))
+    for candidate in candidates:
+        if not os.path.isfile(candidate):
+            continue
+        sheets = read_excel_file(candidate)
+        if 'error' in sheets:
+            return jsonify({'error': sheets['error']}), 400
+        project_source = project_id and candidate == candidates[0]
+        if not project_source:
+            destination = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            if os.path.abspath(candidate) != os.path.abspath(destination):
+                shutil.copy2(candidate, destination)
+        source_url = url_for('project_file', project_id=project_id, filename=filename) if project_source else url_for('uploaded_file', filename=filename)
+        return jsonify({'sheets': sheets, 'serverFileUrl': source_url})
+    return jsonify({'error': 'La fiche Excel de cet ancien projet est introuvable. Ses sauvegardes ont été conservées.'}), 404
+
 
 @app.route('/edit_current')
 def edit_current():
@@ -541,7 +570,7 @@ def export_dcdc_template_excel():
             'summer': list(range(20, 25))
         }
         wltc_profile_columns = {
-            'cycle1': [10, 11, 12, 13, 15, 16],
+            'cycle1': list(range(10, 17)),
             'cycle2': list(range(18, 24)),
             'cycle3': list(range(25, 31))
         }
@@ -711,7 +740,7 @@ def export_dcdc_template_excel():
 
         # Les bilans WLTC et leurs trois graphiques utilisent les cycles 1 à 3.
         wltc_summary_columns = {
-            'cycle1': list(range(10, 16)),
+            'cycle1': list(range(10, 17)),
             'cycle2': list(range(18, 24)),
             'cycle3': list(range(25, 31))
         }
@@ -788,13 +817,19 @@ def edit_dm_mode():
 
 @app.route('/biberonnage')
 def biberonnage():
-    """Tableau éditable des consommations de biberonnage sur 90 jours."""
-    return render_template('biberonnage.html')
+    """Choix de la durée ou tableau éditable correspondant."""
+    days = request.args.get('days', type=int)
+    if days not in (30, 90):
+        return render_template('biberonnage_selection.html')
+    return render_template('biberonnage.html', duration_days=days)
 
 @app.route('/biberonnage/resultats')
 def biberonnage_resultats():
     """Synthèse des Ah dépensés pour le tableau de biberonnage."""
-    return render_template('biberonnage_resultats.html')
+    days = request.args.get('days', default=30, type=int)
+    if days not in (30, 90):
+        days = 30
+    return render_template('biberonnage_resultats.html', duration_days=days)
 
 @app.route('/battery_results_menu')
 def battery_results_menu():

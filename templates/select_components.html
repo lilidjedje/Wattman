@@ -32,6 +32,7 @@
         .btn-secondary { background: #e2e8f0; color: #334155; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
 </head>
 <body>
     <main class="container">
@@ -62,6 +63,7 @@
         </div>
     </main>
 
+    <script src="/static/project_storage.js"></script>
     <script>
         const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
         
@@ -122,9 +124,18 @@
             const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');
             checkboxes.forEach(cb => cb.checked = e.target.checked);
             updateCounter();
+            saveSelection();
         });
 
-        tbody.addEventListener('change', updateCounter);
+        function saveSelection() {
+            const selected = { H: [], S: [] };
+            tbody.querySelectorAll('input[type="checkbox"]:checked').forEach(checkbox => {
+                selected[checkbox.dataset.selection].push(checkbox.dataset.key);
+            });
+            sessionStorage.setItem('selectedDeviceKeys', JSON.stringify(selected.H));
+            sessionStorage.setItem('selectedEcuKeys', JSON.stringify(selected.S));
+        }
+        tbody.addEventListener('change', () => { updateCounter(); saveSelection(); });
 
         document.getElementById('save-selection').addEventListener('click', () => {
             const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');

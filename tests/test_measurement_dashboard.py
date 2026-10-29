@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 class MeasurementDashboardTest(unittest.TestCase):
@@ -578,8 +579,10 @@ class MeasurementDashboardTest(unittest.TestCase):
         )
         with open(firmware_path, encoding="utf-8") as firmware:
             source = firmware.read()
-        self.assertIn("if (!digitalStreamMode && !initializeCan(8))", source)
-        self.assertIn("initializeCan(16)", source)
+        self.assertIn("if (!digitalStreamMode && !initializeCan(requestedOscillatorMHz))", source)
+        self.assertIn("canReady = CAN.setMode(MCP_NORMAL) == CAN_OK", source)
+        self.assertIn("if (digitalStreamMode && !transportReady)", source)
+        self.assertNotIn("initializeCan(16)", source)
         self.assertIn("if (streamClient) streamClient.stop()", source)
         self.assertIn("if (digitalStreamMode && !streamConnected)", source)
         self.assertIn('requestedMode != "can" && requestedMode != "digital"', source)
@@ -610,6 +613,35 @@ class MeasurementDashboardTest(unittest.TestCase):
             "/api/control_esp_acquisition",
             data={"action": "stop", "sensor": "ALL"},
         )
+
+    def test_can_start_forwards_physical_crystal_and_reports_unconfirmed_tx(self):
+        status = {
+            "running": True,
+            "sensors": {},
+            "can": {"ready": True, "oscillator_mhz": 16, "tx_ok": 0, "tx_errors": 1},
+        }
+        with patch.object(self.module, "esp32_request", return_value=status) as esp_request:
+            response = self.client.post("/api/control_esp_acquisition", data={
+                "acquisition_mode": "can", "oscillator_mhz": "16",
+                "freq": "100", "dureeValeur": "2", "dureeUnite": "s",
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(esp_request.call_args.args[:2], ("POST", "/api/acquisition/start"))
+        self.assertEqual(esp_request.call_args.args[2]["oscillator_mhz"], 16)
+        self.assertEqual(esp_request.call_args.args[2]["mode"], "can")
+        payload = response.get_json()
+        self.assertEqual(payload["session"]["status"], "running")
+        self.assertEqual(payload["acquisition"]["can"]["tx_errors"], 1)
+        self.assertIn("attente", payload["message"])
+
+    def test_invalid_can_crystal_never_reaches_device(self):
+        with patch.object(self.module, "esp32_request") as esp_request:
+            response = self.client.post("/api/control_esp_acquisition", data={
+                "acquisition_mode": "can", "oscillator_mhz": "12",
+                "freq": "100", "dureeValeur": "2", "dureeUnite": "s",
+            })
+        self.assertEqual(response.status_code, 400)
+        esp_request.assert_not_called()
 
     def test_digital_measurement_creates_direct_dashboard_session(self):
         response = self.client.post(

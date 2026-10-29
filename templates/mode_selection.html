@@ -82,6 +82,7 @@
         .pdf-export-button { position: fixed; top: 62px; right: 22px; z-index: 200; padding: 12px 20px; text-decoration: none; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
 </head>
 <body>
     <a class="button pdf-export-button" href="/export_synthesis_pdf?auto=1">Export synthèses PDF</a>
@@ -167,11 +168,12 @@
                 });
                 const wltcInitial = defaults.valuesFor('wltc', name, occurrence) || Array(18).fill(100);
                 wltcLabels.forEach((label, cycleIndex) => {
-                    scenarios[label] = defaults.wltcIntervals.map((interval, intervalIndex) => ({
+                    const profile = defaults.wltcProfiles[cycleIndex];
+                    scenarios[label] = defaults.intervalsFor('wltc', profile).map((interval, intervalIndex) => ({
                         label: interval,
-                        start_s: wltcWindows[intervalIndex][0],
-                        end_s: wltcWindows[intervalIndex][1],
-                        expected_A: nominal * numeric(wltcInitial[cycleIndex * defaults.wltcIntervals.length + intervalIndex] ?? 100) / 100
+                        start_s: defaults.wltcWindows[profile][intervalIndex][0] * 60,
+                        end_s: defaults.wltcWindows[profile][intervalIndex][1] * 60,
+                        expected_A: nominal * numeric(wltcInitial[defaults.profileOffset('wltc', profile) + intervalIndex] ?? 100) / 100
                     }));
                 });
                 devices.push({id: `dcdc:${key}`, kind: 'dcdc', name, nominal_A: nominal, source_unit: 'A', scenarios});
@@ -190,11 +192,12 @@
                         expected_A: nominal * numeric(matrix[`${key}_${profile}_${interval}`] ?? 100) / 100
                     }));
                 });
-                wltcLabels.forEach(label => {
-                    scenarios[label] = defaults.wltcIntervals.map((interval, intervalIndex) => ({
+                wltcLabels.forEach((label, cycleIndex) => {
+                    const profile = defaults.wltcProfiles[cycleIndex];
+                    scenarios[label] = defaults.intervalsFor('wltc', profile).map((interval, intervalIndex) => ({
                         label: interval,
-                        start_s: wltcWindows[intervalIndex][0],
-                        end_s: wltcWindows[intervalIndex][1],
+                        start_s: defaults.wltcWindows[profile][intervalIndex][0] * 60,
+                        end_s: defaults.wltcWindows[profile][intervalIndex][1] * 60,
                         expected_A: nominal
                     }));
                 });
@@ -272,8 +275,10 @@
             const excelData = readJson(sessionStorage, 'excelData', {});
             const homologation = readJson(sessionStorage, 'homologationConfiguration', {});
             const battery = readJson(sessionStorage, 'batteryConfiguration', {});
+            const bibDays = sessionStorage.getItem('biberonnageDurationDays') === '90' ? 90 : 30;
+            const bibKey = key => bibDays === 30 ? key : `${key}90Days`;
             const calculatedBiberonnages = readJson(
-                sessionStorage, 'biberonnageCalculatedAnalyses', {}
+                sessionStorage, bibKey('biberonnageCalculatedAnalyses'), {}
             );
             let biberonnageAnalyses = Object.entries(calculatedBiberonnages).map(
                 ([id, analysis]) => ({
@@ -283,9 +288,9 @@
                 })
             );
             if (!biberonnageAnalyses.length) {
-                const savedParams = readJson(sessionStorage, 'biberonnageParams', {});
-                const builtins = readJson(sessionStorage, 'biberonnageBuiltinAnalyses', {});
-                const custom = readJson(sessionStorage, 'biberonnageCustomAnalyses', []);
+                const savedParams = readJson(sessionStorage, bibKey('biberonnageParams'), {});
+                const builtins = readJson(sessionStorage, bibKey('biberonnageBuiltinAnalyses'), {});
+                const custom = readJson(sessionStorage, bibKey('biberonnageCustomAnalyses'), []);
                 const common = {
                     capacityAh: numeric(battery.capacityAh) || 60,
                     startingSoc: numeric(savedParams.startingSoc ?? battery.startingSoc) || 90,

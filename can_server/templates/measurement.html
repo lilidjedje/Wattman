@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Acquisition ESP32-C3 multi INA226</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
 </head>
 <body>
     <header class="workstation-header">
@@ -37,6 +38,15 @@
                 <form id="measurementForm" class="form-grid">
                     <input type="hidden" name="acquisition_mode" value="{{ acquisition_mode }}">
                     <input type="hidden" name="channelSelection" value="1">
+                    {% if acquisition_mode == 'can' %}
+                    <label class="field">Quartz du module MCP2515
+                        <select name="oscillator_mhz">
+                            <option value="8">8 MHz</option>
+                            <option value="16">16 MHz</option>
+                        </select>
+                    </label>
+                    <p class="form-intro">Choisissez la fréquence inscrite sur le quartz du MCP2515. Le bus reste à 500 kbit/s.</p>
+                    {% endif %}
                     <p class="form-intro">Fréquence d’acquisition réelle et durée de mesure réglables séparément pour chaque canal.</p>
                     {% for channel, address in [('A', '0x40'), ('B', '0x41')] %}
                     <fieldset class="field channel-config">
@@ -143,9 +153,19 @@
             const can = data.can || {};
             document.getElementById('canState').textContent = acquisitionMode === 'can'
                 ? (can.ready
-                    ? `CAN prêt · ${(can.bitrate || 500000) / 1000} kbit/s · quartz ${can.oscillator_mhz || '?'} MHz · ${can.tx_ok || 0} trames`
+                    ? `CAN · ${(can.bitrate || 500000) / 1000} kbit/s · quartz ${can.oscillator_mhz || '?'} MHz · ${can.tx_ok || 0} envois confirmés · ${can.tx_errors || 0} échecs`
                     : 'CAN : MCP2515 indisponible')
                 : 'CAN contourné · flux numérique Wi-Fi';
+            if (acquisitionMode === 'can' && data.running && can.tx_errors > 0
+                    && (!can.tx_ok || can.last_tx_result || (can.error_flags & 0x20))) {
+                setMessage(
+                    `Acquisition active : ${can.tx_ok || 0} envois confirmés, ${can.tx_errors} échecs. ` +
+                    `Contrôleur : erreurs ${can.error_flags || 0}, compteur TX ${can.tx_error_count || 0}, code ${can.last_tx_result || 0}.`,
+                    'error'
+                );
+            } else if (acquisitionMode === 'can' && data.running && can.tx_ok > 0) {
+                setMessage('Acquisition CAN active : émission des trames confirmée par le contrôleur.', 'ok');
+            }
             document.getElementById('startButton').disabled = Boolean(data.running);
             document.getElementById('stopButton').disabled = !data.running;
             ['A', 'B'].forEach(channel => {

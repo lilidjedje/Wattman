@@ -102,6 +102,8 @@
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="preserve-table-colors">
     <header class="topbar">
@@ -112,9 +114,9 @@
             <button class="primary" id="export-dm-excel" type="button">Export Excel File</button>
             <button class="primary" id="addProfileButton" type="button">＋ Ajouter un profil</button>
             
-            <div class="retractable-menu">
+            <div class="retractable-menu app-summary">
                 <details id="actions-details">
-                    <summary> Sommaire / Actions</summary>
+                    <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved-status" id="saved-status" aria-live="polite"></span>
                         <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
@@ -156,6 +158,7 @@
     </dialog>
 
     <script src="/static/project_storage.js"></script>
+    <script src="/static/sleep_current.js"></script>
     <script>
         // Récupération du sous-mode sélectionné ('DM1' ou 'DM2')
         const requestedSubMode = new URLSearchParams(window.location.search).get('mode');
@@ -171,7 +174,7 @@
         ];
 
         const DEFAULT_FIXED = {
-            cellBalancing: { current: 200, duration: 15, unit: 's', extra: { periodMin: 480, balancingDays: 30 }, calculation: 'cell' },
+            cellBalancing: { current: 200, duration: 15, unit: 's', extra: { periodMin: 480, balancingDays: 90 }, calculation: 'cell' },
             pcuRam: { current: 1, duration: 192, unit: 'h', calculation: 'energy' },
             cdcRam: { current: 4.8, duration: 192, unit: 'h', calculation: 'energy' },
             ivc3: { current: 0.4, duration: 0, unit: 'h', calculation: 'energy' },
@@ -187,7 +190,7 @@
             catch (_) { return fallback; }
         }
         function n(value, fallback = 0) {
-            const parsed = Number(value);
+            const parsed = Number(String(value ?? '').replace(',', '.'));
             return Number.isFinite(parsed) ? parsed : fallback;
         }
         function format(value, digits = 2) {
@@ -224,7 +227,7 @@
             const calculation = entry?.calculation || 'energy';
             if (calculation === 'cell') {
                 const daily = (duration / 3600) * (current / 1000) * (24 * 60 / Math.max(n(entry?.extra?.periodMin, 480), 0.0001));
-                return daily * n(entry?.extra?.balancingDays, 30);
+                return daily * n(entry?.extra?.balancingDays, 90);
             }
             if (calculation === 'daily') return (current / 1000) * 24 * duration;
             if (calculation === 'first8') return (current / 1000) * duration;
@@ -233,35 +236,13 @@
         }
 
         function twtEnergy(item) {
-            return ((n(item?.ivcCurrent) + n(item?.powerlatchCurrent)) / 1000) * (n(item?.durationSeconds) / 3600);
+            return (((n(item?.ivcCurrent) + n(item?.powerlatchCurrent)) / 1000) * (n(item?.durationSeconds) / 3600)) / 24;
         }
 
         function modeData(mode) {
-            const genericFixed = readJson('fixedConsumption', {});
-            const genericSleep = readJson('sleepConsumption', {});
-            const fixed = readJson(`fixedConsumption${mode}`, genericFixed);
-            const sleep = readJson(`sleepConsumption${mode}`, genericSleep);
-            const excel = readJson('excelData', {});
-            const modified = readJson(mode === 'DM2' ? 'modifiedDM2Currents' : 'modifiedDM1Currents', {});
-            const storedSelected = sessionStorage.getItem('selectedEcuKeys');
-            const selected = new Set(readJson('selectedEcuKeys', []));
-            const deletedDevices = new Set(readJson('deletedDarkDeviceKeys', []));
-            const customDevices = readJson('customDarkDevices', []);
-            let homologationMa = 0;
-            const sheet = excel['Device List'] || excel['ECU List'] || Object.values(excel)[0];
-            (sheet?.data || []).forEach((row, rowIndex) => {
-                const name = row['Device Name'] || row['ECU Name'] || `ECU ${rowIndex + 1}`;
-                const ecuKey = `${rowIndex}_${name}`;
-                if (deletedDevices.has(ecuKey)) return;
-                if (storedSelected !== null && !selected.has(ecuKey)) return;
-                const sourceColumn = mode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
-                homologationMa += n(modified[ecuKey] ?? row[sourceColumn] ?? row['Sleep Current (mA)']);
-            });
-            customDevices.forEach(device => {
-                const key = `custom:${device.id}`;
-                homologationMa += n(modified[key] ?? device.current);
-            });
-            return { fixed, sleep, homologationMa };
+            const fixed = readJson(`fixedConsumption${mode}`, readJson('fixedConsumption', {}));
+            const sleep = readJson(`sleepConsumption${mode}`, readJson('sleepConsumption', {}));
+            return { fixed, sleep };
         }
 
         function getFixedScenario(store, key) {
@@ -304,7 +285,9 @@
 
             const fixed = getFixedScenario(data.fixed, scenario.key);
             const deletedFixed = new Set(readJson(`deletedFixedFunctionIds_${mode}`, []));
-            const fixedNames = ['cellBalancing', 'pcuRam', 'cdcRam', 'ivc3', 'handFree3', 'handFree48', 'first8', 'blm', 'transport'];
+            // Consoveille, Delivery!E44 (Logistique) / G44 (Sans Unplug).
+            const fixedNames = ['cellBalancing', 'pcuRam', 'transport',
+                ...(scenario.key === 'withoutAlarmTachy' ? ['cdcRam', 'ivc3'] : [])];
             const fixedTotal = fixedNames.filter(key => !deletedFixed.has(key)).reduce((sum, key) => sum + entryEnergy(fixed.entries[key]), 0)
                 + fixed.custom.reduce((sum, item) => sum + entryEnergy(item), 0);
             const available = gross - vehicleTotal - fixedTotal;
@@ -319,8 +302,7 @@
             const wakesPerDay = 24 / wakePeriod;
             const technicalWake = ((wakeCurrent / 1000) * (wakeDuration / 3600) + (balancingCurrent / 1000) * (balancingDuration / 3600)) * wakesPerDay;
 
-            const instantaneous = data.homologationMa;
-            const sleepCurrentEnergy = instantaneous / 1000 * 24;
+            const { instantaneousUa: instantaneous, dailyAh: sleepCurrentEnergy } = SleepCurrent.calculate(mode);
             const alarmEnergy = sleep.alarm / 1000 * 24;
             const sansEbduEnergy = sleep.sansEbdu / 1000 * 24;
             const deletedSleep = new Set(readJson(`deletedSleepFunctionIds_${mode}`, []));
@@ -440,8 +422,8 @@
                         
                         ${row('', '', '', 'Énergie disponible en début de veille', cols.map(c => ({ value: c.available, unit: 'Ah', digits: 2 })), { energy: true, colspan: 3 })}
                         
-                        ${row('Veille', 'cream', 'Courant veille', 'Conso veille instantanée', cols.map(c => ({ value: c.instantaneous, unit: 'mA', digits: 3 })), { rowspan: sleepSectionRows, fnRowspan: 2 })}
-                        ${row('', '', '', 'Consommation', cols.map(c => ({ value: c.sleepCurrentEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
+                        ${row('Veille', 'cream', 'Courant veille', 'Conso veille instantanée', cols.map(c => ({ value: c.instantaneous, unit: 'µA', digits: 3 })), { rowspan: sleepSectionRows, fnRowspan: 2 })}
+                        ${row('', '', '', 'Consommation', cols.map(c => ({ value: c.sleepCurrentEnergy, unit: 'Ah/j', digits: 8 })), { energy: true })}
                         
                         ${row('', '', 'Réveil technique périodique', 'Périodicité', cols.map(c => ({ value: c.wakePeriod, unit: 'heures', digits: 1 })), { fnRowspan: 6 })}
                         ${row('', '', '', 'Durée réveil technique', cols.map(c => ({ value: c.wakeDuration, unit: 's', digits: 1 })))}

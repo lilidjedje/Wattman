@@ -96,15 +96,17 @@
         .empty-state { background: white; border-radius: 12px; padding: 60px; text-align: center; color: #999; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="matrix-edit-page preserve-table-colors dm-matrix-page">
     <div class="header">
         <button class="btn btn-back" onclick="window.location.href='/battery_menu'">← Changer de Mode</button>
         <h1 id="page-title">Configuration Autonomie : Mode DM1</h1>
         <div class="header-actions">
-            <div class="retractable-menu">
+            <div class="retractable-menu app-summary">
                 <details id="actions-details">
-                    <summary> Sommaire / Actions</summary>
+                    <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved-status" id="saved-status" aria-live="polite"></span>
                         <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
@@ -145,6 +147,7 @@
     </div>
 
     <script src="/static/project_storage.js"></script>
+    <script src="/static/sleep_current.js"></script>
     <script>
         const batterySubMode = sessionStorage.getItem('batterySubMode') || 'DM1';
         document.title = `Configuration ${batterySubMode}`;
@@ -184,7 +187,7 @@
                 const itemName = row['Device Name'] || row['ECU Name'] || `Item ${rowIndex + 1}`;
                 const sourceColumn = batterySubMode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
                 
-                const rawVal = row[sourceColumn] ?? row['Current (A)'] ?? row['Sleep Current (mA)'] ?? row['Homologation Current (mA)'];
+                const rawVal = SleepCurrent.sourceCurrent(row, batterySubMode);
                 const originalCurrent = rawVal !== null && rawVal !== undefined && rawVal !== '' ? rawVal : 0;
                 
                 const itemKey = `${rowIndex}_${itemName}`;

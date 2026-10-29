@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biberonnage - Analyses et résultats</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/vendor/chart.umd.js"></script>
     <style>
         :root {
             --navy: #1f4e78; --green: #a9d08e; --blue: #bdd7ee; --pink: #ff99ff;
@@ -96,15 +96,17 @@
         @media (max-width: 1200px) { .dashboard { grid-template-columns: 1fr; } }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="preserve-table-colors">
     <header class="page-header">
         <div>
-            <h1> Analyses de biberonnage</h1>
+            <h1> Analyses de biberonnage — {{ duration_days }} jours</h1>
         </div>
-        <div class="retractable-menu">
+        <div class="retractable-menu app-summary">
             <details id="actions-details">
-                <summary> Sommaire / Actions</summary>
+                <summary>Sommaire</summary>
                 <div class="menu-content">
                     <span class="save-status" id="project-save-status" aria-live="polite"></span>
                     <button class="menu-save" id="project-save" type="button"> Enregistrer</button>
@@ -150,70 +152,27 @@
     <div class="bottom-nav"><button class="previous-step" id="previous-step" type="button">← Étape précédente</button></div>
 
     <script src="/static/project_storage.js"></script>
+    <script src="/static/sleep_current.js"></script>
+    <script src="/static/biberonnage_reference.js"></script>
+    <script src="/static/biberonnage_model.js"></script>
     <script>
-        const DATA_KEY = 'biberonnage90Days';
-        const PARAMS_KEY = 'biberonnageParams';
-        const BUILTIN_KEY = 'biberonnageBuiltinAnalyses';
-        const CUSTOM_KEY = 'biberonnageCustomAnalyses';
-        const BIB_FREQUENCY_DAYS = 7;
-        const ACCEPTANCE_CHARGE_AMPS = 3;
-        const BIB_TIME_L1_MINUTES = 120;
-        const BIB_TIME_L2_MINUTES = 90;
-        const RECUP_ENERGY_L1 = ACCEPTANCE_CHARGE_AMPS * BIB_TIME_L1_MINUTES / 60;
-        const RECUP_ENERGY_L2 = ACCEPTANCE_CHARGE_AMPS * BIB_TIME_L2_MINUTES / 60;
+        const DURATION_DAYS = {{ duration_days | tojson }};
+        const DATA_KEY = `biberonnage${DURATION_DAYS}Days`;
+        // Les clés historiques des bilans correspondent aux calculs sur 30 jours.
+        const periodKey = key => DURATION_DAYS === 30 ? key : `${key}90Days`;
+        const PARAMS_KEY = periodKey('biberonnageParams');
+        const BUILTIN_KEY = periodKey('biberonnageBuiltinAnalyses');
+        const CUSTOM_KEY = periodKey('biberonnageCustomAnalyses');
+        const CALCULATED_KEY = periodKey('biberonnageCalculatedAnalyses');
+        sessionStorage.setItem('biberonnageDurationDays', String(DURATION_DAYS));
         const AUTO_DISCHARGE_ROW = 28;
 
         const stored = JSON.parse(sessionStorage.getItem(DATA_KEY) || '{}');
         const batteryConfig = JSON.parse(sessionStorage.getItem('batteryConfiguration') || '{}');
         const savedBibParams = JSON.parse(sessionStorage.getItem(PARAMS_KEY) || '{}');
-        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
-        const ecuSheet = excelData['ECU List'] || Object.values(excelData)[0] || { data: [] };
-        const normalize = value => String(value || '').trim().toLocaleLowerCase();
-        const sleepCurrentByEcuName = new Map((ecuSheet.data || []).map(ecu => [
-            normalize(ecu['ECU Name']),
-            ecu['Sleep Current (mA)'] === null || ecu['Sleep Current (mA)'] === undefined || ecu['Sleep Current (mA)'] === '' ? 0 : ecu['Sleep Current (mA)']
-        ]));
+        const timeColumns = BiberonnageModel.columns(DURATION_DAYS);
 
-        const timeColumns = [
-            { key: '0', label: '0,00', daysElapsed: 0 },
-            { key: '30s', label: '0,003472222', daysElapsed: 30 / 86400 },
-            { key: '1min', label: '0,0035', daysElapsed: 60 / 86400 },
-            { key: '2min', label: '0,0049', daysElapsed: 120 / 86400 },
-            { key: '5min', label: '0,0049', daysElapsed: 300 / 86400 },
-            { key: '7min', label: '0,0833', daysElapsed: 420 / 86400 },
-            { key: '1h', label: '0,0833', daysElapsed: 1 / 24 },
-            { key: '8h', label: '0,0833', daysElapsed: 8 / 24 },
-            ...Array.from({ length: 30 }, (_, index) => ({ key: `day-${index + 1}`, label: `${index + 1}`, day: index + 1, dayNum: index + 1, daysElapsed: index + 1 }))
-        ];
-
-        const sourceRows = [
-            { rowIndex: 1, label: 'Endormissement ECUs', values: { 1: 2000, 2: 2000 } },
-            { rowIndex: 2, label: 'Secure Reboot PCU', values: { 1: 3300 } },
-            { rowIndex: 3, label: 'Secure Reboot CDC', values: { 1: 2, 2: 2 } },
-            { rowIndex: 4, label: 'PCU Garage mode (Google)', values: { 3: 2000, 4: 2000, 5: 2000 } },
-            { rowIndex: 5, label: 'CDC Garage mode (Google)', values: { 3: 2000, 4: 2000, 5: 2000 } },
-            { rowIndex: 6, label: '8ères heures', values: { 1: 0 } },
-            { rowIndex: 7, label: 'FOTA', values: {} },
-            { rowIndex: 8, label: 'CDC Suspend to RAM', values: '5' },
-            { rowIndex: 9, label: 'Suspend to RAM PCU', values: '1' },
-            { rowIndex: 10, label: 'CONNECTIVITÉ', values: '6' },
-            { rowIndex: 11, label: 'Suspend to RAM Smart Antenna', values: '0' },
-            { rowIndex: 13, label: 'TEST', values: '0,00' },
-            { rowIndex: 14, label: 'HFM / KAM', values: col => col.day && col.day <= 3 ? '9,00' : '4,2' },
-            { rowIndex: 15, label: 'Cell balancing', values: col => col.day === 1 ? '0,08' : '0,075' },
-            { rowIndex: 16, label: 'Réveils techniques périodiques Customer', values: '0,00' },
-            { rowIndex: 17, label: 'Veille CUSTOMER', values: '0,00' },
-            { rowIndex: 18, label: 'BLM', values: '0,7' },
-            { rowIndex: 19, label: 'AID', values: '0,2' },
-            { rowIndex: 20, label: 'Tachy', values: '14,00' },
-            { rowIndex: 21, label: 'Alarme', values: '11,50' },
-            { rowIndex: 22, label: 'TWT', values: '0,022' },
-            { rowIndex: 24, label: 'Réveils techniques périodiques Delivery', values: '9,118' },
-            { rowIndex: 25, label: 'Veille DELIVERY', values: '3,46' },
-            { rowIndex: 26, label: 'Transport 10 jours', values: '0,72' },
-            { rowIndex: 27, label: 'Auto décharge L2 (Pb) — ligne 1', values: '0,002750' },
-            { rowIndex: 28, label: 'Auto décharge L2 (Pb)', values: '0,0002750', required: true }
-        ];
+        const sourceRows = BiberonnageModel.rows.filter(row => row.label);
         const rowsByIndex = new Map(sourceRows.map(row => [row.rowIndex, row]));
 
         const numberValue = (value, fallback = 0) => {
@@ -225,11 +184,7 @@
         const uniqueRows = values => [...new Set(values.map(Number).filter(index => rowsByIndex.has(index)).concat(AUTO_DISCHARGE_ROW))];
 
         function defaultValue(row, column) {
-            if (column.day === 1) return sleepCurrentByEcuName.get(normalize(row.label)) ?? 0;
-            if (typeof row.values === 'function') return row.values(column);
-            if (typeof row.values === 'string') return row.values;
-            if (column.day && row.values[column.day] !== undefined) return row.values[column.day];
-            return row.values[column.key] ?? '';
+            return BiberonnageModel.defaultValue(row, column, sessionStorage, DURATION_DAYS);
         }
 
         function currentFor(rowIndex, column) {
@@ -241,20 +196,27 @@
 
         const initialConfig = {
             capacityAh: numberValue(batteryConfig.capacityAh, 60),
-            startingSoc: numberValue(savedBibParams.startingSoc ?? batteryConfig.startingSoc, 90),
-            efDemandSoc: numberValue(savedBibParams.efDemandSoc, 76),
+            startingSoc: numberValue(savedBibParams.startingSoc ?? batteryConfig.startingSoc, DURATION_DAYS === 30 ? 92 : 90),
+            efDemandSoc: numberValue(savedBibParams.efDemandSoc, 80),
             targetSoc: 90,
-            consoL1: numberValue(savedBibParams.consoBibL1, 7.97),
+            consoL1: numberValue(savedBibParams.consoBibL1, 7.971),
             durationL1: numberValue(savedBibParams.dureeBibL1, 120),
-            consoL2: numberValue(savedBibParams.consoBibL2, 7.97),
-            durationL2: numberValue(savedBibParams.dureeBibL2, 90)
+            consoL2: numberValue(savedBibParams.consoBibL2, 7.971),
+            durationL2: numberValue(savedBibParams.dureeBibL2, 90),
+            frequencyDays: numberValue(savedBibParams.frequencyDays, 7),
+            acceptanceL1: numberValue(savedBibParams.acceptanceL1, 3),
+            acceptanceL2: numberValue(savedBibParams.acceptanceL2, 3)
         };
         const builtinSaved = JSON.parse(sessionStorage.getItem(BUILTIN_KEY) || '{}');
-        const baseRows = uniqueRows(sourceRows.filter(row => row.rowIndex >= 1 && row.rowIndex <= 19).map(row => row.rowIndex));
-        const ttRows = uniqueRows(sourceRows.filter(row => row.rowIndex >= 1 && row.rowIndex <= 21).map(row => row.rowIndex));
+        const baseRows = DURATION_DAYS === 30
+            ? uniqueRows(sourceRows.filter(row => row.rowIndex >= 1 && row.rowIndex <= 17).map(row => row.rowIndex))
+            : uniqueRows([1, 13, 22, 24, 25, 26, 29]);
+        const ttRows = DURATION_DAYS === 30
+            ? uniqueRows(sourceRows.filter(row => row.rowIndex >= 1 && row.rowIndex <= 21).map(row => row.rowIndex))
+            : uniqueRows([...baseRows, 20, 21]);
         const analyses = [
             { id: 'base', name: 'BASE', note: '', selectedRows: baseRows, config: { ...initialConfig, ...(builtinSaved.base || {}) }, custom: false },
-            { id: 'tt-opt', name: 'TT Opt avec TACHY + Alarme', note: '', selectedRows: ttRows, config: { ...initialConfig, ...(builtinSaved['tt-opt'] || {}) }, custom: false }
+            { id: 'tt-opt', name: 'TT Opt avec TACHY + Alarme', note: '', selectedRows: ttRows, config: { ...initialConfig, efDemandSoc: DURATION_DAYS === 30 ? 76 : initialConfig.efDemandSoc, ...(builtinSaved['tt-opt'] || {}) }, custom: false }
         ];
 
         let customAnalyses;
@@ -291,11 +253,10 @@
                 </div>
                 <div class="config-cards">
                     <table class="loss-table">
-                        <colgroup><col style="width:40%"><col style="width:18%"><col style="width:22%"><col style="width:12%"><col style="width:8%"></colgroup>
-                        <thead><tr><th class="loss-label">Énergie perdue pdt bib</th><th>conso</th><th>durée (min)</th><th>Ah</th><th>Ah</th></tr></thead>
+                        <thead><tr><th>Recharge</th><th>Conso système (A)</th><th>Durée (min)</th><th>Pertes (Ah)</th><th>Charge nominale (Ah)</th><th>Total (Ah)</th></tr></thead>
                         <tbody>
-                            <tr><td><input class="small-input" type="number" step="0.01" min="0" data-field="consoL1" value="${config.consoL1}"></td><td><input class="small-input" type="number" step="1" min="1" data-field="durationL1" value="${config.durationL1}"></td><td data-output="ah-l1"></td><td class="loss-orange" data-output="total-l1"></td><td></td></tr>
-                            <tr><td><input class="small-input" type="number" step="0.01" min="0" data-field="consoL2" value="${config.consoL2}"></td><td><input class="small-input" type="number" step="1" min="1" data-field="durationL2" value="${config.durationL2}"></td><td data-output="ah-l2"></td><td class="loss-orange" data-output="total-l2"></td><td></td></tr>
+                            <tr><td>Périodique</td><td><input class="small-input" type="number" step="0.001" min="0" data-field="consoL1" value="${config.consoL1}"></td><td><input class="small-input" type="number" step="1" min="0" data-field="durationL1" value="${config.durationL1}"></td><td data-output="ah-l1"></td><td data-output="recovery-l1"></td><td class="loss-orange" data-output="total-l1"></td></tr>
+                            <tr><td>Sur seuil SOC</td><td><input class="small-input" type="number" step="0.001" min="0" data-field="consoL2" value="${config.consoL2}"></td><td><input class="small-input" type="number" step="1" min="0" data-field="durationL2" value="${config.durationL2}"></td><td data-output="ah-l2"></td><td data-output="recovery-l2"></td><td class="loss-orange" data-output="total-l2"></td></tr>
                         </tbody>
                     </table>
                     <table class="threshold-table">
@@ -303,6 +264,10 @@
                         <tbody>
                             <tr><td class="threshold-label">%SOC de départ</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="startingSoc" value="${config.startingSoc}"></td></tr>
                             <tr><td class="threshold-label">%SOC de demande d’EF</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="efDemandSoc" value="${config.efDemandSoc}"></td></tr>
+                            <tr><td class="threshold-label">%SOC cible après EF</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="targetSoc" value="${config.targetSoc}"></td></tr>
+                            <tr><td class="threshold-label">Période EF (jours, 0 = désactivée)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="1" data-field="frequencyDays" value="${config.frequencyDays}"></td></tr>
+                            <tr><td class="threshold-label">Acceptance charge périodique (A)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="0.1" data-field="acceptanceL1" value="${config.acceptanceL1}"></td></tr>
+                            <tr><td class="threshold-label">Acceptance charge sur seuil (A)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="0.1" data-field="acceptanceL2" value="${config.acceptanceL2}"></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -312,8 +277,9 @@
                     <div class="dash-card"><h3> Évolution du %SOC Batterie</h3><div class="chart-box"><canvas data-chart="soc"></canvas></div></div>
                     <div class="dash-card"><h3> Bilan Énergétique (Wh)</h3><table class="summary-table"><thead><tr><th>Indicateur</th><th>Somme Ah</th><th>Somme Besoin Wh (× 14,5 V)</th><th>Coût EF (Wh)</th></tr></thead><tbody>
                         <tr><td>Conso de veille (12 V)</td><td data-output="sum-veille-ah"></td><td data-output="sum-veille-wh"></td><td rowspan="3" class="cost-cell" data-output="total-cost"></td></tr>
-                        <tr><td>Énergie perdue (Ligne 1)</td><td data-output="sum-loss-l1-ah"></td><td data-output="sum-loss-l1-wh"></td></tr>
-                        <tr><td>Énergie perdue (Ligne 2)</td><td data-output="sum-loss-l2-ah"></td><td data-output="sum-loss-l2-wh"></td></tr>
+                        <tr><td>Pertes EF périodiques</td><td data-output="sum-loss-l1-ah"></td><td data-output="sum-loss-l1-wh"></td></tr>
+                        <tr><td>Pertes EF sur seuil SOC</td><td data-output="sum-loss-l2-ah"></td><td data-output="sum-loss-l2-wh"></td></tr>
+                        <tr><td>Charge nominale restituée</td><td data-output="sum-recharge-ah"></td><td data-output="sum-recharge-wh"></td><td>Pour mémoire</td></tr>
                         <tr><td>Nb de bib</td><td colspan="3" class="bib-count" data-output="bib-count"></td></tr>
                     </tbody></table></div>
                     <div class="dash-card"><h3> Répartition Coût EF (%)</h3><div class="chart-box"><canvas data-chart="pie"></canvas></div></div>
@@ -327,68 +293,17 @@
         }
 
         function calculateAnalysis(analysis) {
-            const config = analysis.config;
-            const capacityAh = Math.max(numberValue(config.capacityAh, 60), .01);
-            const startSoc = numberValue(config.startingSoc, 90);
-            const demandSoc = numberValue(config.efDemandSoc, 76);
-            const targetSoc = numberValue(config.targetSoc, 90);
-            const consoL1 = numberValue(config.consoL1, 7.97);
-            const durationL1 = numberValue(config.durationL1, 120);
-            const consoL2 = numberValue(config.consoL2, 7.97);
-            const durationL2 = numberValue(config.durationL2, 90);
-            const ahL1 = consoL1 * durationL1 / 60;
-            const ahL2 = consoL2 * durationL2 / 60;
-
-            const ahSpent = [];
-            let cumulativeAh = 0;
-            timeColumns.forEach((column, index) => {
-                const currentSum = analysis.selectedRows.reduce((sum, rowIndex) => sum + currentFor(rowIndex, column), 0);
-                const previousTime = index === 0 ? 0 : timeColumns[index - 1].daysElapsed;
-                cumulativeAh += (currentSum / 1000) * (column.daysElapsed - previousTime) * 24;
-                ahSpent.push(cumulativeAh);
-            });
-
-            let totalLossL1 = 0;
-            let totalLossL2 = 0;
-            const socLost = ahSpent.map(value => value * 100 / capacityAh);
-            const socCurrent = [];
-            let previousSoc = startSoc;
-            timeColumns.forEach((column, index) => {
-                if (index < 6) {
-                    socCurrent.push(null);
-                } else if (column.key === '8h') {
-                    socCurrent.push(startSoc);
-                    previousSoc = startSoc;
-                } else {
-                    let calculatedSoc = previousSoc - socLost[index];
-                    if (ahSpent[index] === consoL1 || calculatedSoc < demandSoc || (column.dayNum && column.dayNum % BIB_FREQUENCY_DAYS === 0)) calculatedSoc = targetSoc;
-                    socCurrent.push(calculatedSoc);
-                    previousSoc = calculatedSoc;
-                }
-                if (column.dayNum && column.dayNum % BIB_FREQUENCY_DAYS === 0) {
-                    totalLossL1 += ahL1;
-                    totalLossL2 += RECUP_ENERGY_L1;
-                }
-            });
-
-            const sumVeilleAh = ahSpent[ahSpent.length - 1];
-            const sumVeilleWh = sumVeilleAh * 14.5;
-            const sumLossL1Wh = totalLossL1 * 14.5;
-            const sumLossL2Wh = totalLossL2 * 14.5;
-            const totalCost = sumVeilleWh + sumLossL1Wh + sumLossL2Wh;
-            const lossDay1 = 1 % BIB_FREQUENCY_DAYS === 0 ? ahL1 : 0;
-            let bibCount = lossDay1 === ahL1 || (startSoc - socLost[7]) < demandSoc ? 90 : Math.round(startSoc - socLost[7]);
-            return { capacityAh, startSoc, demandSoc, targetSoc, consoL1, durationL1, consoL2, durationL2, ahL1, ahL2, ahSpent, socLost, socCurrent, totalLossL1, totalLossL2, sumVeilleAh, sumVeilleWh, sumLossL1Wh, sumLossL2Wh, totalCost, bibCount };
+            return BiberonnageModel.calculate({ ...analysis, timeColumns, currentFor, days: DURATION_DAYS });
         }
 
         function tableBodyHtml(analysis, result) {
-            let html = '<tr><td class="label-col">Jours</td>' + timeColumns.map(col => `<th class="day-header">${col.label}</th>`).join('') + '<th>Total</th></tr>';
-            html += `<tr><td rowspan="6" class="cell-duration">30 j</td><td rowspan="6" class="cell-ef">EF sur 30 jrs</td><td class="label-col">Ah dépensés par jour</td>${result.ahSpent.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : '0,00'}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
-            html += `<tr><td class="label-col">Système Loss pdt extra feeding (Ah)</td>${timeColumns.map(col => { const active = col.dayNum && col.dayNum % BIB_FREQUENCY_DAYS === 0; return `<td class="${active ? 'pink-cell' : ''}">${active ? fmt(result.ahL1, 1) : ''}</td>`; }).join('')}<td class="total-cell">${fmt(result.totalLossL1)}</td></tr>`;
-            html += `<tr><td class="label-col">Extra feeding (Ah)</td>${timeColumns.map(col => { const active = col.dayNum && col.dayNum % BIB_FREQUENCY_DAYS === 0; return `<td class="${active ? 'pink-cell' : ''}">${active ? fmt(RECUP_ENERGY_L1, 1) : ''}</td>`; }).join('')}<td class="total-cell">${fmt(result.totalLossL2)}</td></tr>`;
+            let html = '<tr><td colspan="3" class="label-col">Temps / jours</td>' + timeColumns.map(col => `<th class="day-header">${col.label}</th>`).join('') + '<th>Total</th></tr>';
+            html += `<tr><td rowspan="6" class="cell-duration">${DURATION_DAYS} j</td><td rowspan="6" class="cell-ef">EF sur ${DURATION_DAYS} jrs</td><td class="label-col">Ah dépensés par jour</td>${result.ahSpent.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : '0,00'}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
+            html += `<tr><td class="label-col">Pertes système pendant EF (Ah)</td>${result.losses.map(value => `<td class="${value ? 'pink-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalLossL1 + result.totalLossL2)}</td></tr>`;
+            html += `<tr><td class="label-col">Charge nominale EF (Ah)</td>${result.recharges.map(value => `<td class="${value ? 'pink-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalRechargeAh)}</td></tr>`;
             html += `<tr><td class="label-col">%SOC batterie perdus avant EF</td>${result.socLost.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : ''}</td>`).join('')}<td class="total-cell"></td></tr>`;
             html += `<tr><td class="label-col">%SOC batterie</td>${result.socCurrent.map((value, index) => { if (value === null) return '<td></td>'; const reset = index > 7 && Math.abs(value - result.targetSoc) < 1e-9; return `<td class="${reset ? 'soc-reset' : ''}">${fmt(value)}</td>`; }).join('')}<td class="total-cell"></td></tr>`;
-            html += `<tr><td class="label-col"></td>${timeColumns.map(col => `<td>${col.dayNum ? '0,00' : ''}</td>`).join('')}<td class="total-cell"></td></tr>`;
+            html += `<tr><td class="label-col">Énergie cumulée depuis le départ (Ah)</td>${result.cumulativeAh.map(value => `<td>${fmt(value, 4)}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
             return html;
         }
 
@@ -399,12 +314,15 @@
                 if (chartInstances.has(key)) chartInstances.get(key).destroy();
             });
             const socChart = new Chart(section.querySelector('[data-chart="soc"]'), {
-                type: 'line', data: { labels: timeColumns.map(col => col.label), datasets: [{ label: '%SOC Batterie', data: result.socCurrent, borderColor: '#1f77b4', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 1, tension: .1 }] },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 60, max: 100 } } }
+                type: 'line', data: { datasets: [{ label: '%SOC Batterie', data: result.socPoints, borderColor: '#1f77b4', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 1, tension: 0 }] },
+                options: { responsive: true, maintainAspectRatio: false, parsing: false, scales: {
+                    x: { type: 'linear', min: 0, max: DURATION_DAYS, title: { display: true, text: 'Jours' } },
+                    y: { suggestedMin: Math.floor(Math.min(result.demandSoc, ...result.socPoints.map(point => point.y)) / 5) * 5, suggestedMax: Math.ceil(Math.max(result.startSoc, result.targetSoc) / 5) * 5, title: { display: true, text: 'SOC (%)' } }
+                } }
             });
             const lostWh = result.sumLossL1Wh + result.sumLossL2Wh;
-            const pctVeille = result.totalCost > 0 ? Math.round(result.sumVeilleWh / result.totalCost * 100) : 0;
-            const pctLost = result.totalCost > 0 ? Math.round(lostWh / result.totalCost * 100) : 0;
+            const pctVeille = result.totalCost > 0 ? Math.round(result.sumVeilleWh / result.totalCost * 1000) / 10 : 0;
+            const pctLost = result.totalCost > 0 ? Math.round((100 - pctVeille) * 10) / 10 : 0;
             const pieChart = new Chart(section.querySelector('[data-chart="pie"]'), {
                 type: 'pie', data: { labels: [`Besoin Batt12V (${pctVeille}%)`, `Énergie perdue (${pctLost}%)`], datasets: [{ data: [result.sumVeilleWh, lostWh], backgroundColor: ['#2563eb', '#ea580c'] }] },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
@@ -418,9 +336,11 @@
             if (!section) return;
             const result = calculateAnalysis(analysis);
             setOutput(section, 'ah-l1', fmt(result.ahL1, 3));
-            setOutput(section, 'total-l1', fmt(result.ahL1 + RECUP_ENERGY_L1));
+            setOutput(section, 'recovery-l1', fmt(result.recoveryL1));
+            setOutput(section, 'total-l1', fmt(result.ahL1 + result.recoveryL1));
             setOutput(section, 'ah-l2', fmt(result.ahL2, 3));
-            setOutput(section, 'total-l2', fmt(result.ahL2 + RECUP_ENERGY_L2));
+            setOutput(section, 'recovery-l2', fmt(result.recoveryL2));
+            setOutput(section, 'total-l2', fmt(result.ahL2 + result.recoveryL2));
             section.querySelector('[data-output="table-body"]').innerHTML = tableBodyHtml(analysis, result);
             setOutput(section, 'sum-veille-ah', fmt(result.sumVeilleAh));
             setOutput(section, 'sum-veille-wh', fmt(result.sumVeilleWh));
@@ -428,6 +348,8 @@
             setOutput(section, 'sum-loss-l1-wh', fmt(result.sumLossL1Wh));
             setOutput(section, 'sum-loss-l2-ah', fmt(result.totalLossL2));
             setOutput(section, 'sum-loss-l2-wh', fmt(result.sumLossL2Wh));
+            setOutput(section, 'sum-recharge-ah', fmt(result.totalRechargeAh));
+            setOutput(section, 'sum-recharge-wh', fmt(result.totalRechargeWh));
             setOutput(section, 'total-cost', fmt(result.totalCost));
             setOutput(section, 'bib-count', result.bibCount);
             updateCharts(analysis, section, result);
@@ -438,7 +360,7 @@
             sessionStorage.setItem(BUILTIN_KEY, JSON.stringify(builtins));
             sessionStorage.setItem(CUSTOM_KEY, JSON.stringify(analyses.filter(a => a.custom).map(a => ({ id: a.id, name: a.name, selectedRows: a.selectedRows, config: a.config }))));
             const calculated = Object.fromEntries(analyses.map(analysis => [analysis.id, { name: analysis.name, selectedRows: analysis.selectedRows, result: calculateAnalysis(analysis) }]));
-            sessionStorage.setItem('biberonnageCalculatedAnalyses', JSON.stringify(calculated));
+            sessionStorage.setItem(CALCULATED_KEY, JSON.stringify(calculated));
         }
 
         function renderAll() {
@@ -515,13 +437,13 @@
         ProjectStorage.bindSaveButton('project-save', 'project-save-status');
         document.getElementById('reset-results').addEventListener('click', () => {
             if (!confirm('Restaurer toutes les valeurs initiales du biberonnage et supprimer les analyses personnalisées ?')) return;
-            [DATA_KEY, PARAMS_KEY, BUILTIN_KEY, CUSTOM_KEY, 'biberonnageCalculatedAnalyses'].forEach(key => sessionStorage.removeItem(key));
+            [DATA_KEY, PARAMS_KEY, BUILTIN_KEY, CUSTOM_KEY, CALCULATED_KEY].forEach(key => sessionStorage.removeItem(key));
             window.location.reload();
         });
         document.getElementById('previous-step').addEventListener('click', async () => {
             persist();
             try { await ProjectStorage.saveActiveProject(); } catch (error) { console.error(error); }
-            window.location.href = '/biberonnage';
+            window.location.href = `/biberonnage?days=${DURATION_DAYS}`;
         });
         document.addEventListener('click', event => {
             const details = document.getElementById('actions-details');

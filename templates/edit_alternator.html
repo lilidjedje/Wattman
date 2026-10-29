@@ -66,13 +66,15 @@
         .button-group { display: flex; gap: 15px; justify-content: center; margin-top: 30px; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="homologation-step-page alternator-profile-page preserve-table-colors">
     <div class="header">
         <button class="btn btn-back" onclick="navigateTo('/edit_current')">← Retour</button>
         <h1>Configuration des Profils WLTC (-7 °C)</h1>
         <div class="header-actions">
-            <div class="retractable-menu"><details id="actions-details"><summary>Sommaire / Actions</summary><div class="menu-content">
+            <div class="retractable-menu app-summary"><details id="actions-details"><summary>Sommaire</summary><div class="menu-content">
                 <span class="saved-status" id="saved-status" aria-live="polite"></span>
                 <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
                 <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>

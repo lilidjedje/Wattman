@@ -13,6 +13,11 @@ inclut npm). Puis ouvre PowerShell et exécute :
 git clone https://github.com/lilidjedje/Wattman.git
 cd Wattman
 python -m pip install -r requirements.txt
+```
+
+Pour compiler et lancer sur PC Renault : 
+
+```powershell
 npm ci
 npm start
 ```
@@ -54,10 +59,32 @@ l'ESP32-C3 multi INA226, sans Raspberry Pi, via son adresse IP.
      durée des canaux A et B. Les deux compteurs et le dashboard se mettent à
      jour en direct ; un arrêt anticipé conserve toutes les mesures reçues.
 
+Le réseau Wi-Fi à rechercher est **ESP32C3-Mesure**, mot de passe
+**ina226mesure**. Une fois connecté, ouvrir `http://192.168.4.1` pour vérifier
+l'accès à l'ESP32. Accepter de rester connecté même si Windows indique
+« Pas d'Internet ».
+
+Le firmware démarre le point d'accès avant les périphériques externes et
+vérifie sa création (nouvelle tentative toutes les 2 secondes en cas d'échec).
+Le MCP2515 est initialisé uniquement au démarrage d'une mesure CAN.
+Après cette modification, téléverser à nouveau le sketch principal indiqué
+ci-dessus et redémarrer la carte. Le moniteur série à **115200 bauds** doit
+afficher `[WIFI] Point d'acces visible : ESP32C3-Mesure` ou l'erreur de démarrage.
+Attention : l'ancienne copie sous `can_server/can_server_deploy/` utilise le
+Wi-Fi du Raspberry Pi et ne crée pas ce point d'accès.
+
 Le MCP2515 est obligatoire uniquement en mode CAN. En mode numérique, les
 valeurs INA226 sont envoyées directement vers le `.exe` sur le flux TCP local
 `192.168.4.1:3333`, enregistrées dans la base puis proposées au dashboard sans
 passer par le bus CAN et sans import `.asc`.
+
+En mode CAN, sélectionner le quartz **8 MHz ou 16 MHz** réellement monté sur
+le MCP2515 ; ce réglage est distinct du débit du bus, fixé à **500 kbit/s**.
+Le firmware ne change plus de quartz après un échec d'émission. Une première
+trame sans acquittement n'annule plus l'acquisition : CANalyzer/CANoe peut
+être démarré pendant la mesure. Les compteurs d'envois confirmés et d'échecs
+sont affichés dans l'écran d'acquisition. La correction nécessite de
+téléverser à nouveau le sketch principal sur l'ESP32-C3.
 
 ---
 

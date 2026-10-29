@@ -67,6 +67,8 @@
         .chart-container { width: 100%; height: 320px; position: relative; padding: 10px; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="homologation-step-page synthesis-page preserve-table-colors">
     <div class="header">
@@ -74,7 +76,7 @@
         <h1>Synthèse Homologation</h1>
         <div class="header-actions">
             <button class="btn btn-results" type="button" id="export-excel">Export Excel</button>
-            <div class="retractable-menu"><details id="actions-details"><summary>Sommaire / Actions</summary><div class="menu-content">
+            <div class="retractable-menu app-summary"><details id="actions-details"><summary>Sommaire</summary><div class="menu-content">
                 <span class="saved-status" id="saved-status" aria-live="polite"></span>
                 <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
                 <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
@@ -254,23 +256,123 @@
         const modifiedUppers = JSON.parse(sessionStorage.getItem('modifiedUppers') || '{}');
         const paoData = JSON.parse(sessionStorage.getItem('paoData') || '[]');
         const gmvData = JSON.parse(sessionStorage.getItem('gmvData') || '[]');
+        HomologationDefaults.migrateAuxiliary(paoData);
+        HomologationDefaults.migrateAuxiliary(gmvData);
+        sessionStorage.setItem('paoData', JSON.stringify(paoData));
+        sessionStorage.setItem('gmvData', JSON.stringify(gmvData));
         const homologationConfiguration = JSON.parse(sessionStorage.getItem('homologationConfiguration') || '{}');
         const configuredDcdcOutput = Number(homologationConfiguration.dcdcOutputCurrentA);
         const dcdcOutputCurrent = Number.isFinite(configuredDcdcOutput) && configuredDcdcOutput >= 0 ? configuredDcdcOutput : 250;
-        const formattedDcdcOutput = Number.isInteger(dcdcOutputCurrent) ? String(dcdcOutputCurrent) : dcdcOutputCurrent.toFixed(2);
+        const formattedDcdcOutput = String(Math.ceil(dcdcOutputCurrent));
         const storedDeviceKeys = sessionStorage.getItem('selectedDeviceKeys');
         const selectedDeviceKeys = new Set(JSON.parse(storedDeviceKeys || '[]'));
         const deletedDeviceKeys = new Set(JSON.parse(sessionStorage.getItem('deletedHomologationDeviceKeys') || '[]'));
         const customDevices = JSON.parse(sessionStorage.getItem('customHomologationDevices') || '[]');
+        const savedHomologationDevices = sessionStorage.getItem('homologationDevices');
         const synthesisExportData = { dcdc: {}, wltc: {} };
 
         const sheet = excelData['Device List'] || Object.values(excelData)[0];
+        const dcdcDevices = savedHomologationDevices !== null
+            ? JSON.parse(savedHomologationDevices)
+            : [
+                ...(sheet?.data || []).flatMap((row, rowIndex) => {
+                    const name = row['Device Name'] || `Device ${rowIndex + 1}`;
+                    const key = `${rowIndex}_${name}`;
+                    const category = String(row['current_category'] || row['Current Category'] || '').trim().toUpperCase();
+                    if (deletedDeviceKeys.has(key) || HomologationDefaults.normalize(name).includes('GMV REFROIDISSEMENT FACE AVANT')) return [];
+                    if (storedDeviceKeys !== null ? !selectedDeviceKeys.has(key) : category !== 'H') return [];
+                    return [{
+                        key,
+                        name,
+                        rowIndex,
+                        current: modifiedCurrents[key] ?? row['Current (A)'] ?? row['Homologation Current (A)'],
+                        lower: modifiedLowers[key] ?? row['Lower'] ?? 1,
+                        upper: modifiedUppers[key] ?? row['Upper'] ?? 0
+                    }];
+                }),
+                ...customDevices
+                    .filter((device) => !deletedDeviceKeys.has(`custom_${device.id}`))
+                    .map((device) => ({
+                        key: `custom_${device.id}`,
+                        name: device.name,
+                        rowIndex: `custom_${device.id}`,
+                        current: modifiedCurrents[`custom_${device.id}`] ?? device.current,
+                        lower: modifiedLowers[`custom_${device.id}`] ?? device.lower ?? 1,
+                        upper: modifiedUppers[`custom_${device.id}`] ?? device.upper ?? 0
+                    }))
+            ];
 
         function parsePercent(val) {
             if (val === undefined || val === null || val === '') return 1.0;
-            let str = String(val).replace('%', '').trim();
+            let str = String(val).replace('%', '').replace(',', '.').trim();
             let num = parseFloat(str);
             return isNaN(num) ? 1.0 : num / 100;
+        }
+
+        function parseNumber(value, fallback = 0) {
+            const number = Number.parseFloat(String(value ?? '').replace(',', '.'));
+            return Number.isFinite(number) ? number : fallback;
+        }
+
+        const legacyWltcProfiles = { cycle1: 'winter', cycle2: 'midseason', cycle3: 'summer' };
+        const legacyWltcIntervals = [
+            '0 - 1.67min',
+            '1.68 - 4min',
+            '4 - 7min',
+            '7 - 8.16min',
+            '12.25 - 25min',
+            '25 - 30min'
+        ];
+
+        HomologationDefaults.migrateMatrix('dcdc', dcdcDevices, profileMatrix);
+        HomologationDefaults.migrateMatrix('wltc', dcdcDevices, alternatorMatrix);
+        const dcdcDefaultValues = new Map();
+        const wltcDefaultValues = new Map();
+        const wltcNameOccurrences = new Map();
+        dcdcDevices.forEach((device) => {
+            if (typeof device.rowIndex !== 'number') return;
+            const normalizedName = HomologationDefaults.normalize(device.name);
+            const occurrence = wltcNameOccurrences.get(normalizedName) || 0;
+            wltcNameOccurrences.set(normalizedName, occurrence + 1);
+            dcdcDefaultValues.set(device.key, HomologationDefaults.valuesFor('dcdc', device.name, occurrence));
+            wltcDefaultValues.set(
+                device.key,
+                HomologationDefaults.valuesFor('wltc', device.name, occurrence)
+            );
+        });
+
+        function getDcdcFactor(device, profile, intervalIndex) {
+            const matrixKey = `${device.rowIndex}_${profile}_${devIntervals[intervalIndex]}`;
+            if (Object.prototype.hasOwnProperty.call(profileMatrix, matrixKey)) {
+                return parsePercent(profileMatrix[matrixKey]);
+            }
+            const defaultPercentage = dcdcDefaultValues.get(device.key)?.[devProfiles.indexOf(profile) * devIntervals.length + intervalIndex];
+            return defaultPercentage === undefined ? 1 : defaultPercentage / 100;
+        }
+
+        function getWltcFactor(device, profile, intervalIndex) {
+            const matrixKey = `${device.rowIndex}_${profile}_${HomologationDefaults.intervalsFor('wltc', profile)[intervalIndex]}`;
+            if (Object.prototype.hasOwnProperty.call(alternatorMatrix, matrixKey)) {
+                return parsePercent(alternatorMatrix[matrixKey]);
+            }
+
+            const legacyMatrixKey = `${device.rowIndex}_${legacyWltcProfiles[profile]}_${legacyWltcIntervals[intervalIndex]}`;
+            if (Object.prototype.hasOwnProperty.call(alternatorMatrix, legacyMatrixKey)) {
+                return parsePercent(alternatorMatrix[legacyMatrixKey]);
+            }
+
+            const profileIndex = wltcProfiles.findIndex((item) => item.key === profile);
+            const defaults = wltcDefaultValues.get(device.key);
+            const defaultPercentage = defaults?.[HomologationDefaults.profileOffset('wltc', profile) + intervalIndex];
+            return defaultPercentage === undefined ? 1 : defaultPercentage / 100;
+        }
+
+        function roundCalculationToThreeDecimals(value) {
+            return Math.round((value + Number.EPSILON) * 1000) / 1000;
+        }
+
+        function formatBilanInteger(value) {
+            return String(Math.round(Number(value)));
         }
 
         // Fonction pour basculer l'affichage des onglets
@@ -307,11 +409,23 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 15, font: { size: 11 } } },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => `${context.dataset.label}: ${formatBilanInteger(context.parsed.y)} A`
+                            }
+                        }
+                    },
                     scales: {
                         x: { title: { display: true, text: 'Temps', font: { weight: 'bold' } } },
-                        y: { min: 0, suggestedMax: Math.max(280, dcdcOutputCurrent * 1.12), title: { display: true, text: 'Courant', font: { weight: 'bold' } } }
-                    },
-                    plugins: { legend: { position: 'right', labels: { boxWidth: 15, font: { size: 11 } } } }
+                        y: {
+                            min: 0,
+                            suggestedMax: Math.max(280, dcdcOutputCurrent * 1.12),
+                            title: { display: true, text: 'Courant', font: { weight: 'bold' } },
+                            ticks: { callback: (value) => formatBilanInteger(value) }
+                        }
+                    }
                 }
             });
         }
@@ -326,55 +440,41 @@
                 let totalBase = 0, totalUpper = 0;
                 const intLabel = devIntervals[point.intIdx];
 
-                if (sheet && sheet.data) {
-                    sheet.data.forEach((row, rowIndex) => {
-                        const dName = row['Device Name'] || `Device ${rowIndex + 1}`;
-                        const deviceKey = `${rowIndex}_${dName}`;
-                        if (deletedDeviceKeys.has(deviceKey) || HomologationDefaults.normalize(dName).includes('GMV REFROIDISSEMENT FACE AVANT')) return;
-                        if (storedDeviceKeys !== null && !selectedDeviceKeys.has(deviceKey)) return;
-                        const origCurr = parseFloat(row['Current (A)'] ?? row['Homologation Current (A)']);
-                        const current = modifiedCurrents[deviceKey] !== undefined ? modifiedCurrents[deviceKey] : (isNaN(origCurr) ? 0 : origCurr);
-                        
-                        const lowerActive = modifiedLowers[deviceKey] !== undefined ? parseInt(modifiedLowers[deviceKey]) : 1;
-                        const upperActive = modifiedUppers[deviceKey] !== undefined ? parseInt(modifiedUppers[deviceKey]) : 0;
-                        const factor = parsePercent(profileMatrix[`${rowIndex}_${prof}_${intLabel}`]);
+                dcdcDevices.forEach((device) => {
+                    if (deletedDeviceKeys.has(device.key)) return;
+                    const current = parseNumber(modifiedCurrents[device.key] ?? device.current);
+                    const lowerActive = parseNumber(modifiedLowers[device.key] ?? device.lower, 1);
+                    const upperActive = parseNumber(modifiedUppers[device.key] ?? device.upper);
+                    const factor = getDcdcFactor(device, prof, point.intIdx);
 
-                        if (lowerActive === 1) totalBase += current * factor;
-                        if (upperActive === 1) totalUpper += current * factor;
-                    });
+                    totalBase += lowerActive * current * factor;
+                    totalUpper += upperActive * current * factor;
+                });
 
-                    customDevices.forEach((device) => {
-                        const deviceKey = `custom_${device.id}`;
-                        if (deletedDeviceKeys.has(deviceKey)) return;
-                        const current = parseFloat(modifiedCurrents[deviceKey] ?? device.current) || 0;
-                        const lowerActive = parseInt(modifiedLowers[deviceKey] ?? device.lower ?? 1);
-                        const upperActive = parseInt(modifiedUppers[deviceKey] ?? device.upper ?? 0);
-                        const factor = parsePercent(profileMatrix[`custom_${device.id}_${prof}_${intLabel}`]);
-                        if (lowerActive === 1) totalBase += current * factor;
-                        if (upperActive === 1) totalUpper += current * factor;
-                    });
+                paoData.forEach((pao) => {
+                    const current = parseNumber(pao.current);
+                    const factor = parsePercent(pao.devProfiles[`${prof}_${intLabel}`]);
+                    totalBase += parseNumber(pao.lower) * current * factor;
+                    totalUpper += parseNumber(pao.upper) * current * factor;
+                });
 
-                    paoData.forEach(pao => {
-                        const current = parseFloat(pao.current) || 0;
-                        if (parseInt(pao.lower) === 1) totalBase += current * parsePercent(pao.devProfiles[`${prof}_${intLabel}`]);
-                        if (parseInt(pao.upper) === 1) totalUpper += current * parsePercent(pao.devProfiles[`${prof}_${intLabel}`]);
-                    });
+                gmvData.forEach((gmv) => {
+                    const current = parseNumber(gmv.current);
+                    const factor = parsePercent(gmv.devProfiles[`${prof}_${intLabel}`]);
+                    totalBase += parseNumber(gmv.lower) * current * factor;
+                    totalUpper += parseNumber(gmv.upper) * current * factor;
+                });
 
-                    gmvData.forEach(gmv => {
-                        const current = parseFloat(gmv.current) || 0;
-                        if (parseInt(gmv.lower) === 1) totalBase += current * parsePercent(gmv.devProfiles[`${prof}_${intLabel}`]);
-                        if (parseInt(gmv.upper) === 1) totalUpper += current * parsePercent(gmv.devProfiles[`${prof}_${intLabel}`]);
-                    });
-                }
-
+                totalBase = roundCalculationToThreeDecimals(totalBase);
+                totalUpper = roundCalculationToThreeDecimals(totalUpper);
                 xPoints.push(point.time);
-                basePoints.push(parseFloat(totalBase.toFixed(2)));
-                upperPoints.push(parseFloat(totalUpper.toFixed(2)));
+                basePoints.push(totalBase);
+                upperPoints.push(totalUpper);
 
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${point.time} min</td><td class="highlight-val">${totalBase.toFixed(2)} A</td><td class="highlight-val">${totalUpper.toFixed(2)} A</td><td style="color: #4a5568; font-weight: 600;">${formattedDcdcOutput} A</td>`;
+                tr.innerHTML = `<td>${point.time} min</td><td class="highlight-val">${formatBilanInteger(totalBase)} A</td><td class="highlight-val">${formatBilanInteger(totalUpper)} A</td><td style="color: #4a5568; font-weight: 600;">${formattedDcdcOutput} A</td>`;
                 tbody.appendChild(tr);
-                synthesisExportData.dcdc[prof].push({ time: point.time, base: Number(totalBase.toFixed(2)), upper: Number(totalUpper.toFixed(2)), dcdcOutput: dcdcOutputCurrent });
+                synthesisExportData.dcdc[prof].push({ time: point.time, base: totalBase, upper: totalUpper, dcdcOutput: dcdcOutputCurrent });
             });
 
             buildChart(`chart-dev-${prof}`, xPoints, basePoints, upperPoints);
@@ -382,6 +482,10 @@
 
         // ================= CALCULS & GRAPHES PARTIE 2 : ALTERNATOR =================
         wltcProfiles.forEach(({ key: prof, dom }) => {
+            const altIntervals = HomologationDefaults.intervalsFor('wltc', prof);
+            const altTimeline = HomologationDefaults.wltcWindows[prof].flatMap(([start, end], intIdx) => [
+                { time: start, intIdx }, { time: end, intIdx }
+            ]);
             const tbody = document.getElementById(`tbody-alt-${dom}`);
             let xPoints = [], basePoints = [], upperPoints = [];
             synthesisExportData.wltc[prof] = [];
@@ -390,55 +494,41 @@
                 let totalBase = 0, totalUpper = 0;
                 const intLabel = altIntervals[point.intIdx];
 
-                if (sheet && sheet.data) {
-                    sheet.data.forEach((row, rowIndex) => {
-                        const dName = row['Device Name'] || `Device ${rowIndex + 1}`;
-                        const deviceKey = `${rowIndex}_${dName}`;
-                        if (deletedDeviceKeys.has(deviceKey) || HomologationDefaults.normalize(dName).includes('GMV REFROIDISSEMENT FACE AVANT')) return;
-                        if (storedDeviceKeys !== null && !selectedDeviceKeys.has(deviceKey)) return;
-                        const origCurr = parseFloat(row['Current (A)'] ?? row['Homologation Current (A)']);
-                        const current = modifiedCurrents[deviceKey] !== undefined ? modifiedCurrents[deviceKey] : (isNaN(origCurr) ? 0 : origCurr);
-                        
-                        const lowerActive = modifiedLowers[deviceKey] !== undefined ? parseInt(modifiedLowers[deviceKey]) : 1;
-                        const upperActive = modifiedUppers[deviceKey] !== undefined ? parseInt(modifiedUppers[deviceKey]) : 0;
-                        const factor = parsePercent(alternatorMatrix[`${rowIndex}_${prof}_${intLabel}`]);
+                dcdcDevices.forEach((device) => {
+                    if (deletedDeviceKeys.has(device.key)) return;
+                    const current = parseNumber(modifiedCurrents[device.key] ?? device.current);
+                    const lowerActive = parseNumber(modifiedLowers[device.key] ?? device.lower, 1);
+                    const upperActive = parseNumber(modifiedUppers[device.key] ?? device.upper);
+                    const factor = getWltcFactor(device, prof, point.intIdx);
 
-                        if (lowerActive === 1) totalBase += current * factor;
-                        if (upperActive === 1) totalUpper += current * factor;
-                    });
+                    totalBase += lowerActive * current * factor;
+                    totalUpper += upperActive * current * factor;
+                });
 
-                    customDevices.forEach((device) => {
-                        const deviceKey = `custom_${device.id}`;
-                        if (deletedDeviceKeys.has(deviceKey)) return;
-                        const current = parseFloat(modifiedCurrents[deviceKey] ?? device.current) || 0;
-                        const lowerActive = parseInt(modifiedLowers[deviceKey] ?? device.lower ?? 1);
-                        const upperActive = parseInt(modifiedUppers[deviceKey] ?? device.upper ?? 0);
-                        const factor = parsePercent(alternatorMatrix[`custom_${device.id}_${prof}_${intLabel}`]);
-                        if (lowerActive === 1) totalBase += current * factor;
-                        if (upperActive === 1) totalUpper += current * factor;
-                    });
+                paoData.forEach((pao) => {
+                    const current = parseNumber(pao.current);
+                    const factor = parsePercent(pao.altProfiles[`${prof}_${intLabel}`]);
+                    totalBase += parseNumber(pao.lower) * current * factor;
+                    totalUpper += parseNumber(pao.upper) * current * factor;
+                });
 
-                    paoData.forEach(pao => {
-                        const current = parseFloat(pao.current) || 0;
-                        if (parseInt(pao.lower) === 1) totalBase += current * parsePercent(pao.altProfiles[`${prof}_${intLabel}`]);
-                        if (parseInt(pao.upper) === 1) totalUpper += current * parsePercent(pao.altProfiles[`${prof}_${intLabel}`]);
-                    });
+                gmvData.forEach((gmv) => {
+                    const current = parseNumber(gmv.current);
+                    const factor = parsePercent(gmv.altProfiles[`${prof}_${intLabel}`]);
+                    totalBase += parseNumber(gmv.lower) * current * factor;
+                    totalUpper += parseNumber(gmv.upper) * current * factor;
+                });
 
-                    gmvData.forEach(gmv => {
-                        const current = parseFloat(gmv.current) || 0;
-                        if (parseInt(gmv.lower) === 1) totalBase += current * parsePercent(gmv.altProfiles[`${prof}_${intLabel}`]);
-                        if (parseInt(gmv.upper) === 1) totalUpper += current * parsePercent(gmv.altProfiles[`${prof}_${intLabel}`]);
-                    });
-                }
-
+                totalBase = roundCalculationToThreeDecimals(totalBase);
+                totalUpper = roundCalculationToThreeDecimals(totalUpper);
                 xPoints.push(point.time);
-                basePoints.push(parseFloat(totalBase.toFixed(2)));
-                upperPoints.push(parseFloat(totalUpper.toFixed(2)));
+                basePoints.push(totalBase);
+                upperPoints.push(totalUpper);
 
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td>${point.time} min</td><td class="highlight-val">${totalBase.toFixed(2)} A</td><td class="highlight-val">${totalUpper.toFixed(2)} A</td><td style="color: #4a5568; font-weight: 600;">${formattedDcdcOutput} A</td>`;
+                tr.innerHTML = `<td>${point.time} min</td><td class="highlight-val">${formatBilanInteger(totalBase)} A</td><td class="highlight-val">${formatBilanInteger(totalUpper)} A</td><td style="color: #4a5568; font-weight: 600;">${formattedDcdcOutput} A</td>`;
                 tbody.appendChild(tr);
-                synthesisExportData.wltc[prof].push({ time: point.time, base: Number(totalBase.toFixed(2)), upper: Number(totalUpper.toFixed(2)), dcdcOutput: dcdcOutputCurrent });
+                synthesisExportData.wltc[prof].push({ time: point.time, base: totalBase, upper: totalUpper, dcdcOutput: dcdcOutputCurrent });
             });
 
             buildChart(`chart-alt-${dom}`, xPoints, basePoints, upperPoints);
@@ -462,7 +552,7 @@
                     ])),
                     wltcProfiles: Object.fromEntries(wltcProfiles.map(({ key }) => [
                         key,
-                        altIntervals.map((interval) => parsePercent(wltcValue(key, interval)))
+                        HomologationDefaults.intervalsFor('wltc', key).map((interval) => parsePercent(wltcValue(key, interval)))
                     ]))
                 });
             };
@@ -480,8 +570,18 @@
                         row['Current (A)'] ?? row['Homologation Current (A)'],
                         row['Lower'] ?? 1,
                         row['Upper'] ?? 0,
-                        (profile, interval) => profileMatrix[`${rowIndex}_${profile}_${interval}`],
-                        (profile, interval) => alternatorMatrix[`${rowIndex}_${profile}_${interval}`]
+                        (profile, interval) => {
+                            const device = dcdcDevices.find((item) => item.key === deviceKey);
+                            return device ? getDcdcFactor(device, profile, devIntervals.indexOf(interval)) * 100
+                                : profileMatrix[`${rowIndex}_${profile}_${interval}`];
+                        },
+                        (profile, interval) => {
+                            const device = dcdcDevices.find((item) => item.key === deviceKey);
+                            const intervalIndex = HomologationDefaults.intervalsFor('wltc', profile).indexOf(interval);
+                            return device && intervalIndex >= 0
+                                ? getWltcFactor(device, profile, intervalIndex) * 100
+                                : alternatorMatrix[`${rowIndex}_${profile}_${interval}`];
+                        }
                     );
                 });
             }
@@ -496,7 +596,14 @@
                     device.lower,
                     device.upper,
                     (profile, interval) => profileMatrix[`custom_${device.id}_${profile}_${interval}`],
-                    (profile, interval) => alternatorMatrix[`custom_${device.id}_${profile}_${interval}`]
+                    (profile, interval) => {
+                        const deviceKey = `custom_${device.id}`;
+                        const activeDevice = dcdcDevices.find((item) => item.key === deviceKey);
+                        const intervalIndex = HomologationDefaults.intervalsFor('wltc', profile).indexOf(interval);
+                        return activeDevice && intervalIndex >= 0
+                            ? getWltcFactor(activeDevice, profile, intervalIndex) * 100
+                            : alternatorMatrix[`${deviceKey}_${profile}_${interval}`];
+                    }
                 );
             });
 

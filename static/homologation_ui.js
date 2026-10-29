@@ -5,6 +5,7 @@
         'modifiedCurrents',
         'modifiedLowers',
         'modifiedUppers',
+        'homologationDevices',
         'homologationConfiguration'
     ];
 

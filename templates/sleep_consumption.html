@@ -59,6 +59,8 @@
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="sleep-consumption-page">
     <main>
@@ -66,9 +68,9 @@
             <button class="back" type="button" onclick="window.location.href='/fixed_consumption'">← Retour</button>
             <div><h1>Consommation en veille</h1></div>
 
-            <div class="retractable-menu">
+            <div class="retractable-menu app-summary">
                 <details id="actions-details">
-                    <summary> Sommaire / Actions</summary>
+                    <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved" id="saved-status" aria-live="polite"></span>
                         <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
@@ -128,6 +130,7 @@
     </main>
 
     <script src="/static/project_storage.js"></script>
+    <script src="/static/sleep_current.js"></script>
     <script>
         const batterySubMode = sessionStorage.getItem('batterySubMode') || 'Customer Mode';
         const isDmMode = batterySubMode === 'DM1' || batterySubMode === 'DM2';
@@ -183,8 +186,12 @@
         });
         const defaultValues = { sansEbdu: 0, alarm: 0, aid: 0, tachy: 0, agingSoc: 0.08 };
         const saved = document.getElementById('saved');
-        const toNumber = (value, fallback = 0) => { const number = Number(String(value ?? '').replace(',', '.')); return Number.isFinite(number) ? number : fallback; };
-        const format = (value, suffix) => `${toNumber(value).toFixed(4).replace(/\.?0+$/, '').replace('.', ',')} ${suffix}`;
+        const toNumber = (value, fallback = 0) => {
+            if (value === undefined || value === null || String(value).trim() === '') return fallback;
+            const number = Number(String(value).replace(',', '.'));
+            return Number.isFinite(number) ? number : fallback;
+        };
+        const format = (value, suffix, digits = 4) => `${toNumber(value).toFixed(digits).replace(/\.?0+$/, '').replace('.', ',')} ${suffix}`;
         
         const batteryConfiguration = JSON.parse(sessionStorage.getItem('batteryConfiguration') || '{}');
         const batteryCapacity = toNumber(batteryConfiguration.capacityAh, 60);
@@ -202,30 +209,6 @@
         const customSleepKey = `customSleepFunctions_${batterySubMode}`;
         let customSleepFunctions = JSON.parse(sessionStorage.getItem(customSleepKey) || '[]');
 
-        function homologationCurrent() {
-            const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
-            const currentStorageKey = batterySubMode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${batterySubMode}Currents`;
-            const sourceCurrentColumn = batterySubMode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
-            const modifiedCurrents = JSON.parse(sessionStorage.getItem(currentStorageKey) || '{}');
-            const storedEcuKeys = sessionStorage.getItem('selectedEcuKeys');
-            const selectedEcuKeys = new Set(JSON.parse(storedEcuKeys || '[]'));
-            const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
-            const deletedDevices = new Set(JSON.parse(sessionStorage.getItem('deletedDarkDeviceKeys') || '[]'));
-            const customDevices = JSON.parse(sessionStorage.getItem('customDarkDevices') || '[]');
-            let total = (sheet?.data || []).reduce((sum, row, rowIndex) => {
-                const name = row['Device Name'] || row['ECU Name'] || `ECU ${rowIndex + 1}`;
-                const key = `${rowIndex}_${name}`;
-                if (deletedDevices.has(key)) return sum;
-                if (storedEcuKeys !== null && !selectedEcuKeys.has(key)) return sum;
-                const value = modifiedCurrents[key] ?? row[sourceCurrentColumn];
-                return sum + toNumber(value);
-            }, 0);
-            customDevices.forEach(device => {
-                const key = `custom:${device.id}`;
-                total += toNumber(modifiedCurrents[key] ?? device.current);
-            });
-            return total;
-        }
 
         function removeButton(label, callback) {
             const button = document.createElement('button');
@@ -283,7 +266,7 @@
         }
 
         function twtEnergy(entry) {
-            return ((toNumber(entry.ivcCurrent) + toNumber(entry.powerlatchCurrent)) / 1000) * (toNumber(entry.durationSeconds) / 3600);
+            return (((toNumber(entry.ivcCurrent) + toNumber(entry.powerlatchCurrent)) / 1000) * (toNumber(entry.durationSeconds) / 3600)) / 24;
         }
 
         function addTwtRows() {
@@ -297,7 +280,7 @@
 
         function render() {
             document.getElementById('rows').replaceChildren();
-            const current = homologationCurrent();
+            const { instantaneousUa: current, dailyAh } = SleepCurrent.calculate(batterySubMode);
             
             const pHours = Math.max(Number(wakePeriodEl.value) || 8, 0.001);
             const wSec = Number(wakeDurationEl.value) || 0;
@@ -308,8 +291,10 @@
             const techWakeEnergyAhj = ((wCurr / 1000) * (wSec / 3600) + (bCurr / 1000) * (bSec / 3600)) * wakesPerDay;
 
             document.getElementById('instant-current-title').textContent = `Conso veille instantanée ${batterySubMode}`;
-            document.getElementById('instant-current-value').textContent = format(current, 'mA');
-            document.getElementById('sleep-current-energy').textContent = format(current / 1000 * 24, 'Ah/j');
+            document.getElementById('instant-current-value').textContent = isDmMode
+                ? format(current, 'µA', 3)
+                : format(current / 1000, 'mA', 4);
+            document.getElementById('sleep-current-energy').textContent = format(dailyAh, 'Ah/j', 8);
 
             addSection('Réveil périodique');
             addRow('Réveil technique périodique SOC (Énergie)', () => techWakeEnergyAhj, 'Ah/j', false);

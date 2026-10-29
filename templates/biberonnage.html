@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Biberonnage - Consommations sur 90 jours</title>
+    <title>Biberonnage - Consommations sur {{ duration_days }} jours</title>
     <style>
         :root { --navy: #1f4e78; --sky: #d9eaf7; --green: #e2f0d9; --yellow: #fff200; --peach: #fce4d6; --line: #b7c9d6; }
         * { box-sizing: border-box; }
@@ -61,15 +61,17 @@
         }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
 </head>
 <body class="biberonnage-page preserve-table-colors">
     <header class="header">
         <button class="previous-button" type="button" id="previous-step">← Retour</button>
-        <h1>Biberonnage</h1>
+        <h1>Biberonnage — {{ duration_days }} jours</h1>
 
-        <div class="retractable-menu">
+        <div class="retractable-menu app-summary">
             <details id="actions-details">
-                <summary> Sommaire / Actions</summary>
+                <summary>Sommaire</summary>
                 <div class="menu-content">
                     <span class="saved" id="saved" aria-live="polite"></span>
                     <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer</button>
@@ -95,70 +97,23 @@
     </main>
 
     <div class="results-actions">
-        <button class="results-button" type="button" onclick="window.location.href='/biberonnage/resultats'"> Voir le résultat</button>
+        <button class="results-button" type="button" onclick="window.location.href='/biberonnage/resultats?days={{ duration_days }}'"> Voir le résultat</button>
     </div>
 
     <script src="/static/project_storage.js"></script>
+    <script src="/static/sleep_current.js"></script>
+    <script src="/static/biberonnage_reference.js"></script>
+    <script src="/static/biberonnage_model.js"></script>
     <script>
-        const storageKey = 'biberonnage90Days';
+        const DURATION_DAYS = {{ duration_days | tojson }};
+        const storageKey = `biberonnage${DURATION_DAYS}Days`;
+        sessionStorage.setItem('biberonnageDurationDays', String(DURATION_DAYS));
 
-        const timeColumns = [
-            { key: '30s', label: '30s', daysElapsed: 30 / 86400 },
-            { key: '1min', label: '1 min', daysElapsed: 60 / 86400 },
-            { key: '2min', label: '2 min', daysElapsed: 120 / 86400 },
-            { key: '5min', label: '5 min', daysElapsed: 300 / 86400 },
-            { key: '7min', label: '7min', daysElapsed: 420 / 86400 },
-            { key: '1h', label: '1h', daysElapsed: 1 / 24 },
-            { key: '8h', label: '8h', daysElapsed: 8 / 24 },
-            ...Array.from({ length: 90 }, (_, index) => ({
-                key: `day-${index + 1}`,
-                label: `Jour ${index + 1}`,
-                day: index + 1,
-                daysElapsed: index + 1
-            }))
-        ];
+        const timeColumns = BiberonnageModel.columns(DURATION_DAYS).filter(column => column.key !== '0');
 
-        const rows = [
-            { section: 'Réveils et transitions techniques' },
-            { label: 'Endormissement ECUs', group: 'technical', values: { 1: 2000, 2: 2000 } },
-            { label: 'Secure Reboot PCU', group: 'technical', values: { 1: 3300 } },
-            { label: 'Secure Reboot CDC', group: 'technical', values: { 1: 2, 2: 2 } },
-            { label: 'PCU Garage mode (Google)', group: 'technical', values: { 3: 2000, 4: 2000, 5: 2000 } },
-            { label: 'CDC Garage mode (Google)', group: 'technical', values: { 3: 2000, 4: 2000, 5: 2000 } },
-            { label: '8ères heures', group: 'technical', values: { 1: 0 } },
-            { label: 'FOTA', group: 'technical', values: {} },
-            { label: 'CDC Suspend to RAM', group: 'technical', values: '5' },
-            { label: 'Suspend to RAM PCU', group: 'technical', values: '1' },
-            { label: 'CONNECTIVITÉ', group: 'safety', values: '6' },
-            { label: 'Suspend to RAM Smart Antenna', group: 'safety', values: '0' },
-            { section: 'Fonctions véhicule et Customer' },
-            { label: 'TEST', group: 'test', values: '0,00' },
-            { label: 'HFM / KAM', group: 'safety', values: (col) => col.day && col.day <= 3 ? '9,00' : '4,2' },
-            { label: 'Cell balancing', group: 'safety', values: (col) => col.day === 1 ? '0,08' : '0,075' },
-            { label: 'Réveils techniques périodiques Customer', group: 'safety', values: '0,00' },
-            { label: 'Veille CUSTOMER', group: 'test', values: '0,00' },
-            { label: 'BLM', group: 'safety', values: '0,7' },
-            { label: 'AID', group: 'safety', values: '0,2' },
-            { label: 'Tachy', group: 'safety', values: '14,00' },
-            { label: 'Alarme', group: 'safety', values: '11,50' },
-            { label: 'TWT', group: 'safety', values: '0,022' },
-            { section: 'Livraison et décharge batterie' },
-            { label: 'Réveils techniques périodiques Delivery', group: 'delivery', values: '9,118' },
-            { label: 'Veille DELIVERY', group: 'delivery', values: '3,46' },
-            { label: 'Transport 10 jours', group: 'delivery', values: '0,72' },
-            { label: 'Auto décharge L2 (Pb) [0,08% / jour]', group: 'delivery', values: '0,002750' },
-            { label: 'Auto décharge L2 (Pb) [0,08% / jour]', group: 'delivery', values: '0,0002750' }
-        ];
+        const rows = BiberonnageModel.rows;
 
         const stored = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
-        const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
-        const ecuSheet = excelData['ECU List'] || Object.values(excelData)[0] || { data: [] };
-        const normalizeEcuName = (name) => String(name || '').trim().toLocaleLowerCase();
-        const sleepCurrentByEcuName = new Map((ecuSheet.data || []).map((ecu) => [
-            normalizeEcuName(ecu['ECU Name']),
-            ecu['Sleep Current (mA)'] === null || ecu['Sleep Current (mA)'] === undefined || ecu['Sleep Current (mA)'] === '' ? 0 : ecu['Sleep Current (mA)']
-        ]));
-
         const header = document.getElementById('header-row');
         timeColumns.forEach(column => {
             const cell = document.createElement('th');
@@ -168,11 +123,7 @@
         });
 
         function defaultValue(row, column) {
-            if (column.day === 1) return sleepCurrentByEcuName.get(normalizeEcuName(row.label)) ?? 0;
-            if (typeof row.values === 'function') return row.values(column);
-            if (typeof row.values === 'string') return row.values;
-            if (column.day && row.values[column.day] !== undefined) return row.values[column.day];
-            return row.values[column.key] ?? '';
+            return BiberonnageModel.defaultValue(row, column, sessionStorage, DURATION_DAYS);
         }
 
         function cellKey(rowIndex, columnKey) { return `${rowIndex}:${columnKey}`; }
@@ -255,7 +206,7 @@
         document.getElementById('previous-step').addEventListener('click', async () => {
             save(false);
             try { await ProjectStorage.saveActiveProject(); } catch (error) { console.error(error); }
-            window.location.href = '/battery_menu';
+            window.location.href = '/biberonnage';
         });
 
         document.addEventListener('click', function(e) {

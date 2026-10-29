@@ -1,0 +1,294 @@
+[
+  {
+    "file": "Consoveille.xlsx",
+    "key": "baseLab",
+    "entries": {
+      "cellBalancing": {
+        "current": 200,
+        "duration": 15,
+        "unit": "s",
+        "calculation": "cell",
+        "extra": {
+          "periodMin": 480,
+          "balancingDays": 90
+        }
+      },
+      "pcuRam": {
+        "current": 1,
+        "duration": 0,
+        "unit": "h"
+      },
+      "cdcRam": {
+        "current": 4.5,
+        "duration": 0,
+        "unit": "h"
+      },
+      "ivc3": {
+        "current": 0.37,
+        "duration": 0,
+        "unit": "h"
+      },
+      "transport": {
+        "current": 0.72,
+        "duration": 10,
+        "unit": "jours",
+        "calculation": "daily"
+      }
+    },
+    "battery": {
+      "capacityAh": 60,
+      "startingSoc": 90.0,
+      "minimumSoc": 70.0
+    },
+    "vehicle": {
+      "count": 1,
+      "energyAh": 0.17
+    },
+    "wake": {
+      "wakePeriodHours": 8,
+      "wakeDurationSeconds": 2,
+      "wakeCurrentMa": 536,
+      "wakeCellBalancingDurationSeconds": 60,
+      "wakeCellBalancingCurrentMa": 4358.999999999999
+    },
+    "sleep": {
+      "alarm": 0,
+      "sansEbdu": 0,
+      "agingSoc": 0.083,
+      "twt": {
+        "single": {
+          "ivcCurrent": 150,
+          "powerlatchCurrent": 950,
+          "durationSeconds": 30
+        }
+      }
+    },
+    "additionalTwtMa": 0.07532793209876543,
+    "currentUa": 3458.0,
+    "expected": {
+      "available": 11.432200000000003,
+      "dailyAh": 0.35382514814814814,
+      "autonomy": 32.310309371264054
+    },
+    "cachedAutonomy": 32.31030937126406
+  },
+  {
+    "file": "Consoveille.xlsx",
+    "key": "withoutAlarmTachy",
+    "entries": {
+      "cellBalancing": {
+        "current": 200,
+        "duration": 15,
+        "unit": "s",
+        "calculation": "cell",
+        "extra": {
+          "periodMin": 480,
+          "balancingDays": 90
+        }
+      },
+      "pcuRam": {
+        "current": 1,
+        "duration": 0,
+        "unit": "h"
+      },
+      "cdcRam": {
+        "current": 4.5,
+        "duration": 0,
+        "unit": "h"
+      },
+      "ivc3": {
+        "current": 0.37,
+        "duration": 0,
+        "unit": "h"
+      },
+      "transport": {
+        "current": 0.72,
+        "duration": 10,
+        "unit": "jours",
+        "calculation": "daily"
+      }
+    },
+    "battery": {
+      "capacityAh": 60,
+      "startingSoc": 90.0,
+      "minimumSoc": 70.0
+    },
+    "vehicle": {
+      "count": 1,
+      "energyAh": 0.17
+    },
+    "wake": {
+      "wakePeriodHours": 8,
+      "wakeDurationSeconds": 2,
+      "wakeCurrentMa": 536,
+      "wakeCellBalancingDurationSeconds": 60,
+      "wakeCellBalancingCurrentMa": 4358.999999999999
+    },
+    "sleep": {
+      "alarm": 0,
+      "sansEbdu": 0,
+      "agingSoc": 0.083,
+      "twt": {
+        "single": {
+          "ivcCurrent": 150,
+          "powerlatchCurrent": 950,
+          "durationSeconds": 30
+        }
+      }
+    },
+    "additionalTwtMa": 0.07532793209876543,
+    "currentUa": 5009.0,
+    "expected": {
+      "available": 11.432200000000003,
+      "dailyAh": 0.3910491481481481,
+      "autonomy": 29.23468841228351
+    },
+    "cachedAutonomy": 29.23468841228351
+  },
+  {
+    "file": "Consoveille - Test Calcul.xlsx",
+    "key": "baseLab",
+    "entries": {
+      "cellBalancing": {
+        "current": 0,
+        "duration": 15,
+        "unit": "s",
+        "calculation": "cell",
+        "extra": {
+          "periodMin": 480,
+          "balancingDays": 90
+        }
+      },
+      "pcuRam": {
+        "current": 1,
+        "duration": 100,
+        "unit": "h"
+      },
+      "cdcRam": {
+        "current": 4,
+        "duration": 100,
+        "unit": "h"
+      },
+      "ivc3": {
+        "current": 0.37,
+        "duration": 100,
+        "unit": "h"
+      },
+      "transport": {
+        "current": 0.72,
+        "duration": 10,
+        "unit": "jours",
+        "calculation": "daily"
+      }
+    },
+    "battery": {
+      "capacityAh": 60,
+      "startingSoc": 90.0,
+      "minimumSoc": 70.0
+    },
+    "vehicle": {
+      "count": 1,
+      "energyAh": 0.17
+    },
+    "wake": {
+      "wakePeriodHours": 8,
+      "wakeDurationSeconds": 2,
+      "wakeCurrentMa": 0,
+      "wakeCellBalancingDurationSeconds": 60,
+      "wakeCellBalancingCurrentMa": 0
+    },
+    "sleep": {
+      "alarm": 0,
+      "sansEbdu": 0,
+      "agingSoc": 0.083,
+      "twt": {
+        "single": {
+          "ivcCurrent": 150,
+          "powerlatchCurrent": 950,
+          "durationSeconds": 30
+        }
+      }
+    },
+    "additionalTwtMa": 0.0,
+    "currentUa": 2568.0,
+    "expected": {
+      "available": 11.557200000000003,
+      "dailyAh": 0.11181394444444445,
+      "autonomy": 103.36099005739199
+    },
+    "cachedAutonomy": 103.36099005739199
+  },
+  {
+    "file": "Consoveille - Test Calcul.xlsx",
+    "key": "withoutAlarmTachy",
+    "entries": {
+      "cellBalancing": {
+        "current": 0,
+        "duration": 15,
+        "unit": "s",
+        "calculation": "cell",
+        "extra": {
+          "periodMin": 480,
+          "balancingDays": 90
+        }
+      },
+      "pcuRam": {
+        "current": 1,
+        "duration": 100,
+        "unit": "h"
+      },
+      "cdcRam": {
+        "current": 4,
+        "duration": 100,
+        "unit": "h"
+      },
+      "ivc3": {
+        "current": 0.37,
+        "duration": 100,
+        "unit": "h"
+      },
+      "transport": {
+        "current": 0.72,
+        "duration": 10,
+        "unit": "jours",
+        "calculation": "daily"
+      }
+    },
+    "battery": {
+      "capacityAh": 60,
+      "startingSoc": 90.0,
+      "minimumSoc": 70.0
+    },
+    "vehicle": {
+      "count": 1,
+      "energyAh": 0.17
+    },
+    "wake": {
+      "wakePeriodHours": 8,
+      "wakeDurationSeconds": 2,
+      "wakeCurrentMa": 0,
+      "wakeCellBalancingDurationSeconds": 60,
+      "wakeCellBalancingCurrentMa": 0
+    },
+    "sleep": {
+      "alarm": 0,
+      "sansEbdu": 0,
+      "agingSoc": 0.083,
+      "twt": {
+        "single": {
+          "ivcCurrent": 150,
+          "powerlatchCurrent": 950,
+          "durationSeconds": 30
+        }
+      }
+    },
+    "additionalTwtMa": 0.0,
+    "currentUa": 5009.0,
+    "expected": {
+      "available": 11.120200000000004,
+      "dailyAh": 0.17039794444444445,
+      "autonomy": 65.26017691267144
+    },
+    "cachedAutonomy": 65.26017691267144
+  }
+]

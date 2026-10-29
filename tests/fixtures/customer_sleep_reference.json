@@ -1,0 +1,161 @@
+{
+  "source": "Consoveille.xlsx",
+  "sheet": "Customer Mode",
+  "range": "I3:M32",
+  "formula": "SUMPRODUCT($I3:$I32,M3:M32)",
+  "expectedUa": 3048.2,
+  "expectedMa": 3.0482,
+  "expectedDailyAh": 0.0731568,
+  "rows": [
+    {
+      "name": "VDC",
+      "currentUa": 210.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "EPS",
+      "currentUa": 71.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "AIBS",
+      "currentUa": 106.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "PIU Master",
+      "currentUa": 889.0,
+      "oneDay": 0
+    },
+    {
+      "name": "PIU Sub Cabin",
+      "currentUa": 735.0,
+      "oneDay": 0
+    },
+    {
+      "name": "PIU Hood",
+      "currentUa": 446.0,
+      "oneDay": 0
+    },
+    {
+      "name": "PIU Master",
+      "currentUa": 756.2,
+      "oneDay": 1.0
+    },
+    {
+      "name": "PIU Sub Cabin",
+      "currentUa": 735.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "PIU Hood",
+      "currentUa": 446.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "PIU Master",
+      "currentUa": 557.0,
+      "oneDay": 0
+    },
+    {
+      "name": "PIU Sub Cabin",
+      "currentUa": 735.0,
+      "oneDay": 0
+    },
+    {
+      "name": "PIU Hood",
+      "currentUa": 446.0,
+      "oneDay": 0
+    },
+    {
+      "name": "DSM Power Parking",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "DSM Power Adapation",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "DSM Winter",
+      "currentUa": 110.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "DSM H2",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "DSM Trailer",
+      "currentUa": 110.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "Source coupleur A ",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "Source coupleur B",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": " OBC DCDC",
+      "currentUa": 167.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "HEVC / PDC (POWERTRAIN DOMAIN CONTROLER)",
+      "currentUa": 115.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "BMS MAIN MONITORING TRACTION BATTERY HIGH VOLTAGE",
+      "currentUa": 100.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "BLUETOOTH LOW ENERGY MODULE",
+      "currentUa": 100.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "UNDER STEERING WHEEL CONTROLS",
+      "currentUa": 22.0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "HYBRID BRAKING ASSISTANCE (EBA)",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "PCU PHYSICAL COMPUTING UNIT",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "Smart Antenna",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "COCKPIT DOMAIN CONTROLLER - Power 1",
+      "currentUa": 0,
+      "oneDay": 1.0
+    },
+    {
+      "name": "DIAGNOSTIC SOCKET",
+      "currentUa": 45.0,
+      "oneDay": 0
+    },
+    {
+      "name": "HANDS-FREE ACCESS ECU",
+      "currentUa": 720.0,
+      "oneDay": 0
+    }
+  ]
+}
