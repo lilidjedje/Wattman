@@ -20,6 +20,9 @@ const uint8_t ADDR_INA_A = 0x40;
 const uint8_t ADDR_INA_B = 0x41; 
 const uint8_t REG_CONFIG = 0x00;
 const uint8_t REG_SHUNT  = 0x01;
+constexpr float INA226_SHUNT_LSB_VOLTS = 2.5e-6f;
+constexpr float SHUNT_RESISTANCE_A_OHM = 0.01f; // R010
+constexpr float SHUNT_RESISTANCE_B_OHM = 0.1f;  // R100
 
 #define CAN_ID_CURRENT_A     0x100  
 #define CAN_ID_STATS_A       0x101  
@@ -68,6 +71,7 @@ volatile bool canReady = false;
 volatile uint32_t canTxOk = 0;
 volatile uint32_t canTxErrors = 0;
 volatile uint8_t canLastTxResult = CAN_OK;
+volatile uint16_t canLastTxId = 0;
 volatile uint8_t canErrorFlags = 0;
 volatile uint8_t canTxErrorCount = 0;
 volatile uint8_t canOscillatorMHz = 8;
@@ -107,6 +111,7 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
   bool delivered = false;
   if (!digitalStreamMode) {
     xSemaphoreTake(canMutex, portMAX_DELAY);
+    canLastTxId = identifier;
     canLastTxResult = canReady ? CAN.sendMsgBuf(identifier, 0, length, payload) : CAN_FAILINIT;
     const bool canDelivered = canLastTxResult == CAN_OK;
     if (canReady) {
@@ -115,10 +120,10 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
     }
     xSemaphoreGive(canMutex);
     if (canDelivered) {
-      canTxOk++;
+      canTxOk = canTxOk + 1;
       delivered = true;
     } else {
-      canTxErrors++;
+      canTxErrors = canTxErrors + 1;
     }
   }
   if (digitalStreamMode && streamConnected && streamQueue && length <= 8) {
@@ -208,24 +213,53 @@ bool inaWriteRegister16(uint8_t addr, uint8_t reg, uint16_t value) {
   return (Wire.endTransmission() == 0);
 }
 
-void configureINA226(uint8_t addr, uint32_t freq) {
+bool configureINA226(uint8_t addr, uint32_t freq) {
   uint16_t config_bits;
   if (freq >= 2000) {
     config_bits = (0b000 << 9) | (0b001 << 6) | (0b001 << 3) | 0b101;
   } else {
     config_bits = (0b000 << 9) | (0b100 << 6) | (0b100 << 3) | 0b111;
   }
-  inaWriteRegister16(addr, REG_CONFIG, config_bits);
+  if (!inaWriteRegister16(addr, REG_CONFIG, config_bits)) {
+    Serial.printf(
+      "[INA226] ERREUR configuration adresse 0x%02X : ecriture I2C impossible.\n",
+      addr
+    );
+    return false;
+  }
+  Wire.beginTransmission(addr);
+  Wire.write(REG_CONFIG);
+  if (Wire.endTransmission(false) != 0 || Wire.requestFrom(addr, (uint8_t)2) != 2) {
+    Serial.printf(
+      "[INA226] ERREUR configuration adresse 0x%02X : relecture I2C impossible.\n",
+      addr
+    );
+    return false;
+  }
+  const uint16_t actualConfig = ((uint16_t)Wire.read() << 8) | Wire.read();
+  const bool configMatches = (actualConfig & 0x7FFF) == config_bits;
+  Serial.printf(
+    "[INA226] adresse=0x%02X config=%s attendue=0x%04X lue=0x%04X\n",
+    addr,
+    configMatches ? "OK" : "INVALIDE",
+    config_bits,
+    actualConfig
+  );
+  return configMatches;
 }
 
-inline int16_t readINA226ShuntRaw(uint8_t addr) {
+bool readINA226ShuntRaw(uint8_t addr, int16_t& raw, uint8_t& error) {
   Wire.beginTransmission(addr);
   Wire.write(REG_SHUNT);
-  if (Wire.endTransmission(false) != 0) return 0;
-  if (Wire.requestFrom(addr, (uint8_t)2) == 2) {
-    return (int16_t)((Wire.read() << 8) | Wire.read());
+  error = Wire.endTransmission(false);
+  if (error != 0) return false;
+  if (Wire.requestFrom(addr, (uint8_t)2) != 2) {
+    error = 0xFF;
+    return false;
   }
-  return 0;
+  raw = (int16_t)(((uint16_t)Wire.read() << 8) | Wire.read());
+  error = 0;
+  return true;
 }
 
 void IRAM_ATTR onAcqTimer(void* arg) {
@@ -237,6 +271,15 @@ void IRAM_ATTR onAcqTimer(void* arg) {
 void taskAcq(void* parameter) {
   uint32_t lastPrintMs = 0;
   uint32_t lastSnapshotA = 0, lastSnapshotB = 0;
+  int16_t lastInaRawA = 0, lastInaRawB = 0;
+  float lastInaCurrentA = 0.0f, lastInaCurrentB = 0.0f;
+  uint8_t lastInaErrorA = 0, lastInaErrorB = 0;
+  bool lastInaReadOkA = false, lastInaReadOkB = false;
+  uint16_t lastDisplayedCanId = 0;
+  float lastDisplayedCanCurrent = 0.0f;
+  byte lastDisplayedCanData[4] = {0};
+  bool lastDisplayedCanSendOk = false;
+  bool hasCanSampleToDisplay = false;
   byte canPacket[8] = {0};
 
   for (;;) {
@@ -265,8 +308,8 @@ void taskAcq(void* parameter) {
 
     uint32_t nNotify = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     if (nNotify == 0) {
-      if (sensorRunningA) lostCountA++;
-      if (sensorRunningB) lostCountB++;
+      if (sensorRunningA) lostCountA = lostCountA + 1;
+      if (sensorRunningB) lostCountB = lostCountB + 1;
       continue;
     }
 
@@ -282,21 +325,45 @@ void taskAcq(void* parameter) {
     if (acquireB && dueB > 1) lostCountB += dueB - 1;
 
     if (acquireA) {
-      acqCountA++;
-      int16_t rawA = readINA226ShuntRaw(ADDR_INA_A);
-      float IA = rawA * 2.5e-6f / 0.1f;
-      memset(canPacket, 0, 8);
-      memcpy(&canPacket[0], &IA, sizeof(float));
-      if (!sendCanFrame(CAN_ID_CURRENT_A, 4, canPacket)) lostCountA++;
+      acqCountA = acqCountA + 1;
+      lastInaReadOkA = readINA226ShuntRaw(ADDR_INA_A, lastInaRawA, lastInaErrorA);
+      if (!lastInaReadOkA) {
+        lostCountA = lostCountA + 1;
+      } else {
+        lastInaCurrentA = lastInaRawA * INA226_SHUNT_LSB_VOLTS / SHUNT_RESISTANCE_A_OHM;
+        memset(canPacket, 0, 8);
+        memcpy(&canPacket[0], &lastInaCurrentA, sizeof(float));
+        const bool sent = sendCanFrame(CAN_ID_CURRENT_A, 4, canPacket);
+        if (!sent) lostCountA = lostCountA + 1;
+        if (!digitalStreamMode) {
+          lastDisplayedCanId = CAN_ID_CURRENT_A;
+          lastDisplayedCanCurrent = lastInaCurrentA;
+          memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+          lastDisplayedCanSendOk = sent;
+          hasCanSampleToDisplay = true;
+        }
+      }
     }
 
     if (acquireB) {
-      acqCountB++;
-      int16_t rawB = readINA226ShuntRaw(ADDR_INA_B);
-      float IB = rawB * 2.5e-6f / 0.1f;
-      memset(canPacket, 0, 8);
-      memcpy(&canPacket[0], &IB, sizeof(float));
-      if (!sendCanFrame(CAN_ID_CURRENT_B, 4, canPacket)) lostCountB++;
+      acqCountB = acqCountB + 1;
+      lastInaReadOkB = readINA226ShuntRaw(ADDR_INA_B, lastInaRawB, lastInaErrorB);
+      if (!lastInaReadOkB) {
+        lostCountB = lostCountB + 1;
+      } else {
+        lastInaCurrentB = lastInaRawB * INA226_SHUNT_LSB_VOLTS / SHUNT_RESISTANCE_B_OHM;
+        memset(canPacket, 0, 8);
+        memcpy(&canPacket[0], &lastInaCurrentB, sizeof(float));
+        const bool sent = sendCanFrame(CAN_ID_CURRENT_B, 4, canPacket);
+        if (!sent) lostCountB = lostCountB + 1;
+        if (!digitalStreamMode) {
+          lastDisplayedCanId = CAN_ID_CURRENT_B;
+          lastDisplayedCanCurrent = lastInaCurrentB;
+          memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+          lastDisplayedCanSendOk = sent;
+          hasCanSampleToDisplay = true;
+        }
+      }
     }
 
     uint32_t nowMs = millis();
@@ -310,12 +377,53 @@ void taskAcq(void* parameter) {
       lastSnapshotB = acqCountB;
       lastPrintMs = nowMs;
 
+      if (currentCfg.activeA) {
+        if (lastInaReadOkA) {
+          const float shuntMicrovolts = lastInaRawA * INA226_SHUNT_LSB_VOLTS * 1000000.0f;
+          Serial.printf(
+            "[INA226][A] lecture=OK adresse=0x%02X raw_shunt=%d shunt=%.1f uV courant=%.6f A%s\n",
+            ADDR_INA_A,
+            lastInaRawA,
+            shuntMicrovolts,
+            lastInaCurrentA,
+            lastInaRawA == 0 ? " (zero mesure)" : ""
+          );
+        } else {
+          Serial.printf(
+            "[INA226][A] ERREUR lecture I2C adresse=0x%02X code=%u%s\n",
+            ADDR_INA_A,
+            lastInaErrorA,
+            lastInaErrorA == 0xFF ? " (lecture incomplete)" : " (verifier adresse, SDA/SCL et alimentation)"
+          );
+        }
+      }
+      if (currentCfg.activeB) {
+        if (lastInaReadOkB) {
+          const float shuntMicrovolts = lastInaRawB * INA226_SHUNT_LSB_VOLTS * 1000000.0f;
+          Serial.printf(
+            "[INA226][B] lecture=OK adresse=0x%02X raw_shunt=%d shunt=%.1f uV courant=%.6f A%s\n",
+            ADDR_INA_B,
+            lastInaRawB,
+            shuntMicrovolts,
+            lastInaCurrentB,
+            lastInaRawB == 0 ? " (zero mesure)" : ""
+          );
+        } else {
+          Serial.printf(
+            "[INA226][B] ERREUR lecture I2C adresse=0x%02X code=%u%s\n",
+            ADDR_INA_B,
+            lastInaErrorB,
+            lastInaErrorB == 0xFF ? " (lecture incomplete)" : " (verifier adresse, SDA/SCL et alimentation)"
+          );
+        }
+      }
+
       if (sensorRunningA) {
         uint16_t statsA[2] = {(uint16_t)freqReelleA, (uint16_t)lostCountA};
         memset(canPacket, 0, 8);
         memcpy(&canPacket[0], &statsA[0], 2);
         memcpy(&canPacket[2], &statsA[1], 2);
-        if (!sendCanFrame(CAN_ID_STATS_A, 4, canPacket)) lostCountA++;
+        if (!sendCanFrame(CAN_ID_STATS_A, 4, canPacket)) lostCountA = lostCountA + 1;
       }
 
       if (sensorRunningB) {
@@ -323,7 +431,7 @@ void taskAcq(void* parameter) {
         memset(canPacket, 0, 8);
         memcpy(&canPacket[0], &statsB[0], 2);
         memcpy(&canPacket[2], &statsB[1], 2);
-        if (!sendCanFrame(CAN_ID_STATS_B, 4, canPacket)) lostCountB++;
+        if (!sendCanFrame(CAN_ID_STATS_B, 4, canPacket)) lostCountB = lostCountB + 1;
       }
 
       // Envoi du timestamp calculé à partir de la valeur initiale reçue du PC
@@ -331,6 +439,27 @@ void taskAcq(void* parameter) {
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &calcul_ts, 4);
       sendCanFrame(CAN_ID_TIME_SYNC, 4, canPacket);
+      if (!digitalStreamMode) {
+        if (hasCanSampleToDisplay) {
+          Serial.printf(
+            "[CAN TX] ID=0x%03X DLC=4 DATA=%02X %02X %02X %02X courant=%.1f A statut=%s | OK=%lu erreurs=%lu flags=0x%02X TXerr=%u\n",
+            (unsigned)lastDisplayedCanId,
+            lastDisplayedCanData[0],
+            lastDisplayedCanData[1],
+            lastDisplayedCanData[2],
+            lastDisplayedCanData[3],
+            lastDisplayedCanCurrent,
+            lastDisplayedCanSendOk ? "OK" : "ECHEC",
+            (unsigned long)canTxOk,
+            (unsigned long)canTxErrors,
+            (unsigned)canErrorFlags,
+            (unsigned)canTxErrorCount
+          );
+          hasCanSampleToDisplay = false;
+        } else {
+          Serial.println("[CAN TX] Aucune trame courant a afficher pendant cette seconde.");
+        }
+      }
     }
   }
 }
@@ -577,12 +706,16 @@ void handleApiStartAcquisition() {
     return;
   }
   digitalStreamMode = requestedMode == "digital";
-
+  Serial.printf(
+    "[ACQ] Mode demande: %s%s\n",
+    digitalStreamMode ? "numerique Wi-Fi" : "CAN",
+    digitalStreamMode ? " (aucune trame CAN ne sera emise)" : ""
+  );
   // Le POST HTTP peut arriver juste après l'ouverture du socket TCP, avant
   // l'itération suivante de taskWeb. Accepter immédiatement ce client évite
   // de refuser à tort le démarrage de la mesure numérique.
   if (digitalStreamMode && !streamConnected && streamServer.hasClient()) {
-    WiFiClient incoming = streamServer.available();
+    WiFiClient incoming = streamServer.accept();
     xSemaphoreTake(streamClientMutex, portMAX_DELAY);
     if (streamClient) streamClient.stop();
     streamClient = incoming;
@@ -685,6 +818,16 @@ void handleApiStartAcquisition() {
   byte timePacket[4] = {0};
   memcpy(timePacket, (const void*)&pcBaseTimestamp, sizeof(pcBaseTimestamp));
   bool transportReady = sendCanFrame(CAN_ID_TIME_SYNC, sizeof(timePacket), timePacket);
+  if (!digitalStreamMode) {
+    Serial.printf(
+      "[CAN] Demarrage mesure: canal A=%s (%lu Hz), canal B=%s (%lu Hz), premier envoi=%s\n",
+      activeA ? "ON" : "OFF",
+      (unsigned long)frequencyA,
+      activeB ? "ON" : "OFF",
+      (unsigned long)frequencyB,
+      transportReady ? "OK" : "ECHEC"
+    );
+  }
   // A CAN listener may start after acquisition. A missing first ACK must not
   // cancel all future samples or silently change an 8 MHz crystal to 16 MHz.
   if (digitalStreamMode && !transportReady) {
@@ -788,7 +931,7 @@ void taskWeb(void* parameter) {
     // hasClient() peut attendre une nouvelle connexion TCP et affamer l'API.
     server.handleClient();
     if (streamServer.hasClient()) {
-      WiFiClient incoming = streamServer.available();
+      WiFiClient incoming = streamServer.accept();
       xSemaphoreTake(streamClientMutex, portMAX_DELAY);
       if (streamClient) streamClient.stop();
       streamClient = incoming;
