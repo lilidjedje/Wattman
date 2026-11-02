@@ -22,6 +22,11 @@ npm ci
 npm start
 ```
 
+sinon : 
+Set-Location 'E:\Wattman-main\Wattman-main'
+Remove-Item -LiteralPath .\node_modules -Recurse -Force
+npm ci
+
 Ces étapes installent les dépendances et lancent l'application depuis les
 sources. Elles sont à refaire sur chaque nouveau PC.
 
@@ -58,6 +63,13 @@ l'ESP32-C3 multi INA226, sans Raspberry Pi, via son adresse IP.
    - **Mesure numérique** permet de renseigner séparément la fréquence et la
      durée des canaux A et B. Les deux compteurs et le dashboard se mettent à
      jour en direct ; un arrêt anticipé conserve toutes les mesures reçues.
+     L'écran SH1106 affiche les courants de chaque canal actif, leur temps
+     restant, puis « Mesure finie ».
+
+À l'ouverture de la workstation, le SH1106 affiche « Hello ! Paramétrez votre
+mesure ». Il indique ensuite le mode sélectionné et, en mode CAN, demande
+d'activer l'enregistrement sur CANalyzer. Ces messages nécessitent le
+téléversement du sketch principal.
 
 Le réseau Wi-Fi à rechercher est **ESP32C3-Mesure**, mot de passe
 **ina226mesure**. Une fois connecté, ouvrir `http://192.168.4.1` pour vérifier
@@ -204,3 +216,17 @@ Ce projet est fourni à titre d'exemple.
 ---
 
 **Version:** 2.0
+
+
+
+Fait en sorte dans les mesures numériques que les excels de mesure numérique respecte bien le nombre de mesures par secondes en fonction de la fréquence d'acuquositon et que pour chaque canal A et B respecte date et heure de chaque mesure (d'ailleurs dans l'excel mets date et heure de chaque mesure et mesure en mA ou en A ou en micro A et la fréquence d'acquisiton réelle à ce moment la (pas d'autres lignes)). et je veux que le chemin des excel soit dans le projet wattman main 
+
+Pour la partie excel, j'ai lancé un test de 1000 Hz et pourtant je n'ai que 3000 lignes alors que je suis censé avoir 1000 mesures par seconde (une ligne par mesure), rectifie ca 
+
+enlève en haut de import dashboard nombre de mesures totales
+
+Je veux que mon analyse puisse prendre en compte tout mes fichiers .asc sans limite de 3, meme s'il y en a des centaines. 
+
+dans les tableaux canal A et canal B enlève les colonne noms du fichiers sour ce, et en bas des tableaux la ou on peut changer de pages, je veux pouvoir changer de page recevin à la précédente, mais aussi pouvoir choisir vers quelle page aller sur (nombre de pages totals apparent )
+
+je n'ai aucun bouton ou je peux enregistrer mes dashboards, ajoute le et fait en sorte que les enregistrements de dashboard fonctionnent (meme quand on eteint et se reconnecte au projet)

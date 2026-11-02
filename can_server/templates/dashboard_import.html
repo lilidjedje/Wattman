@@ -6,34 +6,53 @@
     <title>Importer les logs CAN ASC</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/log-explorer.css') }}">
 </head>
-<body>
+<body class="can-import-page">
     <header class="workstation-header">
         <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
         <div>
             <p class="eyebrow">Étape 1 / Données mesurées</p>
             <h1>Importer et décoder les logs CAN</h1>
         </div>
-        <span class="right status-led" id="databaseState">Lecture de la base…</span>
+        <div class="actions right"><span class="status-led" id="databaseState">Lecture de la base…</span>
+        <details class="dashboard-summary-menu">
+            <summary>Sommaire</summary>
+            <div class="dashboard-summary-content">
+                {% if not archive %}<button type="button" id="saveExplorerDashboard">Enregistrer le dashboard</button>{% endif %}
+                <a href="#logFilterForm">Mesures et filtres</a>
+                <a href="{{ url_for('index') }}#dashboardHistory">Historique des dashboards</a>
+            </div>
+        </details></div>
     </header>
+    {% if archive %}<p class="message">{{ archive.name }} &middot; Cr&#233;&#233; le {{ archive.saved_at[:19]|replace('T', ' ') }} &middot; Donn&#233;es enregistr&#233;es</p>{% endif %}
+    <script>window.dashboardArchive = {{ archive|tojson }};</script>
+    <dialog class="dashboard-save-dialog" id="saveExplorerDialog">
+        <form id="saveExplorerForm">
+            <h2>Enregistrer le dashboard du projet</h2>
+            <label>Nom du dashboard <input id="explorerDashboardName" maxlength="120" required></label>
+            <p>La base compl&#232;te des mesures et les filtres appliqu&#233;s seront conserv&#233;s.</p>
+            <button type="button" id="cancelExplorerSave">Annuler</button>
+            <button type="submit">Enregistrer</button>
+            <p id="explorerSaveStatus" role="status"></p>
+        </form>
+    </dialog>
 
     <main class="workstation-main">
         <div class="system-strip">
             <span>FORMAT ACCEPTÉ : VECTOR ASCII LOG (.ASC)</span>
-            <span>TRAMES : 0x100 À 0x105</span>
-            <span>ESP32-C3 MULTI INA226</span>
         </div>
 
         <section class="import-layout">
             <article class="panel">
                 <div class="panel-title"><h2>1. Sélectionner les logs ASC</h2></div>
                 <p class="form-intro">
-                    Les valeurs mesurées sont lues exclusivement dans les trames CAN.
-                    Le fichier est décodé localement puis enregistré dans la base de mesures.
+                    Importez un ou plusieurs fichiers, y compris des enregistrements sur plusieurs jours.
+                    Les trames décodées sont conservées dans la base locale. Au retour dans l’application, l’explorateur et le dashboard « base complète » retrouvent les mesures numériques et CAN tant que cette base n’est pas réinitialisée.
                 </p>
                 <form id="uploadForm" class="form-grid">
                     <label class="asc-drop-zone" id="dropZone" for="ascFiles">
-                        <strong>Déposer les fichiers `.asc` ici</strong>
+                        <strong>Déposer vos fichiers .asc ici</strong>
                         <span>ou cliquer pour les sélectionner</span>
                         <small id="selectedFiles">Aucun fichier sélectionné</small>
                     </label>
@@ -43,7 +62,7 @@
                     </div>
                 </form>
                 <div class="message" id="message">
-                    Le dashboard restera verrouillé jusqu’à ce que des mesures CAN soient disponibles.
+                    1. Sélectionnez vos fichiers · 2. Importez-les · 3. Explorez les mesures ou préparez un dashboard.
                 </div>
                 <div class="decode-progress" id="progress" hidden>
                     <span></span>
@@ -53,12 +72,19 @@
             <aside class="panel">
                 <div class="panel-title"><h2>Base de données locale</h2></div>
                 <div class="database-stats">
-                    <div class="metric"><span>Mesures</span><strong id="measurementCount">—</strong></div>
-                    <div class="metric"><span>Fichiers ASC</span><strong id="fileCount">—</strong></div>
-                    <div class="metric"><span>Durée couverte</span><strong id="databaseDuration">—</strong></div>
+                    <div class="metric"><span>Fichiers</span><strong id="fileCount">—</strong></div>
                     <div class="metric"><span>Canaux</span><strong id="channelCount">—</strong></div>
                 </div>
+                {% for channel in ['A', 'B'] %}
+                <article class="database-channel-summary">
+                    <h3><span class="channel-tag channel-{{ channel }}">Canal {{ channel }}</span></h3>
+                    <div><span>Durée couverte <strong id="databaseDuration{{ channel }}">—</strong></span><span>Fréquence moyenne déclarée <strong id="databaseFrequency{{ channel }}">—</strong></span></div>
+                </article>
+                {% endfor %}
                 <div class="source-list" id="sourceList">Aucun fichier dans la base.</div>
+                <p class="filter-hint" id="databaseDashboardScope" role="status">
+                    Les options du dashboard portent sur toutes les mesures présentes dans cette base.
+                </p>
                 <button class="danger database-reset" type="button" id="resetButton">
                     Réinitialiser la base de données
                 </button>
@@ -67,27 +93,30 @@
 
         <section class="panel setup-panel" id="decodeResult" hidden>
             <div class="panel-title"><h2>2. Résultat du décodage CAN</h2></div>
-            <div class="dashboard-grid">
-                <div class="metric"><span>Mesures décodées</span><strong id="decodedCount">—</strong></div>
-                <div class="metric"><span>Canaux détectés</span><strong id="decodedChannels">—</strong></div>
-                <div class="metric"><span>Fréquence canal A</span><strong id="decodedFrequencyA">—</strong></div>
-                <div class="metric"><span>Durée canal A</span><strong id="decodedDurationA">—</strong></div>
-                <div class="metric"><span>Fréquence canal B</span><strong id="decodedFrequencyB">—</strong></div>
-                <div class="metric"><span>Durée canal B</span><strong id="decodedDurationB">—</strong></div>
+            <div class="decode-overview">
+                <div class="decode-total"><span>Mesures décodées</span><strong id="decodedCount">—</strong><small>Canaux détectés : <b id="decodedChannels">—</b></small></div>
+                <article class="decode-channel"><h3><span class="channel-tag channel-A">Canal A</span> Branche A</h3><div><span>Fréquence canal A <strong id="decodedFrequencyA">—</strong></span><span>Durée canal A <strong id="decodedDurationA">—</strong></span></div></article>
+                <article class="decode-channel"><h3><span class="channel-tag channel-B">Canal B</span> Branche B</h3><div><span>Fréquence canal B <strong id="decodedFrequencyB">—</strong></span><span>Durée canal B <strong id="decodedDurationB">—</strong></span></div></article>
             </div>
+            <p class="filter-hint">La fréquence est celle annoncée dans les trames de statistiques CAN. La durée couverte cumule les périodes enregistrées par canal, sans les pauses entre fichiers.</p>
+            {% for channel in ['A', 'B'] %}
+            <h3><span class="channel-tag channel-{{ channel }}">Canal {{ channel }}</span> Fichiers, durées et fréquences</h3>
             <div class="table-scroll">
                 <table class="report-table">
                     <thead>
                         <tr>
-                            <th>Fichier ASC</th><th>Mesures</th><th>Canaux</th>
-                            <th>Fréquence A</th><th>Durée A</th>
-                            <th>Fréquence B</th><th>Durée B</th>
+                            <th>Fichier ASC</th><th>Mesures {{ channel }}</th>
+                            <th>Première mesure {{ channel }}</th><th>Dernière mesure {{ channel }}</th>
+                            <th>Fréquence {{ channel }}</th><th>Durée de mesure {{ channel }}</th>
                         </tr>
                     </thead>
-                    <tbody id="fileResults"></tbody>
+                    <tbody id="fileResults{{ channel }}"></tbody>
                 </table>
             </div>
+            {% endfor %}
         </section>
+
+        {% include "log_explorer.html" %}
 
         <section class="panel setup-panel workflow-next">
             <div>
@@ -122,6 +151,8 @@
         }
         function formatDuration(seconds) {
             const total = Math.max(0, Number(seconds || 0));
+            if (total >= 86400) return `${(total / 86400).toFixed(2)} j`;
+            if (total >= 3600) return `${(total / 3600).toFixed(2)} h`;
             if (total < 60) return `${total.toFixed(2)} s`;
             return `${(total / 60).toFixed(2)} min`;
         }
@@ -146,12 +177,15 @@
                 names.length ? names.join(' · ') : 'Aucun fichier sélectionné';
         }
         function renderDatabase(data) {
-            document.getElementById('measurementCount').textContent = formatNumber(data.measurement_count);
             document.getElementById('fileCount').textContent = formatNumber(data.file_count);
-            document.getElementById('databaseDuration').textContent = formatDuration(data.duration_s);
+            ['A', 'B'].forEach(channel => {
+                const settings = data.channel_settings?.[channel];
+                document.getElementById(`databaseDuration${channel}`).textContent = settings ? formatDuration(settings.actual_duration_s) : 'Aucune mesure';
+                document.getElementById(`databaseFrequency${channel}`).textContent = settings?.actual_frequency_hz != null ? `${formatNumber(settings.actual_frequency_hz)} Hz` : '—';
+            });
             document.getElementById('channelCount').textContent = formatNumber(data.channel_count);
             document.getElementById('sourceList').innerHTML = data.source_files?.length
-                ? data.source_files.map(name => `<span>${escapeHtml(name)}</span>`).join('')
+                ? data.source_files.map(name => `<span title="${escapeHtml(name)}">${escapeHtml(name.replace(/^can_[a-f0-9]+_\d+_/, ''))}</span>`).join('')
                 : 'Aucun fichier dans la base.';
             document.getElementById('databaseState').textContent = data.measurement_count
                 ? `${formatNumber(data.measurement_count)} mesures disponibles`
@@ -196,9 +230,14 @@
                 progress.hidden = false;
                 setContinue(null);
                 setMessage('Import et décodage des trames CAN en cours…');
-                const response = await fetch(endpoints.upload, {method: 'POST', body: formData});
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.message || 'Le décodage ASC a échoué.');
+                let data;
+                if (window.desktopEnvironment?.importCanFiles) {
+                    data = await window.desktopEnvironment.importCanFiles([...filesInput.files]);
+                } else {
+                    const response = await fetch(endpoints.upload, {method: 'POST', body: formData});
+                    data = await response.json();
+                    if (!response.ok) throw new Error(data.message || 'Le décodage ASC a échoué.');
+                }
                 document.getElementById('decodeResult').hidden = false;
                 document.getElementById('decodedCount').textContent = formatNumber(data.measurements_count);
                 document.getElementById('decodedChannels').textContent = data.channels.join(' + ');
@@ -212,25 +251,30 @@
                         ? formatDuration(settings.actual_duration_s)
                         : '—';
                 });
-                document.getElementById('fileResults').innerHTML = data.files_processed.map(file => {
-                    const channelA = file.channel_settings?.A;
-                    const channelB = file.channel_settings?.B;
+                ['A', 'B'].forEach(channel => {
+                document.getElementById(`fileResults${channel}`).innerHTML = data.files_processed.map(file => {
+                    const settings = file.channel_settings[channel];
+                    const size = file.size_bytes != null ? `<small class="file-period">${new Intl.NumberFormat('fr-FR', {maximumFractionDigits: 2}).format(file.size_bytes / 1000000)} MB</small>` : '';
+                    const name = `${escapeHtml(file.name)}${size}`;
+                    if (!settings) return `<tr><td>${name}</td><td>0</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>${escapeHtml(file.warning || `Aucune mesure sur le canal ${channel}.`)}</td></tr>`;
+                    const date = timestamp => new Date(timestamp * 1000).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
                     return `
                         <tr>
-                            <td>${escapeHtml(file.name)}</td>
-                            <td>${formatNumber(file.measurements)}</td>
-                            <td>${file.channels.map(escapeHtml).join(' + ')}</td>
-                            <td>${channelA ? `${formatNumber(channelA.actual_frequency_hz)} Hz` : '—'}</td>
-                            <td>${channelA ? formatDuration(channelA.actual_duration_s) : '—'}</td>
-                            <td>${channelB ? `${formatNumber(channelB.actual_frequency_hz)} Hz` : '—'}</td>
-                            <td>${channelB ? formatDuration(channelB.actual_duration_s) : '—'}</td>
+                            <td>${name}${file.timestamp_warning ? '<small class="timestamp-warning">Date incertaine : date d’import utilisée.</small>' : ''}</td>
+                            <td>${formatNumber(settings.measurements)}</td>
+                            <td>${date(settings.started_at)}</td>
+                            <td>${date(settings.ended_at)}</td>
+                            <td>${settings.actual_frequency_hz > 0 ? `${formatNumber(settings.actual_frequency_hz)} Hz` : '&mdash;'}</td>
+                            <td>${formatDuration(settings.actual_duration_s)}</td>
                         </tr>`;
-                }).join('');
+                }).join('') || `<tr><td colspan="6">Aucune mesure sur le canal ${channel}.</td></tr>`;
+                });
                 setContinue(data.dashboard_setup_url);
-                setMessage(`${data.measurements_count} mesures décodées. Vous pouvez configurer le dashboard.`, 'ok');
+                setMessage(`${formatNumber(data.files_count)} fichiers importés, ${formatNumber(data.measurements_count)} mesures décodées. Explorez les mesures ci-dessous ou préparez un dashboard.`, 'ok');
                 filesInput.value = '';
                 renderSelectedFiles();
                 await refreshDatabase();
+                window.dispatchEvent(new Event('can-database-changed'));
             } catch (error) {
                 setMessage(error.message, 'error');
             } finally {
@@ -251,6 +295,7 @@
                 document.getElementById('decodeResult').hidden = true;
                 setContinue(null);
                 await refreshDatabase();
+                window.dispatchEvent(new Event('can-database-changed'));
                 setMessage(data.message, 'ok');
             } catch (error) {
                 setMessage(error.message, 'error');
@@ -260,7 +305,38 @@
         continueButton.addEventListener('click', event => {
             if (continueButton.getAttribute('aria-disabled') === 'true') event.preventDefault();
         });
-        refreshDatabase().catch(error => setMessage(error.message, 'error'));
+        if (window.dashboardArchive) {
+            document.querySelector('.import-layout').hidden = true;
+            document.querySelector('.workflow-next').hidden = true;
+            document.getElementById('databaseState').textContent = 'Dashboard enregistr\u00e9';
+        } else refreshDatabase().catch(error => setMessage(error.message, 'error'));
+        const saveButton = document.getElementById('saveExplorerDashboard');
+        const saveDialog = document.getElementById('saveExplorerDialog');
+        saveButton?.addEventListener('click', () => {
+            document.getElementById('explorerDashboardName').value = `Dashboard - ${new Date().toLocaleString('fr-FR')}`;
+            saveDialog.showModal();
+        });
+        document.getElementById('cancelExplorerSave').onclick = () => saveDialog.close();
+        document.getElementById('saveExplorerForm').onsubmit = async event => {
+            event.preventDefault();
+            const submit = event.submitter || event.currentTarget.querySelector('button[type="submit"]');
+            const feedback = document.getElementById('explorerSaveStatus');
+            try {
+                submit.disabled = true;
+                const explorerState = window.getDashboardExplorerState();
+                feedback.textContent = 'Enregistrement de toutes les mesures...';
+                const response = await fetch({{ url_for('save_dashboard')|tojson }}, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({view: 'explorer', name: document.getElementById('explorerDashboardName').value,
+                                          explorer_state: explorerState})
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Enregistrement impossible.');
+                saveDialog.close();
+                setMessage(data.message, 'ok');
+            } catch (error) { feedback.textContent = error.message; }
+            finally { submit.disabled = false; }
+        };
     </script>
 </body>
 </html>

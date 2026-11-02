@@ -30,7 +30,11 @@ python -m PyInstaller `
     --add-data "$projectRoot\can_server\app.py;can_server" `
     --add-data "$projectRoot\can_server\database.py;can_server" `
     --add-data "$projectRoot\can_server\can_parser.py;can_server" `
+    --add-data "$projectRoot\can_server\log_explorer.py;can_server" `
+    --add-data "$projectRoot\can_server\sizing_comparison.py;can_server" `
+    --add-data "$projectRoot\can_server\autonomy_analysis.py;can_server" `
     --add-data "$projectRoot\can_server\can_collector.py;can_server" `
+    --add-data "$projectRoot\can_server\digital_excel.py;can_server" `
     --add-data "$projectRoot\can_server\sharepoint_sync.py;can_server" `
     --add-data "$projectRoot\can_server\peak_detector.py;can_server" `
     --add-data "$projectRoot\can_server\csv_reader.py;can_server" `

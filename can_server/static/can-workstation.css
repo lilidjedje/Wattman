@@ -53,6 +53,32 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 .workstation-header h1 { margin: 0; text-align: center; font-size: clamp(1.4rem, 3vw, 2.2rem); }
 .workstation-header .right { justify-self: end; }
+.dashboard-summary-menu { position: relative; justify-self: end; }
+.dashboard-summary-menu > summary {
+    min-height: 44px;
+    padding: 10px 18px;
+    border: 1px solid #6b5515;
+    background: #765500;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none;
+}
+.dashboard-summary-menu > summary::-webkit-details-marker { display: none; }
+.dashboard-summary-content {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 20;
+    display: grid;
+    min-width: 230px;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    box-shadow: 0 8px 24px #0009;
+}
+.dashboard-summary-content .button { display: block; text-align: center; }
 .eyebrow {
     margin: 0 0 6px;
     color: var(--yellow-light);
@@ -184,6 +210,8 @@ input, select {
 .channel-status { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .channel-box { padding: 15px; border: 1px solid var(--line-soft); background: #0b0e0f; }
 .channel-box strong { color: var(--yellow-light); }
+.channel-current { margin: 12px 0; color: var(--muted); }
+.channel-current b { color: var(--text); font: 700 1.4rem Consolas, monospace; }
 
 .dashboard-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
 .score.pass { color: #7fc494; }

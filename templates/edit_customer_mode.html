@@ -132,7 +132,7 @@
                 <thead>
                     <tr id="main-headers">
                         <th class="sticky-col">Device Name</th>
-                        <th class="sticky-col2" style="background-color: #4a5568;">Current</th>
+                        <th class="sticky-col2" style="background-color: #4a5568;">Current (µA)</th>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
@@ -149,6 +149,7 @@
     <script src="/static/sleep_current.js"></script>
     <script>
         sessionStorage.setItem('batterySubMode', 'Customer Mode');
+        SleepCurrent.migrateEditorCurrentsToMicroamps(sessionStorage, 'Customer Mode');
 
         const daysColumns = ["0,0 jours", "0,3 jours"];
         for(let d = 1.0; d <= 30.0; d += 0.5) {
@@ -180,8 +181,7 @@
             sheet.data.forEach((row, rowIndex) => {
                 // FILTRE STRICT : current_category == 'S' (Sleep / Veille)
                 const itemName = row['Device Name'] || row['ECU Name'] || `Item ${rowIndex + 1}`;
-                const rawVal = SleepCurrent.sourceCurrent(row, 'Customer Mode');
-                const originalCurrent = rawVal !== null && rawVal !== undefined && rawVal !== '' ? rawVal : 0;
+                const originalCurrent = SleepCurrent.sourceCurrentMicroamps(row, 'Customer Mode');
                 
                 const itemKey = `${rowIndex}_${itemName}`;
                 if (selectedKeys !== null && !selectedKeys.has(itemKey)) return;
@@ -224,7 +224,7 @@
                 currentUnitField.className = 'matrix-current-unit';
                 const currentUnitSuffix = document.createElement('span');
                 currentUnitSuffix.className = 'matrix-current-unit-suffix';
-                currentUnitSuffix.textContent = 'mA';
+                currentUnitSuffix.textContent = 'µA';
                 currentUnitField.append(currentInput, currentUnitSuffix);
                 tdDark.appendChild(currentUnitField);
                 tr.appendChild(tdDark);

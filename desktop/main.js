@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, protocol, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, protocol, ipcMain, shell } = require('electron');
 const { createProjectStore } = require('./project_store');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -381,6 +381,25 @@ async function runSmokeTest() {
 }
 
 app.whenReady().then(async () => {
+  ipcMain.handle('import-can-files', async (event, paths) => {
+    if (!event.senderFrame.url.startsWith('app://local/analyse_logs/')) throw new Error('Origine non autorisée.');
+    if (!Array.isArray(paths) || !paths.length || paths.some(file => typeof file !== 'string' || !path.isAbsolute(file) || path.extname(file).toLowerCase() !== '.asc')) {
+      throw new Error('Sélectionnez des fichiers ASC locaux.');
+    }
+    const result = await callBackend({operation: 'import-can-files', paths});
+    const data = JSON.parse(Buffer.from(result.body, 'base64').toString('utf8'));
+    if (result.status !== 200) throw new Error(data.message || data.error || 'Import impossible.');
+    return data;
+  });
+  ipcMain.handle('open-measurement-exports', async (event, sessionId) => {
+    if (!event.senderFrame.url.startsWith('app://local/analyse_logs/') || !/^[a-f0-9]{32}$/.test(sessionId)) throw new Error('Session invalide.');
+    const dataRoot = process.env.ENGINEERING_APP_DATA || path.join(app.getPath('userData'), 'application-data');
+    const folder = path.join(dataRoot, 'can_data', 'exports_numeriques', sessionId);
+    if (!fs.existsSync(folder)) throw new Error('Les fichiers Excel ne sont pas encore disponibles.');
+    const error = await shell.openPath(folder);
+    if (error) throw new Error(error);
+    return true;
+  });
   const projectStore = createProjectStore(path.join(app.getPath('userData'), 'projects'));
   ipcMain.on('project-store', (event, operation, payload) => {
     try {
@@ -412,6 +431,16 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => {
-  if (backend && !backend.killed) backend.kill();
+let backendShutdownStarted = false;
+let backendShutdownComplete = false;
+app.on('before-quit', event => {
+  if (backendShutdownComplete || !backend || backend.killed) return;
+  event.preventDefault();
+  if (backendShutdownStarted) return;
+  backendShutdownStarted = true;
+  callBackend({operation: 'shutdown'}).catch(error => console.error('Sauvegarde de fermeture :', error)).finally(() => {
+    backendShutdownComplete = true;
+    if (backend && !backend.killed) backend.kill();
+    app.quit();
+  });
 });

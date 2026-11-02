@@ -31,11 +31,26 @@ for (const mode of ['DM1', 'DM2', 'Customer Mode']) {
         [currentKey]: { '2_Modified': '20', 'custom:added': '7,5' },
         [matrixKey]: { '1_1.0 jour': 0, '2_1,0 jours': 1, '0_1,0 jours': 1, '0_0,3 jours': 0 }
     };
-    const storage = { getItem: key => key in values ? JSON.stringify(values[key]) : null };
     if (mode === 'Customer Mode') {
-        // Customer fields are mA; legacy source fallback values remain µA.
         values[currentKey]['2_Modified'] = '0,02';
         values[currentKey]['custom:added'] = '0,0075';
+    }
+    const storage = {
+        getItem: key => key in values
+            ? (key.endsWith('Unit') ? values[key] : JSON.stringify(values[key]))
+            : null,
+        setItem: (key, value) => {
+            try { values[key] = JSON.parse(value); }
+            catch { values[key] = value; }
+        }
+    };
+    calculator.migrateEditorCurrentsToMicroamps(storage, mode);
+    if (mode === 'Customer Mode') {
+        assert.equal(JSON.parse(storage.getItem(currentKey))['2_Modified'], 20);
+        assert.equal(JSON.parse(storage.getItem(currentKey))['custom:added'], 7.5);
+        assert.equal(calculator.sourceCurrentMicroamps({ 'CM Current (mA)': 0.21 }, mode), 210);
+    } else {
+        assert.equal(calculator.sourceCurrentMicroamps({ [`${mode} Current (mA)`]: 210 }, mode), 210);
     }
     const result = calculator.calculate(mode, storage);
     assert.equal(result.instantaneousUa, 42.5, mode);
@@ -48,8 +63,9 @@ for (const mode of ['DM1', 'DM2', 'Customer Mode']) {
     assert.equal(calculator.calculate(mode, storage).dailyAh, 0);
     values.customDarkDevices = [{ id: 'large', current: mode === 'Customer Mode' ? 2 : 2000 }];
     const largeCurrent = calculator.calculate(mode, storage);
-    assert.equal(largeCurrent.instantaneousUa, 2000);
-    assert.equal(largeCurrent.dailyAh, 0.048);
+    const expectedCurrent = mode === 'Customer Mode' ? 2 : 2000;
+    assert.equal(largeCurrent.instantaneousUa, expectedCurrent);
+    assert.equal(largeCurrent.dailyAh, expectedCurrent * 24 / 1000000);
     context.sessionStorage = storage;
     context.SleepCurrent = calculator;
     context.batterySubMode = mode;
@@ -64,10 +80,21 @@ for (const mode of ['DM1', 'DM2', 'Customer Mode']) {
     ]) {
         vm.runInContext(resultsHtml.slice(resultsHtml.indexOf(`        function ${start}(`), resultsHtml.indexOf(`        function ${end}(`)), context);
     }
-    assert.equal(vm.runInContext("sleepValue('curr_veille_conso', 'baseLab')", context), mode === 'Customer Mode' ? '2 mA' : '2000 µA');
-    assert.equal(vm.runInContext("sleepValue('curr_veille', 'baseLab')", context), '0,048 Ah/j');
+    assert.equal(vm.runInContext("sleepValue('curr_veille_conso', 'baseLab')", context),
+        mode === 'Customer Mode' ? '0,002 mA' : '2000 µA');
+    assert.equal(vm.runInContext("sleepValue('curr_veille', 'baseLab')", context),
+        mode === 'Customer Mode' ? '0,000048 Ah/j' : '0,048 Ah/j');
 }
 console.log('DM1, DM2 et Customer : somme a 1 jour et conversion µA/Ah par jour validees.');
+
+for (const page of ['edit_dm_mode', 'edit_customer_mode']) {
+    const html = fs.readFileSync(path.join(__dirname, `../templates/${page}.html`), 'utf8');
+    assert.ok(html.includes('Current (µA)'), `${page} current column unit`);
+    assert.ok(html.includes("currentUnitSuffix.textContent = 'µA'"), `${page} current input unit`);
+}
+const editor = fs.readFileSync(path.join(__dirname, '../static/battery_mode_editor.js'), 'utf8');
+assert.ok(editor.includes("unitField(input, 'µA')"));
+assert.ok(editor.includes('<span class="battery-unit-suffix">µA</span>'));
 
 {
     const reference = require('./fixtures/customer_sleep_reference.json');
@@ -75,9 +102,19 @@ console.log('DM1, DM2 et Customer : somme a 1 jour et conversion µA/Ah par jour
         excelData: { 'ECU List': { data: reference.rows.map(row => ({
             'ECU Name': row.name, 'CM Current (mA)': row.currentUa / 1000
         })) } },
+        modifiedCustomerCurrentsUnit: 'uA',
+        customDarkDevicesCurrentUnit: 'uA',
         customerModeMatrix: Object.fromEntries(reference.rows.map((row, index) => [`${index}_1,0 jours`, row.oneDay]))
     };
-    const storage = { getItem: key => key in values ? JSON.stringify(values[key]) : null };
+    const storage = {
+        getItem: key => key in values
+            ? (key.endsWith('Unit') ? values[key] : JSON.stringify(values[key]))
+            : null,
+        setItem: (key, value) => {
+            try { values[key] = JSON.parse(value); }
+            catch { values[key] = value; }
+        }
+    };
     const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
     const result = calculator.calculate('Customer Mode', storage);
     near(result.instantaneousUa, reference.expectedUa);
@@ -87,7 +124,7 @@ console.log('DM1, DM2 et Customer : somme a 1 jour et conversion µA/Ah par jour
         'ECU Name': row.name, 'Current (A)': row.currentUa
     }));
     near(calculator.calculate('Customer Mode', storage).dailyAh, reference.expectedDailyAh);
-    values.modifiedCustomerCurrents = { [`0_${reference.rows[0].name}`]: '0,42' };
+    values.modifiedCustomerCurrents = { [`0_${reference.rows[0].name}`]: '420' };
     near(calculator.calculate('Customer Mode', storage).instantaneousUa, reference.expectedUa + 210);
     console.log('Consoveille Customer!E88:E89: 3.0482 mA -> 0.0731568 Ah/j verified from Customer Mode!M54:M55.');
 }

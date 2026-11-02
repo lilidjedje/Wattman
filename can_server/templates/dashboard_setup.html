@@ -6,8 +6,9 @@
     <title>Préparer le dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <style>.dashboard-setup [hidden] { display: none !important; }</style>
 </head>
-<body>
+<body class="dashboard-setup">
     <header class="workstation-header">
         <a class="button secondary" href="{{ back_url }}">{{ back_label }}</a>
         <div>
@@ -31,7 +32,7 @@
         </section>
 
         <section class="panel setup-panel" id="configurationPanel" hidden>
-            <div class="panel-title"><h2>2. Canaux, température et ECU inclus dans la mesure</h2></div>
+            <div class="panel-title"><h2 id="configurationTitle">2. Paramètres de l’analyse</h2></div>
             <form id="setupForm" class="form-grid">
                 <fieldset class="field channel-config">
                     <legend>Canaux à visualiser dans le dashboard</legend>
@@ -66,6 +67,20 @@
                     </div>
                     <small id="dayRangeHelp">Les profils 0/1 des ECU seront appliqués uniquement sur cette plage.</small>
                 </fieldset>
+                <label class="field" id="feedingDurationField" hidden>Durée du biberonnage à analyser
+                    <select id="feedingDays">
+                        <option value="30">Biberonnage 30 jours</option>
+                        <option value="90">Biberonnage 90 jours</option>
+                    </select>
+                </label>
+                <fieldset class="field channel-config" id="minuteRangeField" hidden>
+                    <legend>Durée de la mesure à analyser</legend>
+                    <div class="inline-fields">
+                        <label>De (minutes)<input id="startMinute" type="number" min="0" step="any" value="{{ initial_analysis.get('start_minute') or 0 }}"></label>
+                        <label>À (minutes)<input id="endMinute" type="number" min="0" step="any" value="{{ initial_analysis.get('end_minute') if initial_analysis.get('end_minute') is not none else '' }}" placeholder="Fin de la mesure"></label>
+                    </div>
+                    <small id="minuteRangeHelp">Temps écoulé depuis le début de l’enregistrement. Vous pouvez dépasser la durée enregistrée : les minutes absentes seront signalées.</small>
+                </fieldset>
                 <label class="field" id="feedingAnalysisField" hidden>Biberonnage à analyser
                     <select id="feedingAnalysis"></select>
                     <small>Le nom et les paramètres batterie de cette analyse apparaîtront dans le dashboard.</small>
@@ -91,6 +106,8 @@
 
     <script>
         const theory = {{ theory|tojson }};
+        const measurementDuration = {{ measurement_duration_s|tojson }};
+        const initialAnalysis = {{ initial_analysis|tojson }};
         const query = new URLSearchParams(location.search);
         let sessionId = query.get('session_id') || '';
         let activeMode = '';
@@ -151,9 +168,29 @@
             const isFeeding = activeMode === 'biberonnage';
             const usesTemperature = ['dcdc', 'wltc'].includes(activeMode);
             const temperature = document.getElementById('temperature');
+            document.getElementById('configurationTitle').textContent = isAutonomy
+                ? '2. Canaux, plage de jours et ECU inclus dans la mesure'
+                : usesTemperature ? '2. Canaux, température, durée et ECU inclus dans la mesure'
+                : '2. Canaux, biberonnage et ECU inclus dans la mesure';
             document.getElementById('temperatureField').hidden = !usesTemperature;
             document.getElementById('dayRangeField').hidden = !isAutonomy;
+            document.getElementById('feedingDurationField').hidden = !isFeeding;
+            if (isFeeding) {
+                const initialDuration = Number(initialAnalysis.biberonnage_days);
+                document.getElementById('feedingDays').value =
+                    [30, 90].includes(initialDuration) ? String(initialDuration) : '30';
+            }
             document.getElementById('feedingAnalysisField').hidden = !isFeeding;
+            document.getElementById('feedingAnalysis').disabled = !isFeeding;
+            if (!isFeeding) document.getElementById('feedingAnalysis').replaceChildren();
+            document.getElementById('minuteRangeField').hidden = !usesTemperature;
+            ['startMinute', 'endMinute'].forEach(id => {
+                document.getElementById(id).disabled = !usesTemperature;
+            });
+            if (usesTemperature) {
+                document.getElementById('minuteRangeHelp').textContent =
+                    `Temps écoulé depuis le début de l’enregistrement${measurementDuration > 0 ? ` · durée disponible : ${(measurementDuration / 60).toLocaleString('fr-FR', {maximumFractionDigits: 4})} min` : ''}. Fin vide : jusqu’à la fin de la mesure. Vous pouvez choisir une fin plus tardive : les minutes absentes seront signalées, séparément pour chaque canal.`;
+            }
             temperature.disabled = !usesTemperature;
             temperature.required = usesTemperature;
             if (isFeeding) {
@@ -226,6 +263,13 @@
                 return;
             }
             try {
+                if (['dcdc', 'wltc'].includes(activeMode)) {
+                    const start = Number(document.getElementById('startMinute').value);
+                    const end = document.getElementById('endMinute').value;
+                    if (start < 0 || (end !== '' && Number(end) <= start)) {
+                        throw new Error('La minute de fin doit être supérieure à la minute de départ.');
+                    }
+                }
                 message.textContent = 'Préparation du calcul…';
                 message.className = 'message';
                 const id = await resolveSession();
@@ -240,6 +284,10 @@
                             ? null : Number(document.getElementById('temperature').value),
                         start_day: Number(document.getElementById('startDay').value),
                         end_day: Number(document.getElementById('endDay').value),
+                        biberonnage_days: activeMode === 'biberonnage'
+                            ? Number(document.getElementById('feedingDays').value) : null,
+                        start_minute: ['dcdc', 'wltc'].includes(activeMode) ? Number(document.getElementById('startMinute').value) : null,
+                        end_minute: ['dcdc', 'wltc'].includes(activeMode) && document.getElementById('endMinute').value !== '' ? Number(document.getElementById('endMinute').value) : null,
                         biberonnage_id: activeMode === 'biberonnage'
                             ? document.getElementById('feedingAnalysis').value : null,
                         device_ids: deviceIds,

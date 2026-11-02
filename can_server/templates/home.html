@@ -25,7 +25,11 @@
 
         <section class="panel measurement-mode-selector">
             <div class="panel-title"><h2>Sélectionnez le mode de mesure</h2></div>
-            <p class="form-intro">Ce choix s’applique à l’acquisition et au bouton Dashboard.</p>
+            <p class="form-intro">
+                Pour démarrer une nouvelle acquisition, connectez l’ordinateur au réseau Wi-Fi <strong>esp32_mesure</strong>, puis choisissez le type de mesure.
+                Les paramètres de fréquence, de durée et de canaux se règlent dans l’application avant de démarrer.
+                Les dashboards et les mesures enregistrées restent accessibles hors ligne, sans ESP32-C3 ni écran OLED.
+            </p>
             <div class="mode-selector-buttons">
                 <button type="button" class="mode-selector-button" data-measurement-mode="digital">
                     <strong>Mesure numérique</strong>
@@ -49,61 +53,33 @@
             <article class="module-card">
                 <span class="module-index">MODULE 02 / EXPLOITATION</span>
                 <h2>Dashboard</h2>
-                <p id="dashboardDescription">Le dashboard utilisera la source sélectionnée ci-dessus.</p>
-                <a class="button disabled-link" id="dashboardButton" href="#" aria-disabled="true">Ouvrir le dashboard</a>
+                <p id="dashboardDescription">Consultez toutes les mesures CAN et numériques enregistrées, sans connexion à l’ESP32-C3 ni à l’écran OLED.</p>
+                <a class="button" id="dashboardButton" href="{{ url_for('dashboard_entry') }}">Ouvrir le dashboard</a>
             </article>
         </section>
 
-        <section class="panel dashboard-history">
+        <section class="panel dashboard-history" id="dashboardHistory">
             <div class="panel-title">
                 <div>
                     <p class="eyebrow">ARCHIVES CONSERVÉES</p>
-                    <h2>Historique des dashboards enregistrés</h2>
+                    <h2>Historique des dashboards enregistrés — {{ theory.project.name if theory.project else 'projet actif' }}</h2>
                 </div>
                 <span>{{ dashboard_history|length }} dashboard{{ 's' if dashboard_history|length != 1 else '' }}</span>
             </div>
             {% if dashboard_history %}
-            <div class="history-source-section">
-                <div class="history-source-heading">
-                    <h3>Dashboards en valeurs numériques</h3>
-                    <span>{{ digital_dashboard_history|length }} enregistré{{ 's' if digital_dashboard_history|length != 1 else '' }}</span>
-                </div>
-                {% if digital_dashboard_history %}
-                <div class="history-grid">
-                    {% for item in digital_dashboard_history %}
-                    <a class="history-card history-digital" href="{{ url_for('dashboard', session_id=item.id) }}">
-                        <strong>{{ item.dashboard_name }}</strong>
-                        <span>{{ (item.analysis or {}).get('label', 'Analyse de mesure') }}</span>
-                        <small>Valeurs numériques · Enregistré le {{ (item.dashboard_saved_at or '')[:16]|replace('T', ' à ') }}</small>
-                    </a>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-notice">Aucun dashboard numérique enregistré.</div>
-                {% endif %}
-            </div>
-            <div class="history-source-section">
-                <div class="history-source-heading">
-                    <h3>Dashboards issus du CAN</h3>
-                    <span>{{ can_dashboard_history|length }} enregistré{{ 's' if can_dashboard_history|length != 1 else '' }}</span>
-                </div>
-                {% if can_dashboard_history %}
-                <div class="history-grid">
-                    {% for item in can_dashboard_history %}
-                    <a class="history-card history-can" href="{{ url_for('dashboard', session_id=item.id) }}">
-                        <strong>{{ item.dashboard_name }}</strong>
-                        <span>{{ (item.analysis or {}).get('label', 'Analyse de mesure') }}</span>
-                        <small>Mesure CAN · Enregistré le {{ (item.dashboard_saved_at or '')[:16]|replace('T', ' à ') }}</small>
-                    </a>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-notice">Aucun dashboard CAN enregistré.</div>
-                {% endif %}
+            <div class="history-grid">
+                {% for item in dashboard_history %}
+                <a class="history-card {{ 'history-can' if item.source == 'can' else 'history-digital' }}"
+                   href="{{ url_for('dashboard_import' if item.view == 'explorer' else 'dashboard', saved_dashboard_id=item.saved_dashboard_id) if item.saved_dashboard_id else url_for('dashboard', session_id=item.session_id) }}">
+                    <strong>{{ item.dashboard_name }}</strong>
+                    <span>{{ (item.analysis or {}).get('label', (item.analysis or {}).get('type', 'Dashboard de mesure')) }}</span>
+                    <small>{{ 'Base complète' if item.source == 'database' else ('Mesure CAN' if item.source == 'can' else 'Valeurs numériques') }} · {{ item.project_name or 'Projet actif' }} · Enregistré le {{ (item.saved_at or '')[:16]|replace('T', ' à ') }}</small>
+                </a>
+                {% endfor %}
             </div>
             {% else %}
             <div class="empty-notice">
-                Aucun dashboard enregistré. Les mesures temporaires seront supprimées au démarrage de la prochaine acquisition ou du prochain import CAN.
+                Aucun dashboard enregistré pour ce projet. Ouvrez un dashboard de mesure et utilisez « Enregistrer le dashboard » pour l’ajouter à cet historique.
             </div>
             {% endif %}
         </section>
@@ -113,39 +89,45 @@
             digital: {{ url_for('measurement', mode='digital')|tojson }},
             can: {{ url_for('measurement', mode='can')|tojson }}
         };
-        const dashboardUrls = {
-            digital: {{ url_for('dashboard_entry', mode='digital')|tojson }},
-            can: {{ url_for('dashboard_entry', mode='can')|tojson }}
-        };
+        const oledDisplayUrl = {{ url_for('esp_display')|tojson }};
         const acquisitionButton = document.getElementById('acquisitionButton');
         const dashboardButton = document.getElementById('dashboardButton');
         const modeMessage = document.getElementById('modeMessage');
 
-        function selectMeasurementMode(mode) {
+        async function sendOledState(state) {
+            try {
+                const response = await fetch(oledDisplayUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({state})
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Écran OLED indisponible.');
+            } catch (error) {
+                modeMessage.textContent = 'Écran OLED indisponible. Vous pouvez consulter les dashboards et les mesures enregistrées sans matériel connecté.';
+                modeMessage.className = 'message';
+            }
+        }
+
+        function selectMeasurementMode(mode, notifyOled = true) {
             sessionStorage.setItem('measurementSourceMode', mode);
             document.querySelectorAll('[data-measurement-mode]').forEach(button => {
                 button.classList.toggle('selected', button.dataset.measurementMode === mode);
             });
-            [acquisitionButton, dashboardButton].forEach(button => {
-                button.classList.remove('disabled-link');
-                button.removeAttribute('aria-disabled');
-            });
+            acquisitionButton.classList.remove('disabled-link');
+            acquisitionButton.removeAttribute('aria-disabled');
             acquisitionButton.href = measurementUrls[mode];
-            dashboardButton.href = dashboardUrls[mode];
+            if (notifyOled) sendOledState(mode === 'digital' ? 'digital_selected' : 'can_selected');
             if (mode === 'digital') {
-                modeMessage.textContent = 'Mode numérique sélectionné : les mesures ESP32-C3 seront enregistrées directement, sans CAN ni fichier ASC.';
+                modeMessage.textContent = 'Mode Numérique sélectionné : paramétrez la fréquence, la durée et les canaux dans l’application, puis démarrez la mesure pour afficher les courants INA226 en direct.';
                 modeMessage.className = 'message ok';
                 document.getElementById('acquisitionDescription').textContent =
                     'Acquérir directement les valeurs INA226 de l’ESP32-C3 et les enregistrer dans la base locale.';
-                document.getElementById('dashboardDescription').textContent =
-                    'Ouvrir directement les choix du dashboard avec la dernière mesure numérique enregistrée.';
             } else {
-                modeMessage.textContent = 'Mode CAN sélectionné : les mesures seront émises sur le bus CAN et exploitées depuis un fichier CANalyzer ASC.';
+                modeMessage.textContent = 'Mode CAN sélectionné : paramétrez la fréquence, la durée et les canaux dans l’application, puis activez l’enregistrement dans CANalyzer avant de démarrer.';
                 modeMessage.className = 'message ok';
                 document.getElementById('acquisitionDescription').textContent =
                     'Émettre les valeurs INA226 sur le bus CAN afin de les visualiser et de les enregistrer dans CANalyzer.';
-                document.getElementById('dashboardDescription').textContent =
-                    'Ouvrir la page de gestion et de décodage des fichiers ASC.';
             }
         }
 
@@ -153,7 +135,8 @@
             button.addEventListener('click', () => selectMeasurementMode(button.dataset.measurementMode));
         });
         const savedMode = sessionStorage.getItem('measurementSourceMode');
-        if (savedMode === 'digital' || savedMode === 'can') selectMeasurementMode(savedMode);
+        if (savedMode === 'digital' || savedMode === 'can') selectMeasurementMode(savedMode, false);
+        sendOledState('welcome');
     </script>
 </body>
 </html>

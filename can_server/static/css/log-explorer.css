@@ -1,0 +1,70 @@
+.can-import-page [hidden] { display: none !important; }
+.can-import-page .workstation-main { max-width: 1500px; }
+.can-import-page .import-layout { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); }
+.can-import-page .source-list { max-height: 140px; overflow: auto; overflow-wrap: anywhere; }
+.can-import-page .database-channel-summary { padding: 12px 16px; margin: 12px 0; border: 1px solid #dce4ef; border-radius: 10px; background: #f8faff; }
+.can-import-page .database-channel-summary h3 { margin: 0 0 10px; }
+.can-import-page .database-channel-summary > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: .85rem; }
+.can-import-page .database-channel-summary strong { display: block; font-size: 1.1rem; margin-top: 4px; }
+.can-import-page .source-list { background: #f8faff; color: #52647b; border: 1px solid #dce4ef; border-radius: 8px; font: .85rem/1.6 'Segoe UI', sans-serif; }
+.can-import-page .asc-drop-zone { background: #f4f8ff; color: #344966; border: 2px dashed #adc4e8; border-radius: 12px; min-height: 180px; }
+.can-import-page .asc-drop-zone:hover, .can-import-page .asc-drop-zone.dragging { background: #eaf1ff; border-color: #2563eb; }
+.can-import-page .explorer-badge { font-family: 'Segoe UI', system-ui, sans-serif; }
+.can-import-page .panel-title { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.can-import-page .panel-title h2 { font-size: 1.25rem; }
+.can-import-page .decode-overview { display: grid; grid-template-columns: .85fr 1fr 1fr; gap: 16px; margin: 24px 0 12px; }
+.can-import-page .decode-total, .can-import-page .decode-channel { padding: 20px; border: 1px solid #dce4ef; border-radius: 12px; background: #f8faff; }
+.can-import-page .decode-total { display: flex; flex-direction: column; gap: 6px; }
+.can-import-page .decode-total > strong { font-size: 2rem; color: #1d4ed8; }
+.can-import-page .decode-channel h3 { font-size: 1rem; margin: 0 0 18px; }
+.can-import-page .decode-channel > div { display: flex; justify-content: space-between; gap: 12px; }
+.can-import-page .decode-channel strong { display: block; margin-top: 5px; font-size: 1.25rem; }
+.can-import-page .decode-channel > div > span { color: #52647b; font-size: .85rem; }
+.can-import-page .channel-tag { display: inline-block; border-radius: 6px; padding: 3px 9px; white-space: nowrap; font-weight: 650; font-size: .85rem; }
+.can-import-page .channel-A { background: #e9f0ff; color: #1d4ed8 !important; }
+.can-import-page .channel-B { background: #fff0df; color: #99420a !important; }
+.can-import-page .explorer-badge { background: #edf3ff; border-radius: 20px; padding: 5px 12px; font-size: .8rem; }
+.can-import-page .explorer-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 18px 0; }
+.can-import-page .explorer-filters label, .can-import-page .explorer-actions > label:not(.explorer-check) { display: flex; flex-direction: column; gap: 7px; font-size: .88rem; font-weight: 600; }
+.can-import-page .log-explorer input:not([type=checkbox]), .can-import-page .log-explorer select { width: 100%; min-width: 0; height: 44px; padding: 8px 10px; border: 1px solid #c7d3e3; border-radius: 7px; background: white; color: #172b4d; }
+.can-import-page .log-explorer input:focus, .can-import-page .log-explorer select:focus { outline: 2px solid #2563eb; outline-offset: 2px; }
+.can-import-page .filter-details { border: 1px solid #dce4ef; background: #f8faff; border-radius: 10px; padding: 14px 18px; }
+.can-import-page .filter-details summary { cursor: pointer; font-weight: 650; }
+.can-import-page .filter-details summary small { font-weight: 400; margin-left: 8px; }
+.can-import-page .filter-hint { display: block; color: #52647b !important; font-size: .85rem; margin: 12px 0; line-height: 1.65; }
+.can-import-page .explorer-check { display: flex; align-items: center; gap: 9px; font-size: .9rem; }
+.can-import-page .explorer-check input { width: 18px; height: 18px; accent-color: #2563eb; }
+.can-import-page .explorer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 20px; }
+.can-import-page .explorer-actions > label:last-child { margin-left: auto; }
+.can-import-page #logSearchStatus { padding: 12px 15px; border-radius: 8px; background: #eff4fc; color: #344966; min-height: 48px; }
+.can-import-page .report-table { width: 100%; font-family: 'Segoe UI', system-ui, sans-serif; font-size: .88rem; border-collapse: separate; border-spacing: 0; border: 1px solid #dce4ef; border-radius: 9px; overflow: hidden; }
+.can-import-page .report-table th { background: #edf2f9; color: #344966; font-weight: 650; padding: 12px 14px; border: 0; border-bottom: 1px solid #dce4ef; text-align: left; }
+.can-import-page .report-table td { padding: 11px 14px; background: white; color: #1e293b; border: 0; border-bottom: 1px solid #e9eef5; overflow-wrap: anywhere; }
+.can-import-page .report-table tr:nth-child(even) td { background: #f8faff; }
+.can-import-page .report-table tr:hover td { background: #edf4ff; }
+.can-import-page .explorer-table-wrap { max-height: 520px; overflow: auto; }
+.can-import-page .explorer-table th { position: sticky; top: 0; z-index: 1; }
+.can-import-page .explorer-table { min-width: 740px; }
+.can-import-page .timestamp-cell, .can-import-page .current-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.can-import-page .file-period { display: block; color: #52647b; margin-top: 4px; font-size: .78rem; }
+.can-import-page .timestamp-warning { display: block; color: #99420a; margin-top: 4px; }
+.can-import-page .current-cell { font-weight: 600; }
+.can-import-page .report-table td.empty-results { text-align: center; padding: 32px; color: #52647b; }
+.can-import-page .explorer-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; margin-top: 18px; }
+.can-import-page .explorer-page-jump { display: flex; align-items: center; gap: 8px; margin: 0; max-width: 100%; }
+.can-import-page .explorer-page-jump label { margin: 0; }
+.can-import-page .log-explorer .explorer-page-jump input[type=number] { width: 100px; flex: 0 0 100px; box-sizing: border-box; }
+.can-import-page .explorer-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 18px 0; }
+.can-import-page .explorer-chart { border: 1px solid #dce4ef; border-radius: 10px; padding: 16px; background: white; }
+.can-import-page .explorer-chart h3 { margin: 0 0 14px; font-size: 1rem; }
+.can-import-page .explorer-canvas { height: 310px; position: relative; }
+@media (max-width: 1100px) {
+    .can-import-page .explorer-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .can-import-page .decode-overview { grid-template-columns: 1fr 1fr; }
+    .can-import-page .decode-total { grid-column: 1 / -1; }
+    .can-import-page .explorer-charts { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+    .can-import-page .import-layout, .can-import-page .decode-overview, .can-import-page .explorer-filters { grid-template-columns: 1fr; }
+    .can-import-page .explorer-actions > label:last-child { margin-left: 0; }
+}

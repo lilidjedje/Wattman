@@ -44,8 +44,36 @@ def init_db():
         )
     ''')
     
+    cursor.execute('CREATE TABLE IF NOT EXISTS imported_can_files (source_file TEXT PRIMARY KEY, filename TEXT NOT NULL)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS saved_dashboards (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            project_name TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            dashboard_name TEXT NOT NULL,
+            source TEXT NOT NULL,
+            saved_at TEXT NOT NULL,
+            source_files_json TEXT NOT NULL,
+            analysis_json TEXT NOT NULL,
+            report_json TEXT NOT NULL
+        )
+    ''')
+    columns = {row[1] for row in cursor.execute('PRAGMA table_info(saved_dashboards)')}
+    for name, kind in [('database_snapshot', 'BLOB'), ('view_json', "TEXT NOT NULL DEFAULT '{}'")]:
+        if name not in columns:
+            cursor.execute(f'ALTER TABLE saved_dashboards ADD COLUMN {name} {kind}')
+
+    cursor.execute(
+        'CREATE INDEX IF NOT EXISTS idx_saved_dashboards_project '
+        'ON saved_dashboards(project_id, saved_at)'
+    )
+
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_current ON measurements(current_A)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_ts ON measurements(timestamp)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_ts ON measurements(channel, timestamp)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_source_ts ON measurements(source_file, timestamp)')
     
     conn.commit()
     conn.close()

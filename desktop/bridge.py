@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import traceback
+from contextlib import ExitStack
 
 
 def resource_root():
@@ -51,13 +52,41 @@ def main():
                 if key.lower() not in {"host", "content-length", "connection"}
             }
             payload = base64.b64decode(command.get("body") or "")
-            response = client.open(
-                command.get("path") or "/",
-                method=command.get("method") or "GET",
-                headers=headers,
-                data=payload,
-                follow_redirects=False,
-            )
+            if command.get('operation') == 'shutdown':
+                module = engineering_app.can_server_module
+                try:
+                    if module.active_measurement.get('status') == 'running':
+                        status = module.esp32_request('POST', '/api/acquisition/stop', {'sensor':'ALL'})
+                        module.reconcile_active_measurement(status)
+                except Exception:
+                    pass
+                module.can_collector.stop()
+                if module.active_measurement.get('acquisition_mode') == 'digital':
+                    module.active_measurement['status'] = 'stopped'
+                    module.synchronize_digital_samples(module.active_measurement)
+                    module.save_measurement_session(dict(module.active_measurement))
+                from digital_excel import finish_exports
+                finish_exports()
+                response = Response('{"status":"saved"}', mimetype='application/json')
+            elif command.get('operation') == 'import-can-files':
+                # Native desktop import: stream files from disk rather than
+                # duplicating multi-gigabyte multipart bodies in JS/base64/JSON.
+                from werkzeug.datastructures import FileStorage
+                paths = command.get('paths') or []
+                if not paths or any(not os.path.isabs(p) or not p.lower().endswith('.asc') for p in paths):
+                    raise ValueError('Fichiers ASC locaux invalides.')
+                module = engineering_app.can_server_module
+                with ExitStack() as stack, module.app.test_request_context('/api/upload_and_ingest_measures', method='POST', environ_overrides={'SCRIPT_NAME': '/analyse_logs'}):
+                    files = [FileStorage(stream=stack.enter_context(open(p, 'rb')), filename=os.path.basename(p)) for p in paths]
+                    response = module.app.make_response(module.upload_and_ingest_measures(files))
+            else:
+                response = client.open(
+                    command.get("path") or "/",
+                    method=command.get("method") or "GET",
+                    headers=headers,
+                    data=payload,
+                    follow_redirects=False,
+                )
             result = {
                 "id": request_id,
                 "ok": True,

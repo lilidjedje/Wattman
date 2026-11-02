@@ -161,7 +161,7 @@ void taskAcq(void* parameter) {
     if (sensorRunningA) {
       acqCountA++;
       int16_t rawA = readINA226ShuntRaw(ADDR_INA_A);
-      float IA = rawA * 2.5e-6f / 0.1f;
+      float IA = rawA * 2.5e-6f / 0.010f; // INA A: R010 (10 mOhm)
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &IA, sizeof(float));
       if (!sendCanFrame(CAN_ID_CURRENT_A, 4, canPacket)) lostCountA++;
@@ -170,7 +170,7 @@ void taskAcq(void* parameter) {
     if (sensorRunningB) {
       acqCountB++;
       int16_t rawB = readINA226ShuntRaw(ADDR_INA_B);
-      float IB = rawB * 2.5e-6f / 0.1f;
+      float IB = rawB * 2.5e-6f / 0.100f; // INA B: R100 (100 mOhm)
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &IB, sizeof(float));
       if (!sendCanFrame(CAN_ID_CURRENT_B, 4, canPacket)) lostCountB++;

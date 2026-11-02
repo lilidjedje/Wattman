@@ -73,7 +73,15 @@ const storeValues = {
     excelData: { 'Device List': { data: [{ 'Device Name': 'ECU', 'CM Current (mA)': 2 }] } },
     customerModeMatrix: { '0_1,0 jours': 1, '0_2,0 jours': 0, '0_90,0 jours': 1 }
 };
-const storage = { getItem: key => key in storeValues ? JSON.stringify(storeValues[key]) : null };
+const storage = {
+    getItem: key => key in storeValues
+        ? (key.endsWith('Unit') ? storeValues[key] : JSON.stringify(storeValues[key]))
+        : null,
+    setItem: (key, value) => {
+        try { storeValues[key] = JSON.parse(value); }
+        catch { storeValues[key] = value; }
+    }
+};
 near(model.defaultValue({ rowIndex: 17 }, model.columns(90).find(col => col.key === 'day-2'), storage, 90), 0, 'day 2 profile');
 near(model.defaultValue({ rowIndex: 17 }, model.columns(90).find(col => col.key === 'day-90'), storage, 90), 2, 'day 90 profile');
 

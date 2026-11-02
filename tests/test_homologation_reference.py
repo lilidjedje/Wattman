@@ -12,18 +12,23 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 class HomologationReferenceTests(unittest.TestCase):
     def test_six_tables_match_sumproduct_with_large_currents(self):
         workbook = openpyxl.load_workbook(ROOT / 'DCDC - Test calcul.xlsx', data_only=True)
-        sheet = workbook.worksheets[2]
-        devices = []
-        for row in range(9, 85):
-            current = sheet.cell(row, 7).value
-            if not isinstance(current, (int, float)) or 'GMV REFROIDISSEMENT' in str(sheet.cell(row, 2).value):
-                continue
-            devices.append(dict(key=str(row), rowIndex=row, name=sheet.cell(row, 2).value,
-                                current=current, lower=sheet.cell(row, 5).value, upper=sheet.cell(row, 6).value))
+        devices_by_mode = {}
+        for mode, sheet_index, current_column, first, last in [('dcdc', 2, 7, 9, 84), ('wltc', 4, 9, 15, 86)]:
+            sheet = workbook.worksheets[sheet_index]
+            devices = []
+            for row in range(first, last + 1):
+                current = sheet.cell(row, current_column).value
+                if not isinstance(current, (int, float)) or 'GMV REFROIDISSEMENT' in str(sheet.cell(row, 2).value):
+                    continue
+                devices.append(dict(key=str(row), rowIndex=row, name=sheet.cell(row, 2).value,
+                                    current=current, lower=sheet.cell(row, 5).value, upper=sheet.cell(row, 6).value))
+            devices_by_mode[mode] = devices
         javascript = """
 const fs = require('fs');
 const vm = require('vm');
-const devices = JSON.parse(fs.readFileSync(0, 'utf8'));
+const fixtures = JSON.parse(fs.readFileSync(0, 'utf8'));
+const result = {};
+for (const [mode, devices] of Object.entries(fixtures)) {
 const storage = {homologationDevices: JSON.stringify(devices)};
 const context = vm.createContext({window: {}, sessionStorage: {
     getItem: key => storage[key] ?? null, setItem: (key, value) => {storage[key] = value;}
@@ -32,17 +37,17 @@ vm.runInContext(fs.readFileSync('static/homologation_defaults.js', 'utf8'), cont
 context.HomologationDefaults = context.window.HomologationDefaults;
 const html = fs.readFileSync('templates/synthesis.html', 'utf8');
 vm.runInContext(html.slice(html.indexOf('        const devTimeline'), html.indexOf('        function buildExcelExportDevices')), context);
-console.log(vm.runInContext('JSON.stringify(synthesisExportData)', context));
+result[mode] = JSON.parse(vm.runInContext('JSON.stringify(synthesisExportData)', context))[mode];
+}
+console.log(JSON.stringify(result));
 """
-        result = subprocess.run(['node', '-e', javascript], cwd=ROOT, input=json.dumps(devices),
+        result = subprocess.run(['node', '-e', javascript], cwd=ROOT, input=json.dumps(devices_by_mode),
                                 text=True, capture_output=True, check=True)
         actual = json.loads(result.stdout)
         midseason_start = actual['dcdc']['midseason'][:2]
         self.assertEqual([record['time'] for record in midseason_start], [0, 5])
-        for record in midseason_start:
-            self.assertAlmostEqual(record['base'], 1077.4, places=3)
-        self.assertEqual(midseason_start[0]['base'], midseason_start[1]['base'])
-        self.assertEqual(midseason_start[0]['upper'], midseason_start[1]['upper'])
+        # Compare to the actual workbook below: its first two mid-season
+        # intervals have different loads, so a shared hard-coded value is invalid.
         for mode, sheet_index, current_column, row_start, row_end, profiles in [
             ('dcdc', 2, 7, 9, 84, dict(winter=range(8, 13), midseason=range(14, 19), summer=range(20, 25))),
             ('wltc', 4, 9, 15, 86, dict(cycle1=range(10, 17), cycle2=range(18, 24), cycle3=range(25, 31))),

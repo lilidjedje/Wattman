@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, Response, redirect, url_for
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, abort
 import sqlite3
 import os
 import time
@@ -10,6 +10,7 @@ import socket
 import subprocess
 import threading
 import uuid
+import math
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -18,6 +19,9 @@ from database import get_db_connection, init_db
 from can_parser import iter_asc_stream_rows
 from sharepoint_sync import backup_to_sharepoint_local_mount
 from can_collector import TcpCanCollector
+from log_explorer import register_log_explorer
+from sizing_comparison import coverage_spans, compare_interval, missing_ranges
+from autonomy_analysis import build_autonomy
 
 
 
@@ -33,6 +37,33 @@ app.config["MAX_FORM_MEMORY_SIZE"] = THEORY_IMPORT_LIMIT
 # Les mesures numériques arrivent toujours directement de l'ESP32-C3 par Wi-Fi.
 # Le mode CAN est exploité séparément, par import des fichiers ASC.
 can_collector = TcpCanCollector()
+def archive_record(archive_id):
+    init_db()
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT * FROM saved_dashboards WHERE id = ? AND project_id = ?",
+                           (archive_id, project_scope(theory_snapshot().get("project", {})))).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        abort(404)
+    return row
+
+
+def explorer_connection():
+    archive_id = request.args.get("saved_dashboard_id")
+    if not archive_id:
+        return get_db_connection()
+    row = archive_record(archive_id)
+    if not row["database_snapshot"]:
+        abort(404)
+    conn = sqlite3.connect(":memory:")
+    conn.deserialize(row["database_snapshot"])
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+register_log_explorer(app, explorer_connection)
 
 
 def get_request_timestamps(start_key="start", end_key="end"):
@@ -119,7 +150,7 @@ def measurement_sessions():
 def save_measurement_session(session):
     sessions = [item for item in measurement_sessions() if item.get("id") != session.get("id")]
     sessions.insert(0, session)
-    write_json_file(SESSIONS_FILE, sessions[:100])
+    write_json_file(SESSIONS_FILE, sessions)
 
 
 def saved_dashboards():
@@ -128,71 +159,21 @@ def saved_dashboards():
         if session.get("dashboard_saved")
     ]
 
+def project_scope(project):
+    project = project if isinstance(project, dict) else {}
+    return str(project.get("id") or project.get("name") or "").strip()
+
 
 def dashboard_source(session):
+    if session.get("database_wide"):
+        return "database"
     source = str(session.get("dashboard_source") or session.get("acquisition_mode") or "").lower()
     return "can" if source == "can" or session.get("status") == "imported" else "digital"
 
 
 def discard_unsaved_sessions():
-    """Supprime les mesures temporaires tout en conservant l'historique explicite."""
-    sessions = measurement_sessions()
-    unsaved = [session for session in sessions if not session.get("dashboard_saved")]
-    if not unsaved:
-        return {"sessions": 0, "measurements": 0, "summaries": 0}
-
-    init_db()
-    conn = get_db_connection()
-    deleted_measurements = 0
-    deleted_summaries = 0
-    for session in unsaved:
-        source_files = [str(item) for item in (session.get("source_files") or []) if item]
-        if source_files:
-            placeholders = ",".join("?" for _ in source_files)
-            cursor = conn.execute(
-                f"DELETE FROM measurements WHERE source_file IN ({placeholders})",
-                source_files,
-            )
-            deleted_measurements += max(0, cursor.rowcount)
-            cursor = conn.execute(
-                f"DELETE FROM measurements_summary_1m WHERE source_file IN ({placeholders})",
-                source_files,
-            )
-            deleted_summaries += max(0, cursor.rowcount)
-            continue
-
-        start_ts = session.get("started_at")
-        end_ts = session.get("ended_at")
-        channels = [
-            channel for channel in (session.get("channels") or ["A", "B"])
-            if channel in ("A", "B")
-        ]
-        if start_ts is None or end_ts is None or not channels:
-            continue
-        placeholders = ",".join("?" for _ in channels)
-        parameters = [float(start_ts), float(end_ts), *channels]
-        cursor = conn.execute(
-            f"""DELETE FROM measurements
-                WHERE timestamp >= ? AND timestamp <= ?
-                AND channel IN ({placeholders})""",
-            parameters,
-        )
-        deleted_measurements += max(0, cursor.rowcount)
-        cursor = conn.execute(
-            f"""DELETE FROM measurements_summary_1m
-                WHERE timestamp_minute >= ? AND timestamp_minute <= ?
-                AND channel IN ({placeholders})""",
-            parameters,
-        )
-        deleted_summaries += max(0, cursor.rowcount)
-    conn.commit()
-    conn.close()
-    write_json_file(SESSIONS_FILE, saved_dashboards())
-    return {
-        "sessions": len(unsaved),
-        "measurements": deleted_measurements,
-        "summaries": deleted_summaries,
-    }
+    """Measurements remain in the local history until an explicit database reset."""
+    return {"sessions": 0, "measurements": 0, "summaries": 0}
 
 
 def find_theory_device(device_id):
@@ -201,17 +182,55 @@ def find_theory_device(device_id):
 
 @app.route("/")
 def index():
-    history = saved_dashboards()
+    project = theory_snapshot().get("project", {})
+    project_id = project_scope(project)
+    init_db()
+    conn = get_db_connection()
+    archives = conn.execute(
+        """SELECT id, project_name, session_id, dashboard_name, source, saved_at,
+                  analysis_json, view_json
+           FROM saved_dashboards
+           WHERE project_id = ?
+           ORDER BY saved_at DESC""",
+        (project_id,),
+    ).fetchall()
+    conn.close()
+    history = [
+        {
+            "saved_dashboard_id": row["id"],
+            "session_id": row["session_id"],
+            "project_name": row["project_name"],
+            "dashboard_name": row["dashboard_name"],
+            "source": row["source"],
+            "saved_at": row["saved_at"],
+            "analysis": json.loads(row["analysis_json"]),
+            "view": json.loads(row["view_json"]).get("kind", "analysis"),
+        }
+        for row in archives
+    ]
+    archived_session_ids = {row["session_id"] for row in archives}
+    for session in saved_dashboards():
+        session_project = session.get("project") or {}
+        session_project_id = str(
+            session.get("project_id") or project_scope(session_project)
+        )
+        if (
+            session_project_id == project_id
+            and session.get("id") not in archived_session_ids
+        ):
+            history.append({
+                "session_id": session["id"],
+                "project_name": session_project.get("name", ""),
+                "dashboard_name": session.get("dashboard_name", "Dashboard"),
+                "source": dashboard_source(session),
+                "saved_at": session.get("dashboard_saved_at", ""),
+                "analysis": session.get("analysis") or {},
+            })
+    history.sort(key=lambda item: item.get("saved_at", ""), reverse=True)
     return render_template(
         "home.html",
-        theory=theory_snapshot(),
+        theory={"project": project},
         dashboard_history=history,
-        digital_dashboard_history=[
-            item for item in history if dashboard_source(item) == "digital"
-        ],
-        can_dashboard_history=[
-            item for item in history if dashboard_source(item) == "can"
-        ],
     )
 
 
@@ -243,6 +262,10 @@ def save_dashboard():
     session_id = str(payload.get("session_id") or "").strip()
     sessions = measurement_sessions()
     session = next((item for item in sessions if item.get("id") == session_id), None)
+    explorer = payload.get("view") == "explorer"
+    if explorer:
+        session = database_measurement_session(theory_snapshot().get("project", {}), None)
+        session_id = (session or {}).get("id", "")
     if not session:
         return jsonify({"status": "error", "message": "Session de mesure introuvable."}), 404
     default_name = (
@@ -257,63 +280,107 @@ def save_dashboard():
 
     saved_at = datetime.now().isoformat(timespec="seconds")
     source = dashboard_source(session)
-    session["dashboard_saved"] = True
-    session["dashboard_name"] = name
-    session["dashboard_saved_at"] = saved_at
-    session["dashboard_source"] = source
-    with measurement_lock:
-        if active_measurement.get("id") == session_id:
-            active_measurement["dashboard_saved"] = True
-            active_measurement["dashboard_name"] = name
-            active_measurement["dashboard_saved_at"] = saved_at
-            active_measurement["dashboard_source"] = source
-    save_measurement_session(session)
+    project = session.get("project") or theory_snapshot().get("project", {})
+    project_id = str(session.get("project_id") or project_scope(project))
+    archive_id = uuid.uuid4().hex
+    report = {} if explorer else dashboard_report(session)
+    report["saved_dashboard"] = {
+        "id": archive_id,
+        "name": name,
+        "source": source,
+        "saved_at": saved_at,
+    }
+    report_json = json.dumps(report, ensure_ascii=False, allow_nan=False)
+    source_files_json = json.dumps(session.get("source_files") or [], ensure_ascii=False)
+    analysis_json = json.dumps(session.get("analysis") or {}, ensure_ascii=False)
+    init_db()
+    conn = get_db_connection()
+    # Copy raw rows, their original timestamps and indices in one SQLite read transaction.
+    frozen = sqlite3.connect(":memory:")
+    try:
+        conn.execute("BEGIN")
+        for table in ("measurements", "measurements_summary_1m", "imported_can_files"):
+            schema = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+            frozen.execute(schema)
+            rows = conn.execute(f'SELECT * FROM {table}')
+            placeholders = ','.join('?' for _ in rows.description)
+            while batch := rows.fetchmany(5000):
+                frozen.executemany(f'INSERT INTO {table} VALUES ({placeholders})', batch)
+        for row in conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='measurements' AND sql IS NOT NULL"):
+            frozen.execute(row[0])
+        frozen.commit()
+        database_snapshot = frozen.serialize()
+    finally:
+        frozen.close()
+    view_json = json.dumps({"kind": "explorer" if explorer else "analysis",
+                            "explorer": payload.get("explorer_state") or {},
+                            "theory": theory_snapshot(), "session": session,
+                            "project_sessions": [item for item in measurement_sessions()
+                                if str(item.get("project_id") or project_scope(item.get("project"))) == project_id]}, ensure_ascii=False, allow_nan=False)
+    conn.execute(
+        """INSERT INTO saved_dashboards
+           (id, project_id, project_name, session_id, dashboard_name, source,
+            saved_at, source_files_json, analysis_json, report_json, database_snapshot, view_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            archive_id,
+            project_id,
+            str(project.get("name") or ""),
+            session_id,
+            name,
+            source,
+            saved_at,
+            source_files_json,
+            analysis_json,
+            report_json,
+            database_snapshot,
+            view_json,
+        ),
+    )
+    conn.commit()
+    conn.close()
     return jsonify({
         "status": "success",
         "message": f"Dashboard « {name} » enregistré dans l’historique.",
         "dashboard": {
+            "id": archive_id,
             "session_id": session_id,
             "name": name,
             "saved_at": saved_at,
             "source": source,
-            "url": url_for("dashboard", session_id=session_id),
+            "url": url_for("dashboard_import" if explorer else "dashboard", saved_dashboard_id=archive_id),
         },
     })
 
 
 @app.route("/dashboard/open")
 def dashboard_entry():
-    acquisition_mode = request.args.get("mode", "").strip().lower()
-    if acquisition_mode == "can":
-        return redirect(url_for("dashboard_import"))
-    if acquisition_mode != "digital":
-        return redirect(url_for("index"))
-
-    session = next(
-        (
-            item for item in measurement_sessions()
-            if item.get("acquisition_mode") == "digital"
-            and item.get("status") in {"completed", "stopped"}
-        ),
-        None,
-    )
-    if not session:
-        return redirect(url_for("measurement", mode="digital", dashboard_missing="1"))
-    return redirect(url_for("dashboard_setup", session_id=session["id"]))
+    # Consultation of the local database never requires selecting hardware.
+    return redirect(url_for("dashboard_import"))
 
 
 @app.route("/dashboard/import")
 def dashboard_import():
-    return render_template("dashboard_import.html", theory=theory_snapshot())
+    archive_id = request.args.get("saved_dashboard_id")
+    archive = archive_record(archive_id) if archive_id else None
+    return render_template("dashboard_import.html", theory=theory_snapshot(),
+                           archive=({"id": archive["id"], "name": archive["dashboard_name"],
+                                     "saved_at": archive["saved_at"],
+                                     "state": json.loads(archive["view_json"]).get("explorer", {})} if archive else None))
 
 
 @app.route("/dashboard/setup")
 def dashboard_setup():
     session_id = request.args.get("session_id", "").strip()
-    session = next(
+    project = theory_snapshot().get("project", {})
+    prior_session = next(
         (item for item in measurement_sessions() if item.get("id") == session_id),
-        {},
+        None,
     )
+    if session_id == database_session_id(project):
+        session = database_measurement_session(project, prior_session) or {}
+    else:
+        session = prior_session or {}
     is_digital = session.get("acquisition_mode") == "digital"
     available_channels = [
         channel for channel in (session.get("channels") or ["A", "B"])
@@ -328,6 +395,8 @@ def dashboard_setup():
         theory=theory_snapshot(),
         available_channels=available_channels,
         selected_channels=selected_channels or available_channels,
+        measurement_duration_s=max(float(session.get('actual_duration_s') or 0), float(session.get('requested_duration_s') or 0)),
+        initial_analysis=session.get('analysis') or {},
         back_url=url_for("measurement", mode="digital") if is_digital else url_for("dashboard_import"),
         back_label="Retour à l’acquisition" if is_digital else "Retour aux logs CAN",
     )
@@ -357,6 +426,107 @@ def get_measurement_sessions():
     return jsonify({"sessions": measurement_sessions()})
 
 
+def recorded_duration(intervals):
+    """Count recorded file intervals once, excluding pauses between files."""
+    total = 0.0
+    end = None
+    for start, stop in sorted(intervals):
+        total += max(0, stop - max(start, end if end is not None else start))
+        end = max(end, stop) if end is not None else stop
+    return total
+
+
+def database_session_id(project):
+    project_id = project_scope(project) or "default"
+    return f"database-{uuid.uuid5(uuid.NAMESPACE_URL, project_id).hex}"
+
+
+def database_measurement_session(project, previous=None):
+    """Build the current project's dashboard context over the complete measurement DB."""
+    init_db()
+    conn = get_db_connection()
+    try:
+        bounds = conn.execute(
+            "SELECT MIN(timestamp) AS started_at, MAX(timestamp) AS ended_at FROM measurements"
+        ).fetchone()
+        if bounds["started_at"] is None:
+            return None
+
+        channels = []
+        channel_settings = {}
+        for row in conn.execute("""
+            SELECT channel, COUNT(*) AS samples,
+                   AVG(CASE WHEN frequency_Hz > 0 THEN frequency_Hz END) AS frequency
+            FROM measurements
+            WHERE channel IN ('A', 'B')
+            GROUP BY channel
+            ORDER BY channel
+        """):
+            channel = row["channel"]
+            channels.append(channel)
+            intervals = [
+                (item["started_at"], item["ended_at"])
+                for item in conn.execute("""
+                    SELECT MIN(timestamp) AS started_at, MAX(timestamp) AS ended_at
+                    FROM measurements
+                    WHERE channel = ?
+                    GROUP BY source_file
+                """, (channel,))
+            ]
+            actual_duration = recorded_duration(intervals)
+            frequency = round(row["frequency"]) if row["frequency"] is not None else 0
+            channel_settings[channel] = {
+                "requested_duration_s": actual_duration,
+                "actual_duration_s": actual_duration,
+                "requested_frequency_hz": frequency,
+                "actual_frequency_hz": frequency,
+                "measurements": row["samples"],
+                "running": False,
+                "finished": True,
+            }
+
+        source_files = [
+            row["source_file"]
+            for row in conn.execute("""
+                SELECT source_file FROM measurements
+                WHERE source_file IS NOT NULL AND source_file != ''
+                GROUP BY source_file ORDER BY MIN(timestamp)
+            """)
+        ]
+        frequency = conn.execute("""
+            SELECT AVG(frequency_Hz) FROM measurements WHERE frequency_Hz > 0
+        """).fetchone()[0]
+    finally:
+        conn.close()
+
+    project_id = project_scope(project)
+    session = dict(previous or {})
+    session.update({
+        "id": database_session_id(project),
+        "status": "imported",
+        "started_at": bounds["started_at"],
+        "ended_at": bounds["ended_at"],
+        "requested_duration_s": max(
+            (item["requested_duration_s"] for item in channel_settings.values()),
+            default=0,
+        ),
+        "actual_duration_s": max(
+            (item["actual_duration_s"] for item in channel_settings.values()),
+            default=0,
+        ),
+        "frequency_hz": round(frequency) if frequency is not None else 0,
+        "actual_frequency_hz": round(frequency) if frequency is not None else 0,
+        "channel_settings": channel_settings,
+        "channels": channels,
+        "source_files": source_files,
+        "acquisition_mode": "database",
+        "database_wide": True,
+        "project": project,
+        "project_id": project_id,
+    })
+    return session
+
+
 @app.route("/api/database_status")
 def database_status():
     init_db()
@@ -372,29 +542,54 @@ def database_status():
     sources = [
         item["source_file"]
         for item in conn.execute("""
-            SELECT DISTINCT source_file
+            SELECT source_file FROM imported_can_files
+            UNION SELECT DISTINCT source_file
             FROM measurements
             WHERE source_file IS NOT NULL AND source_file != ''
             ORDER BY source_file
         """).fetchall()
     ]
+    channel_settings = {}
+    for item in conn.execute('''
+        SELECT channel, COUNT(*) AS samples, MIN(timestamp) AS start,
+               MAX(timestamp) AS end,
+               AVG(CASE WHEN frequency_Hz > 0 THEN frequency_Hz END) AS frequency
+        FROM measurements GROUP BY channel
+    '''):
+        channel_settings[item['channel']] = {
+            'measurements': item['samples'],
+            'actual_duration_s': recorded_duration([
+                (part['start'], part['end']) for part in conn.execute(
+                    'SELECT MIN(timestamp) AS start, MAX(timestamp) AS end FROM measurements WHERE channel = ? GROUP BY source_file',
+                    (item['channel'],))
+            ]),
+            'actual_frequency_hz': round(item['frequency']) if item['frequency'] is not None else None,
+        }
     conn.close()
     sessions = measurement_sessions()
     latest_session = sessions[0] if sessions else None
+    active_project = theory_snapshot().get("project", {})
+    all_measurements_session = (
+        database_measurement_session(active_project)
+        if row["measurement_count"]
+        else None
+    )
     return jsonify({
         "measurement_count": int(row["measurement_count"] or 0),
-        "file_count": int(row["file_count"] or 0),
+        "file_count": len(sources),
         "started_at": row["started_at"],
         "ended_at": row["ended_at"],
         "duration_s": max(0, float(row["ended_at"] or 0) - float(row["started_at"] or 0)),
         "channel_count": int(row["channel_count"] or 0),
         "source_files": sources,
+        "channel_settings": channel_settings,
         "latest_session_id": latest_session.get("id") if latest_session else None,
         "dashboard_setup_url": (
-            url_for("dashboard_setup", session_id=latest_session["id"])
-            if latest_session and row["measurement_count"]
+            url_for("dashboard_setup", session_id=all_measurements_session["id"])
+            if all_measurements_session
             else None
         ),
+        "dashboard_scope": "database" if all_measurements_session else None,
     })
 
 
@@ -516,6 +711,9 @@ def configure_dashboard():
     sessions = measurement_sessions()
     session_id = str(payload.get("session_id") or "").strip()
     session = next((item for item in sessions if item.get("id") == session_id), None)
+    project = theory_snapshot().get("project", {})
+    if session_id == database_session_id(project):
+        session = database_measurement_session(project, session)
     if not session:
         return jsonify({"status": "error", "message": "Session de mesure introuvable."}), 404
     analysis_type = str(payload.get("analysis_type") or "").strip().lower()
@@ -526,6 +724,9 @@ def configure_dashboard():
     temperature_c = None
     start_day = None
     end_day = None
+    biberonnage_days = None
+    start_minute = None
+    end_minute = None
     if is_autonomy:
         maximum_day = 30 if analysis_type == "customer" else 90
         try:
@@ -538,6 +739,13 @@ def configure_dashboard():
                 "status": "error",
                 "message": f"La plage doit être comprise entre 0 et {maximum_day} jours, avec une fin supérieure au départ.",
             }), 400
+    elif analysis_type == "biberonnage":
+        try:
+            biberonnage_days = int(payload.get("biberonnage_days", 30))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "Choisissez un biberonnage de 30 ou 90 jours."}), 400
+        if biberonnage_days not in (30, 90):
+            return jsonify({"status": "error", "message": "La durée du biberonnage doit être de 30 ou 90 jours."}), 400
     elif uses_temperature:
         try:
             temperature_c = float(payload.get("temperature_c"))
@@ -545,6 +753,15 @@ def configure_dashboard():
             return jsonify({"status": "error", "message": "Renseignez une température valide."}), 400
         if not -50 <= temperature_c <= 80:
             return jsonify({"status": "error", "message": "La température doit être comprise entre -50 et 80 °C."}), 400
+        try:
+            start_minute = float(payload.get('start_minute') or 0)
+            end_minute = float(payload['end_minute']) if payload.get('end_minute') is not None else None
+            if not math.isfinite(start_minute) or start_minute < 0:
+                raise ValueError()
+            if end_minute is not None and (not math.isfinite(end_minute) or end_minute <= start_minute):
+                raise ValueError()
+        except (TypeError, ValueError, OverflowError):
+            return jsonify(status='error', message='Choisissez une plage en minutes positive, avec une fin supérieure au départ.'), 400
 
     snapshot = theory_snapshot()
     devices = snapshot.get("devices", [])
@@ -621,6 +838,9 @@ def configure_dashboard():
         "temperature_c": temperature_c,
         "start_day": start_day,
         "end_day": end_day,
+        "biberonnage_days": biberonnage_days,
+        "start_minute": start_minute,
+        "end_minute": end_minute,
         "device_ids": [device.get("id") for device in selected],
         "device_names": [device.get("name") for device in selected],
         "biberonnage": biberonnage,
@@ -901,12 +1121,12 @@ def export_measurements_csv():
     return Response(generate(), mimetype='text/csv', headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 @app.route("/api/upload_and_ingest_measures", methods=["POST"])
-def upload_and_ingest_measures():
-    if "files" not in request.files:
+def upload_and_ingest_measures(local_files=None):
+    if local_files is None and "files" not in request.files:
         return jsonify({"status": "error", "message": "Aucun fichier ASC détecté."}), 400
 
     uploaded_files = [
-        item for item in request.files.getlist("files")
+        item for item in (local_files if local_files is not None else request.files.getlist("files"))
         if item.filename
     ]
     if not uploaded_files:
@@ -948,22 +1168,27 @@ def upload_and_ingest_measures():
         cursor.execute("DELETE FROM measurements_summary_1m WHERE source_file = ?", (source_key,))
         conn.commit()
 
-        file_bytes = file_storage.read()
-        lines = file_bytes.decode('utf-8', errors='ignore').splitlines()
+        # Inspect only the header, then decode the spooled file line by line.
+        header = [file_storage.stream.readline().decode('utf-8', errors='ignore') for _ in range(30)]
+        file_storage.stream.seek(0)
+        lines = file_storage.stream
 
         # Lecture d'en-tête par sécurité si la trame 0x105 est manquante.
         base_timestamp = time.time()
-        for line in lines[:30]:
+        timestamp_info = {}
+        for line in header:
             if line.strip().startswith("date"):
                 date_str = line.replace("date", "").strip()
                 try:
-                    dt = datetime.strptime(date_str, "%a %b %d %I:%M:%S %p %Y")
-                    base_timestamp = dt.timestamp() + 7200.0 # Heure d'été France
+                    dt = datetime.strptime(date_str, "%a %b %d %I:%M:%S.%f %p %Y" if "." in date_str else "%a %b %d %I:%M:%S %p %Y")
+                    base_timestamp = dt.timestamp()
+                    timestamp_info['header'] = True
                     break
                 except Exception:
                     try:
                         dt = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
-                        base_timestamp = dt.timestamp() + 7200.0
+                        base_timestamp = dt.timestamp()
+                        timestamp_info['header'] = True
                         break
                     except Exception:
                         continue
@@ -983,7 +1208,7 @@ def upload_and_ingest_measures():
             }
             for channel in ("A", "B")
         }
-        for row in iter_asc_stream_rows(lines, source_key, base_timestamp):
+        for row in iter_asc_stream_rows(lines, source_key, base_timestamp, timestamp_info):
             buffer.append(row)
             timestamp, channel, _, frequency_hz, _, _ = row
             file_measurements += 1
@@ -1032,7 +1257,14 @@ def upload_and_ingest_measures():
             ''', buffer)
             conn.commit()
 
+        cursor.execute("INSERT INTO imported_can_files(source_file, filename) VALUES (?, ?)", (source_key, filename))
+        conn.commit()
         if not file_measurements:
+            files_processed.append({
+                "name": filename, "source_file": source_key, "size_bytes": file_storage.stream.seek(0, 2), "measurements": 0,
+                "channels": [], "channel_settings": {}, "duration_s": 0,
+                "warning": "Aucune mesure CAN 0x100/0x102 dans ce fichier.",
+            })
             continue
 
         cursor.execute("""
@@ -1055,11 +1287,15 @@ def upload_and_ingest_measures():
             )
             file_channel_settings[channel] = {
                 "measurements": metric["measurements"],
+                "started_at": metric["started_at"],
+                "ended_at": metric["ended_at"],
                 "actual_duration_s": duration,
                 "actual_frequency_hz": frequency,
             }
         files_processed.append({
             "name": filename,
+            "size_bytes": file_storage.stream.seek(0, 2),
+            "timestamp_warning": bool(timestamp_info.get('uncertain')),
             "source_file": source_key,
             "measurements": file_measurements,
             "channels": sorted(file_channels),
@@ -1084,7 +1320,11 @@ def upload_and_ingest_measures():
     channel_settings = {}
     for channel in sorted(detected_channels):
         metric = imported_channel_metrics[channel]
-        duration = max(0, float(metric["ended_at"]) - float(metric["started_at"]))
+        duration = recorded_duration([
+            (settings["started_at"], settings["ended_at"])
+            for file in files_processed
+            if (settings := file["channel_settings"].get(channel))
+        ])
         frequency = (
             round(metric["frequency_total"] / metric["frequency_samples"])
             if metric["frequency_samples"] else 0
@@ -1110,6 +1350,7 @@ def upload_and_ingest_measures():
         "uploaded_filenames": [item["name"] for item in files_processed],
         "acquisition_mode": "can",
         "project": theory_snapshot().get("project", {}),
+        "project_id": project_scope(theory_snapshot().get("project", {})),
         "imported_at": datetime.now().isoformat(timespec="seconds"),
     }
     save_measurement_session(session)
@@ -1128,7 +1369,10 @@ def upload_and_ingest_measures():
         "actual_frequency_hz": actual_frequency_hz,
         "channel_settings": channel_settings,
         "session": session,
-        "dashboard_setup_url": url_for("dashboard_setup", session_id=session["id"]),
+        "dashboard_setup_url": url_for(
+            "dashboard_setup",
+            session_id=database_session_id(session.get("project") or theory_snapshot().get("project", {})),
+        ),
     })
 
 
@@ -1147,6 +1391,8 @@ def purge_database():
         summary_count = cursor.execute("SELECT COUNT(*) FROM measurements_summary_1m").fetchone()[0]
         cursor.execute("DELETE FROM measurements;")
         cursor.execute("DELETE FROM measurements_summary_1m;")
+        cursor.execute("DELETE FROM imported_can_files")
+        cursor.execute("DELETE FROM saved_dashboards")
         conn.commit()
         conn.close()
         write_json_file(SESSIONS_FILE, [])
@@ -1251,6 +1497,9 @@ def simulated_esp32_request(method, path, params):
         return simulated_esp32_status()
 
     with simulator_lock:
+        if path == "/api/display" and method == "GET":
+            simulator_state["display_state"] = params["state"]
+            return {"status": "success", "state": params["state"]}
         if path == "/api/acquisition/start" and method == "POST":
             if simulator_state["running"]:
                 raise RuntimeError("Une mesure est deja en cours.")
@@ -1308,11 +1557,11 @@ def ensure_esp32_network():
         except OSError:
             pass
 
-        profile_path = os.path.join(DATA_DIR, "ESP32C3-Mesure.xml")
+        profile_path = os.path.join(DATA_DIR, "esp32_mesure.xml")
         profile_xml = """<?xml version="1.0"?>
 <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-  <name>ESP32C3-Mesure</name>
-  <SSIDConfig><SSID><name>ESP32C3-Mesure</name></SSID></SSIDConfig>
+  <name>esp32_mesure</name>
+  <SSIDConfig><SSID><name>esp32_mesure</name></SSID></SSIDConfig>
   <connectionType>ESS</connectionType><connectionMode>auto</connectionMode>
   <MSM><security>
     <authEncryption><authentication>WPA2PSK</authentication><encryption>AES</encryption><useOneX>false</useOneX></authEncryption>
@@ -1331,7 +1580,7 @@ def ensure_esp32_network():
             check=False,
         )
         connect = subprocess.run(
-            ["netsh", "wlan", "connect", "name=ESP32C3-Mesure", "ssid=ESP32C3-Mesure"],
+            ["netsh", "wlan", "connect", "name=esp32_mesure", "ssid=esp32_mesure"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -1348,18 +1597,19 @@ def ensure_esp32_network():
                 time.sleep(0.5)
         detail = (connect.stdout or connect.stderr or "").strip()
         raise RuntimeError(
-            "Connexion automatique au réseau ESP32C3-Mesure impossible. "
+            "Connexion automatique au réseau esp32_mesure impossible. "
             "Vérifiez que l'ESP32 est alimenté et que le Wi-Fi du PC est activé."
             + (f" Détail Windows : {detail}" if detail else "")
         )
 
 
-def esp32_request(method, path, params=None):
+def esp32_request(method, path, params=None, *, connect_network=True):
     """Appelle l'API HTTP de l'ESP32 et retourne sa réponse JSON."""
     if ESP32_SIMULATOR:
         return simulated_esp32_request(method, path, params)
 
-    ensure_esp32_network()
+    if connect_network:
+        ensure_esp32_network()
     query = urlencode(params or {})
     base_url = configured_esp32_base_url()
     url = f"{base_url}{path}"
@@ -1368,6 +1618,8 @@ def esp32_request(method, path, params=None):
 
     request_to_esp = Request(url, method=method)
     timeout_seconds = 8 if method == "POST" and path == "/api/acquisition/start" else 4
+    if not connect_network:
+        timeout_seconds = 0.5
     try:
         with urlopen(request_to_esp, timeout=timeout_seconds) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -1395,6 +1647,19 @@ def esp_connection_config():
     return jsonify({"status": "success", "base_url": configured_esp32_base_url()})
 
 
+@app.route("/api/esp_display", methods=["POST"])
+def esp_display():
+    """Affiche sur le SH1106 les étapes choisies dans l'application."""
+    payload = request.get_json(silent=True) or {}
+    display_state = str(payload.get("state") or "").strip().lower()
+    if display_state not in {"welcome", "digital_selected", "can_selected"}:
+        return jsonify({"status": "error", "message": "État d'affichage OLED invalide."}), 400
+    try:
+        return jsonify(esp32_request("GET", "/api/display", {"state": display_state}, connect_network=False))
+    except RuntimeError as error:
+        return jsonify({"status": "error", "message": str(error)}), 502
+
+
 def duration_in_seconds(value, unit):
     multipliers = {"s": 1, "m": 60, "h": 3600, "j": 86400}
     if unit not in multipliers:
@@ -1416,6 +1681,28 @@ def actual_frequency_from_status(status, fallback=0):
     if frequencies:
         return sum(frequencies) / len(frequencies)
     return float(status.get("frequency") or fallback or 0)
+
+
+def synchronize_digital_samples(session):
+    if session.get('acquisition_mode') != 'digital' or not session.get('source_files'):
+        return
+    connection = get_db_connection()
+    try:
+        placeholders = ','.join('?' for _ in session['source_files'])
+        rows = connection.execute(f"SELECT channel, COUNT(*) AS samples, MIN(timestamp) AS first, MAX(timestamp) AS last FROM measurements WHERE source_file IN ({placeholders}) GROUP BY channel", session['source_files']).fetchall()
+        for row in rows:
+            metric = session.setdefault('channel_settings', {}).setdefault(row['channel'], {})
+            metric.update(received_samples=row['samples'], started_at=row['first'], ended_at=row['last'],
+                          actual_duration_s=max(0, row['last'] - row['first']))
+        if rows:
+            session['measured_started_at'] = min(row['first'] for row in rows)
+            measured_end = max(row['last'] for row in rows)
+            session['measured_ended_at'] = measured_end
+            if session.get('status') != 'running':
+                session['ended_at'] = measured_end
+            session['actual_duration_s'] = max(0, measured_end - session['started_at'])
+    finally:
+        connection.close()
 
 
 def channel_status_metrics(status, channel_settings):
@@ -1468,6 +1755,7 @@ def control_esp_acquisition():
                                 "started_at", active_measurement["ended_at"]
                             )
                         )
+                    synchronize_digital_samples(active_measurement)
                     save_measurement_session(dict(active_measurement))
             return jsonify({
                 "status": "success",
@@ -1482,6 +1770,11 @@ def control_esp_acquisition():
                 "session": dict(active_measurement),
             })
 
+        if active_measurement.get('status') == 'running':
+            raise ValueError("Une mesure est deja en cours. Arretez-la avant d'en demarrer une autre.")
+        export_unit = request.form.get('export_unit', 'mA')
+        if export_unit not in ('A', 'mA'):
+            raise ValueError("Unite Excel invalide.")
         acquisition_mode = str(request.form.get("acquisition_mode") or "").strip().lower()
         if acquisition_mode not in {"can", "digital"}:
             raise ValueError("Mode de mesure invalide. Choisissez CAN ou Numérique.")
@@ -1530,8 +1823,11 @@ def control_esp_acquisition():
                 channels=channels,
                 duration_s=duration,
                 target_url=configured_esp32_base_url(),
+                export_directory=os.path.join(DATA_DIR, 'exports_numeriques', session_id),
+                export_unit=export_unit,
             )
-        measurement_epoch = int(time.time())
+        measurement_epoch_us = time.time_ns() // 1000
+        measurement_epoch = measurement_epoch_us / 1_000_000
         try:
             status = esp32_request("POST", "/api/acquisition/start", {
                 "frequency": frequency,
@@ -1542,7 +1838,8 @@ def control_esp_acquisition():
                 "durationB": channel_settings.get("B", {}).get("requested_duration_s", 0),
                 "activeA": active_a,
                 "activeB": active_b,
-                "timestamp": measurement_epoch,
+                "timestamp": int(measurement_epoch),
+                "timestamp_us": measurement_epoch_us,
                 "mode": acquisition_mode,
                 "oscillator_mhz": oscillator_mhz,
             })
@@ -1568,6 +1865,8 @@ def control_esp_acquisition():
                 "channels": channels,
                 "acquisition_mode": acquisition_mode,
                 "source_files": [f"live_{session_id}"] if acquisition_mode == "digital" else [],
+                "excel_export_directory": os.path.join(DATA_DIR, 'exports_numeriques', session_id) if acquisition_mode == 'digital' else None,
+                "export_unit": export_unit,
                 "measurement_type": "unassigned",
                 "device_id": device_id,
                 "device_name": request.form.get("device_name", device.get("name", "")).strip(),
@@ -1575,6 +1874,7 @@ def control_esp_acquisition():
                 "scenario": request.form.get("scenario", "").strip(),
                 "tolerance_percent": max(0.1, min(float(request.form.get("tolerance_percent", 10)), 100)),
                 "project": theory_snapshot().get("project", {}),
+                "project_id": project_scope(theory_snapshot().get("project", {})),
             })
             save_measurement_session(dict(active_measurement))
         return jsonify({
@@ -1583,10 +1883,10 @@ def control_esp_acquisition():
                 "Mesure numérique démarrée : réception directe des valeurs ESP32-C3 par Wi-Fi, sans CAN."
                 if acquisition_mode == "digital"
                 else (
-                    "Acquisition CAN active, en attente d'une émission confirmée. "
-                    "Les compteurs CAN indiquent les échecs et les envois confirmés pour CANalyzer."
+                    "Activez l’enregistrement sur CANalyzer. Acquisition CAN active, "
+                    "en attente d'une émission confirmée."
                     if not (status.get("can") or {}).get("tx_ok")
-                    else "Mesure CAN démarrée : les trames sont émises sur le bus CAN pour l’enregistrement dans CANalyzer."
+                    else "Mesure CAN démarrée : activez l’enregistrement dans CANalyzer pour sauvegarder les trames sur le bus CAN."
                 )
             ),
             "acquisition": status,
@@ -1618,6 +1918,7 @@ def reconcile_active_measurement(status):
             active_measurement["actual_duration_s"] = status.get(
                 "elapsed", active_measurement.get("requested_duration_s", 0)
             )
+            synchronize_digital_samples(active_measurement)
             save_measurement_session(dict(active_measurement))
         status["session"] = dict(active_measurement)
         status["collector"] = can_collector.state()
@@ -1673,6 +1974,23 @@ def dashboard_report(session):
     tolerance = float(session.get("tolerance_percent") or 10)
     scenario = selected_scenario(device, session.get("scenario", ""))
     analysis = session.get("analysis") or {}
+    analysis_type = analysis.get("type", "dcdc")
+    is_autonomy = analysis_type in ("dm1", "dm2", "customer")
+    is_feeding = analysis_type == "biberonnage"
+    biberonnage_days = int(analysis.get("biberonnage_days") or 30) if is_feeding else None
+    is_minute_analysis = analysis_type in ('dcdc', 'wltc')
+    window_start_s = float(analysis.get('start_minute') or 0) * 60 if is_minute_analysis else 0
+    window_end_s = float(analysis['end_minute']) * 60 if is_minute_analysis and analysis.get('end_minute') is not None else None
+    has_measurement_window = is_minute_analysis and (window_start_s > 0 or window_end_s is not None)
+    query_start = start_ts + window_start_s
+    query_end = min(end_ts, start_ts + window_end_s) if window_end_s is not None else end_ts
+    if is_feeding:
+        query_end = min(query_end, start_ts + biberonnage_days * 86400)
+    if is_autonomy:
+        query_start = start_ts + float(analysis.get('start_day') or 0) * 86400
+        maximum_day = 30 if analysis_type == 'customer' else 90
+        query_end = min(end_ts, start_ts + float(analysis.get('end_day') if analysis.get('end_day') is not None else maximum_day) * 86400)
+
     acquired_channels = [
         channel for channel in (session.get("channels") or ["A", "B"])
         if channel in ("A", "B")
@@ -1687,13 +2005,14 @@ def dashboard_report(session):
     channel_placeholders = ",".join("?" for _ in channels)
     source_files = [str(item) for item in (session.get("source_files") or []) if item]
     source_filter = ""
-    parameters = [start_ts, end_ts, *channels]
+    parameters = [query_start, query_end, *channels]
     if source_files:
-        source_placeholders = ",".join("?" for _ in source_files)
-        source_filter = f" AND source_file IN ({source_placeholders})"
-        parameters.extend(source_files)
+        if not session.get("database_wide"):
+            source_placeholders = ",".join("?" for _ in source_files)
+            source_filter = f" AND source_file IN ({source_placeholders})"
+            parameters.extend(source_files)
     rows = conn.execute(
-        f"""SELECT timestamp, channel, current_A, frequency_Hz, lost_count
+        f"""SELECT timestamp, channel, current_A, frequency_Hz, lost_count, source_file
             FROM measurements
             WHERE timestamp >= ? AND timestamp <= ? AND channel IN ({channel_placeholders})
             {source_filter}
@@ -1750,10 +2069,46 @@ def dashboard_report(session):
     else:
         duration_actual = float(session.get("actual_duration_s") or max(0, end_ts - start_ts))
     duration_error = abs(duration_actual - duration_expected)
+    if has_measurement_window:
+        duration_expected = max(0, (window_end_s if window_end_s is not None else duration_expected) - window_start_s)
+        duration_actual = max(0, query_end - query_start)
+        duration_error = abs(duration_actual - duration_expected)
     duration_ok = duration_error <= max(1, duration_expected * 0.02)
+    duration_checks = []
+    if is_autonomy or is_feeding:
+        if is_autonomy:
+            maximum_day = 30 if analysis_type == "customer" else 90
+            analysis_start_s = start_ts + float(analysis.get("start_day") or 0) * 86400
+            analysis_end_s = start_ts + float(
+                analysis.get("end_day") if analysis.get("end_day") is not None else maximum_day
+            ) * 86400
+        else:
+            analysis_start_s = start_ts
+            analysis_end_s = start_ts + biberonnage_days * 86400
+        expected_analysis_s = analysis_end_s - analysis_start_s
+        for channel in channels:
+            selected_times = [
+                float(row["timestamp"])
+                for row in rows
+                if row["channel"] == channel
+                and analysis_start_s <= float(row["timestamp"]) <= analysis_end_s
+            ]
+            actual_analysis_s = max(0.0, max(selected_times) - min(selected_times)) if len(selected_times) >= 2 else 0.0
+            status = (
+                "no_data" if len(selected_times) < 2 else
+                "pass" if abs(actual_analysis_s - expected_analysis_s) <= max(1.0, expected_analysis_s * 0.02) else "fail"
+            )
+            duration_checks.append({
+                "channel": channel,
+                "expected_s": expected_analysis_s,
+                "actual_s": actual_analysis_s,
+                "difference_s": actual_analysis_s - expected_analysis_s,
+                "samples": len(selected_times),
+                "status": status,
+                "first_timestamp": min(selected_times) if selected_times else None,
+                "last_timestamp": max(selected_times) if selected_times else None,
+            })
     global_score = sum(all_conformities) / len(all_conformities) if all_conformities else 0
-    analysis_type = analysis.get("type", "dcdc")
-    is_autonomy = analysis_type in ("dm1", "dm2", "customer")
     temperature_c = float(analysis.get("temperature_c") if analysis.get("temperature_c") is not None else 20)
     snapshot = theory_snapshot()
     all_devices = snapshot.get("devices", [])
@@ -1764,6 +2119,17 @@ def dashboard_report(session):
 
     # Série brute : chaque échantillon acquis est transmis au graphe. Chart.js
     # applique uniquement une décimation d'affichage, sans moyenner les données.
+    source_periods = []
+    for source in dict.fromkeys(row['source_file'] for row in rows):
+        for channel in channels:
+            source_rows = [row for row in rows if row['source_file'] == source and row['channel'] == channel]
+            if source_rows:
+                source_periods.append({
+                    'source_file': source, 'channel': channel, 'samples': len(source_rows),
+                    'started_at': float(source_rows[0]['timestamp']),
+                    'ended_at': float(source_rows[-1]['timestamp']),
+                    'duration_s': float(source_rows[-1]['timestamp']) - float(source_rows[0]['timestamp']),
+                })
     chart_series = []
     for channel in channels:
         channel_rows = [row for row in rows if row["channel"] == channel]
@@ -1785,9 +2151,17 @@ def dashboard_report(session):
                 "time_s": max(0, float(row["timestamp"]) - start_ts),
                 "energy_Ah": energy_ah,
             })
+        reduced_points = decimate_chart_points(channel_points, "current_A")
+        spans = coverage_spans(channel_rows, start_ts)
+        # Keep interruptions visible even after reducing the display points.
+        gaps = [(left[1], right[0]) for left, right in zip(spans, spans[1:]) if right[0] > left[1]]
+        reduced_points = sorted(reduced_points + [
+            {'time_s': (left + right) / 2, 'current_A': None} for left, right in gaps
+        ], key=lambda point: point['time_s'])
         chart_series.append({
             "channel": channel,
-            "points": decimate_chart_points(channel_points, "current_A"),
+            "origin_timestamp": start_ts,
+            "points": reduced_points,
             "energy_points": (
                 decimate_chart_points(energy_points, "energy_Ah")
                 if analysis_type == "biberonnage" else []
@@ -1823,6 +2197,12 @@ def dashboard_report(session):
             if measured_frequencies
             else (settings.get("actual_frequency_hz") or requested_frequency)
         )
+        if has_measurement_window:
+            requested_duration = duration_expected
+            actual_duration = max(timestamps) - min(timestamps) if timestamps else 0
+        periods = [item for item in source_periods if item['channel'] == channel]
+        if session.get('status') == 'imported' or has_measurement_window or is_autonomy or is_feeding:
+            actual_duration = recorded_duration([(item['started_at'], item['ended_at']) for item in periods])
         common_metrics = {
             "channel": channel,
             "address": "0x40" if channel == "A" else "0x41",
@@ -1832,6 +2212,9 @@ def dashboard_report(session):
             "actual_duration_s": actual_duration,
             "requested_frequency_hz": requested_frequency,
             "actual_frequency_hz": actual_frequency,
+            "started_at": min(timestamps) if timestamps else None,
+            "ended_at": max(timestamps) if timestamps else None,
+            "source_count": len(periods),
         }
         if values:
             average = sum(values) / len(values)
@@ -1884,7 +2267,31 @@ def dashboard_report(session):
     comparison_intervals = []
     if analysis_type in ("dcdc", "wltc"):
         summaries_by_id = {str(item["id"]): item for item in device_summaries}
+        raw_by_channel = {
+            channel: [{**dict(row), 'time_s': float(row['timestamp']) - start_ts} for row in rows if row['channel'] == channel]
+            for channel in channels
+        }
+        coverage_by_channel = {channel: coverage_spans(points, start_ts) for channel, points in raw_by_channel.items()}
+        requested_end_s = window_end_s if window_end_s is not None else max(0, end_ts - start_ts)
+        for series in chart_series:
+            gaps = missing_ranges(coverage_by_channel[series['channel']], window_start_s, requested_end_s)
+            plotted = []
+            gap_index = 0
+            for point in series['points']:
+                needs_break = False
+                while gap_index < len(gaps) and gaps[gap_index]['end_s'] <= point['time_s']:
+                    needs_break = needs_break or bool(plotted and gaps[gap_index]['start_s'] > plotted[-1]['time_s'])
+                    gap_index += 1
+                if needs_break:
+                    plotted.append({'time_s': (plotted[-1]['time_s'] + point['time_s']) / 2, 'current_A': None})
+                plotted.append(point)
+            series['points'] = plotted
         for definition in analysis_interval_definitions(analysis_type):
+            if has_measurement_window:
+                selected_end_s = window_end_s if window_end_s is not None else query_end - start_ts
+                if definition['end_s'] <= window_start_s or definition['start_s'] >= selected_end_s:
+                    continue
+                definition = {**definition, 'start_s': max(definition['start_s'], window_start_s), 'end_s': min(definition['end_s'], selected_end_s)}
             channel_values = {}
             for channel in channels:
                 values = [
@@ -1936,6 +2343,7 @@ def dashboard_report(session):
                 for selected_device in selected_devices
             ]
             total_expected = sum(item["expected_A"] for item in expected_by_device)
+            checks = {channel: compare_interval(raw_by_channel[channel], total_expected, coverage_by_channel[channel], definition['start_s'], definition['end_s'], include_end=abs(definition['end_s'] - requested_end_s) < 1e-6) for channel in channels}
             device_comparisons = []
             for item in expected_by_device:
                 allocated = (
@@ -1951,19 +2359,8 @@ def dashboard_report(session):
                     )
                     for channel in ("A", "B")
                 }
-                status_by_channel = {
-                    channel: (
-                        "pass"
-                        if allocated_by_channel[channel] is not None
-                        and allocated_by_channel[channel] <= item["expected_A"]
-                        else ("fail" if allocated_by_channel[channel] is not None else "no_data")
-                    )
-                    for channel in ("A", "B")
-                }
-                status = (
-                    "pass" if allocated is not None and allocated <= item["expected_A"]
-                    else ("fail" if allocated is not None else "no_data")
-                )
+                status_by_channel = {channel: checks.get(channel, {}).get('status', 'no_data') for channel in ('A', 'B')}
+                status = 'fail' if any(item['status'] == 'fail' for item in checks.values()) else ('missing' if any(item['status'] == 'missing' for item in checks.values()) else 'pass')
                 device_interval = {
                     "label": definition["label"],
                     "start_s": definition["start_s"],
@@ -1980,11 +2377,7 @@ def dashboard_report(session):
                 if item["id"] in summaries_by_id:
                     summaries_by_id[item["id"]]["intervals"].append(device_interval)
 
-            interval_status = (
-                "pass"
-                if measured_interval_average is not None and measured_interval_average <= total_expected
-                else ("fail" if measured_interval_average is not None else "no_data")
-            )
+            interval_status = 'fail' if any(item['status'] == 'fail' for item in checks.values()) else ('missing' if any(item['status'] == 'missing' for item in checks.values()) else 'pass')
             comparison_intervals.append({
                 **definition,
                 "theoretical_A": total_expected,
@@ -1997,24 +2390,35 @@ def dashboard_report(session):
                 "measured_maximum_channel_B": measured_maximum_by_channel["B"],
                 "samples_channel_A": samples_by_channel["A"],
                 "samples_channel_B": samples_by_channel["B"],
-                "status_channel_A": (
-                    "pass"
-                    if measured_average_by_channel["A"] is not None
-                    and measured_average_by_channel["A"] <= total_expected
-                    else ("fail" if measured_average_by_channel["A"] is not None else "no_data")
-                ),
-                "status_channel_B": (
-                    "pass"
-                    if measured_average_by_channel["B"] is not None
-                    and measured_average_by_channel["B"] <= total_expected
-                    else ("fail" if measured_average_by_channel["B"] is not None else "no_data")
-                ),
+                "status_channel_A": checks.get('A', {}).get('status', 'no_data'),
+                "status_channel_B": checks.get('B', {}).get('status', 'no_data'),
+                "sample_checks": checks,
                 "measured_minimum_A": measured_interval_minimum,
                 "measured_maximum_A": measured_interval_maximum,
                 "samples": sum(len(values) for values in channel_values.values()),
                 "status": interval_status,
                 "devices": device_comparisons,
             })
+
+        # Retain samples outside the reference's fixed 30-minute profile too.
+        # They have no theoretical verdict; they must never silently disappear.
+        reference_spans = [(item['start_s'], item['end_s']) for item in comparison_intervals]
+        for gap in missing_ranges(reference_spans, window_start_s, requested_end_s):
+            left, right = gap['start_s'], gap['end_s']
+            checks = {channel: compare_interval(raw_by_channel[channel], 0, coverage_by_channel[channel], left, right,
+                                               include_end=abs(right - requested_end_s) < 1e-6)
+                      for channel in channels}
+            if not any(item['samples'] for item in checks.values()):
+                continue
+            for check in checks.values():
+                check['status'] = 'no_reference' if check['samples'] else 'no_data'
+                check['exceedances'] = 0
+            comparison_intervals.append({
+                'label': 'Hors plage du profil theorique', 'start_s': left, 'end_s': right,
+                'theoretical_A': None, 'sample_checks': checks, 'status': 'no_reference',
+                'samples': sum(item['samples'] for item in checks.values()), 'devices': [],
+            })
+        comparison_intervals.sort(key=lambda item: item['start_s'])
 
     if analysis_type == "biberonnage":
         summaries_by_id = {str(item["id"]): item for item in device_summaries}
@@ -2174,223 +2578,42 @@ def dashboard_report(session):
     autonomy_profile = []
     start_day = analysis.get("start_day")
     end_day = analysis.get("end_day")
+    autonomy_result = {}
     if is_autonomy:
         maximum_day = 30 if analysis_type == "customer" else 90
         start_day = float(0 if start_day is None else start_day)
         end_day = float(maximum_day if end_day is None else end_day)
-        selected_days = max(0, end_day - start_day)
-        nominal_total = sum(float(item.get("nominal_A") or 0) for item in selected_devices)
-        channel_base_current = {
-            metric["channel"]: (
-                abs(float(metric["average_current_A"]))
-                if metric.get("average_current_A") is not None else None
-            )
-            for metric in channel_metrics
-        }
-        summaries_by_id = {str(item["id"]): item for item in device_summaries}
-        theoretical_energy_range = 0.0
-        measured_energy_range = 0.0
-
-        def day_label(value):
-            return f"{float(value):g}".replace(".", ",")
-
-        for segment_start, segment_end in autonomy_profile_segments(selected_devices, start_day, end_day):
-            segment_days = segment_end - segment_start
-            expected_by_device = []
-            for selected_device in selected_devices:
-                profile_value = day_profile_value(selected_device, segment_start)
-                expected_by_device.append({
-                    "id": str(selected_device.get("id")),
-                    "profile": profile_value,
-                    "nominal_A": float(selected_device.get("nominal_A") or 0),
-                    "expected_A": float(selected_device.get("nominal_A") or 0) * profile_value,
-                })
-            theoretical_current = sum(item["expected_A"] for item in expected_by_device)
-            activity_ratio = theoretical_current / nominal_total if nominal_total > 0 else 0.0
-            projected_by_channel = {
-                channel: (
-                    channel_base_current[channel] * activity_ratio
-                    if channel_base_current.get(channel) is not None else None
-                )
-                for channel in ("A", "B")
+        autonomy_result = build_autonomy(rows, channels, selected_devices, start_ts,
+                                         start_day, end_day, usable_capacity,
+                                         day_profile_value, day_profile_points)
+        results_by_channel = {item['channel']: item for item in autonomy_result['channels']}
+        first_channel = autonomy_result['channels'][0] if len(channels) == 1 else {}
+        daily_consumption = first_channel.get('daily_consumption_Ah')
+        autonomy_days = first_channel.get('days')
+        theoretical_daily_consumption = first_channel.get('theoretical_daily_consumption_Ah')
+        theoretical_autonomy_days = first_channel.get('theoretical_days')
+        autonomy_difference_days = first_channel.get('difference_days')
+        autonomy_status = first_channel.get('status', 'independent')
+        comparison_intervals = []
+        references = autonomy_result['channels'][0]['intervals'] if channels else []
+        for index, reference in enumerate(references):
+            interval = {
+                'label': f"Jour {reference['start_day']:g} a {reference['end_day']:g}",
+                'start_day': reference['start_day'], 'end_day': reference['end_day'],
+                'theoretical_A': reference['expected_A'],
+                'theoretical_daily_Ah': reference['expected_A'] * 24,
             }
-            segment_rows_by_channel = {
-                channel: [
-                    row for row in rows
-                    if row["channel"] == channel
-                    and segment_start
-                    <= start_day + max(0, float(row["timestamp"]) - start_ts) / 86400
-                    < segment_end
-                ]
-                for channel in ("A", "B")
-            }
-            samples_by_channel = {
-                channel: len(segment_rows_by_channel[channel])
-                for channel in ("A", "B")
-            }
-            measured_by_channel = {
-                channel: (
-                    projected_by_channel[channel]
-                    if samples_by_channel[channel] > 0 else None
-                )
-                for channel in ("A", "B")
-            }
-            measured_segment_current = (
-                sum(value for value in measured_by_channel.values() if value is not None)
-                if any(value is not None for value in measured_by_channel.values())
-                else None
-            )
-            theoretical_daily_ah = theoretical_current * 24
-            measured_daily_ah = (
-                measured_segment_current * 24
-                if measured_segment_current is not None else None
-            )
-            projected_daily_ah = (
-                sum(
-                    value for value in projected_by_channel.values()
-                    if value is not None
-                ) * 24
-                if any(value is not None for value in projected_by_channel.values())
-                else None
-            )
-            theoretical_energy_range += theoretical_daily_ah * segment_days
-            if projected_daily_ah is not None:
-                measured_energy_range += projected_daily_ah * segment_days
-            label = f"Jour {day_label(segment_start)} à {day_label(segment_end)}"
-            device_comparisons = []
-            for item in expected_by_device:
-                allocated_by_channel = {
-                    channel: (
-                        channel_base_current[channel] * item["nominal_A"] / nominal_total * item["profile"]
-                        if channel_base_current.get(channel) is not None
-                        and nominal_total > 0
-                        and samples_by_channel[channel] > 0
-                        else None
-                    )
-                    for channel in ("A", "B")
-                }
-                allocated = (
-                    sum(value for value in allocated_by_channel.values() if value is not None)
-                    if any(value is not None for value in allocated_by_channel.values())
-                    else None
-                )
-                status_by_channel = {
-                    channel: (
-                        "pass" if allocated_by_channel[channel] is not None
-                        and allocated_by_channel[channel] <= item["expected_A"]
-                        else ("fail" if allocated_by_channel[channel] is not None else "no_data")
-                    )
-                    for channel in ("A", "B")
-                }
-                device_interval = {
-                    "label": label,
-                    "start_day": segment_start,
-                    "end_day": segment_end,
-                    "profile": item["profile"],
-                    "expected_A": item["expected_A"],
-                    "measured_allocated_A": allocated,
-                    "measured_allocated_channel_A": allocated_by_channel["A"],
-                    "measured_allocated_channel_B": allocated_by_channel["B"],
-                    "status_channel_A": status_by_channel["A"],
-                    "status_channel_B": status_by_channel["B"],
-                    "status": (
-                        "pass" if allocated is not None and allocated <= item["expected_A"]
-                        else ("fail" if allocated is not None else "no_data")
-                    ),
-                }
-                device_comparisons.append({"id": item["id"], **device_interval})
-                if item["id"] in summaries_by_id:
-                    summaries_by_id[item["id"]]["intervals"].append(device_interval)
-
-            status_by_channel = {
-                channel: (
-                    "pass" if measured_by_channel[channel] is not None
-                    and measured_by_channel[channel] <= theoretical_current
-                    else ("fail" if measured_by_channel[channel] is not None else "no_data")
-                )
-                for channel in ("A", "B")
-            }
-            interval_status = (
-                "pass" if measured_segment_current is not None
-                and measured_segment_current <= theoretical_current
-                else ("fail" if measured_segment_current is not None else "no_data")
-            )
-            comparison_intervals.append({
-                "label": label,
-                "start_day": segment_start,
-                "end_day": segment_end,
-                "duration_days": segment_days,
-                "theoretical_A": theoretical_current,
-                "theoretical_daily_Ah": theoretical_daily_ah,
-                "measured_average_A": measured_segment_current,
-                "measured_average_channel_A": measured_by_channel["A"],
-                "measured_average_channel_B": measured_by_channel["B"],
-                "measured_daily_channel_A_Ah": (
-                    measured_by_channel["A"] * 24 if measured_by_channel["A"] is not None else None
-                ),
-                "measured_daily_channel_B_Ah": (
-                    measured_by_channel["B"] * 24 if measured_by_channel["B"] is not None else None
-                ),
-                "samples_channel_A": samples_by_channel["A"],
-                "samples_channel_B": samples_by_channel["B"],
-                "status_channel_A": status_by_channel["A"],
-                "status_channel_B": status_by_channel["B"],
-                "samples": sum(samples_by_channel.values()),
-                "status": interval_status,
-                "devices": device_comparisons,
-            })
-            autonomy_profile.append({
-                "label": label,
-                "start_day": segment_start,
-                "end_day": segment_end,
-                "theoretical_daily_Ah": theoretical_daily_ah,
-                "measured_daily_Ah": measured_daily_ah,
-                "measured_daily_channel_A_Ah": (
-                    measured_by_channel["A"] * 24 if measured_by_channel["A"] is not None else None
-                ),
-                "measured_daily_channel_B_Ah": (
-                    measured_by_channel["B"] * 24 if measured_by_channel["B"] is not None else None
-                ),
-            })
-
-        theoretical_daily_consumption = (
-            theoretical_energy_range / selected_days if selected_days > 0 else None
-        )
-        daily_consumption = measured_energy_range / selected_days if selected_days > 0 else None
-        theoretical_autonomy_days = (
-            usable_capacity / theoretical_daily_consumption
-            if theoretical_daily_consumption and theoretical_daily_consumption > 0 else None
-        )
-        autonomy_days = (
-            usable_capacity / daily_consumption
-            if daily_consumption and daily_consumption > 0 else None
-        )
-        autonomy_difference_days = (
-            autonomy_days - theoretical_autonomy_days
-            if autonomy_days is not None and theoretical_autonomy_days is not None else None
-        )
-        autonomy_excess_daily = max(
-            0.0, (daily_consumption or 0.0) - (theoretical_daily_consumption or 0.0)
-        )
-        autonomy_excess_range = max(0.0, measured_energy_range - theoretical_energy_range)
-        autonomy_excess_days = max(
-            0.0,
-            (theoretical_autonomy_days or 0.0) - (autonomy_days or 0.0),
-        )
-        if autonomy_days is not None and theoretical_autonomy_days is not None:
-            autonomy_status = "better" if autonomy_days >= theoretical_autonomy_days else "worse"
-    integrated_energy_by_channel = {
-        item["channel"]: float((item.get("energy_points") or [{}])[-1].get("energy_Ah") or 0)
-        for item in chart_series
-        if item.get("energy_points")
-    }
-    measured_energy = (
-        sum(integrated_energy_by_channel.values())
-        if integrated_energy_by_channel
-        else (
-            measured_average * duration_actual / 3600
-            if measured_average is not None else None
-        )
+            for channel in ('A', 'B'):
+                result = results_by_channel.get(channel)
+                item = result['intervals'][index] if result else {}
+                interval[f'measured_average_channel_{channel}'] = item.get('average_A')
+                interval[f'samples_channel_{channel}'] = item.get('samples', 0)
+                interval[f'status_channel_{channel}'] = {'anomaly': 'fail', 'ok': 'pass'}.get(item.get('status'), 'no_data')
+            interval['status'] = 'fail' if any(interval[f'status_channel_{channel}'] == 'fail' for channel in channels) else 'no_data'
+            comparison_intervals.append(interval)
+    measured_energy = None if is_feeding else (
+        measured_average * duration_actual / 3600
+        if measured_average is not None else None
     )
     feeding = None
     if analysis_type == "biberonnage":
@@ -2417,193 +2640,145 @@ def dashboard_report(session):
             float(feeding_config.get("supply_voltage_V") or 14.5),
         )
         energy_rows = []
+        anomaly_tolerance = max(0.0, tolerance) / 100
+        measurement_end = start_ts + biberonnage_days * 86400
         for channel in channels:
-            signed_ah = float(integrated_energy_by_channel.get(channel, 0))
-            transferred_ah = abs(signed_ah)
+            channel_rows = [
+                row for row in rows
+                if row["channel"] == channel
+                and start_ts <= float(row["timestamp"]) <= measurement_end
+            ]
+            spans = coverage_spans(channel_rows, start_ts)
+            measured_ah = 0.0
+            covered_s = 0.0
+            span_index = 0
+            for index in range(1, len(channel_rows)):
+                previous, current = channel_rows[index - 1], channel_rows[index]
+                a = float(previous["timestamp"]) - start_ts
+                b = float(current["timestamp"]) - start_ts
+                if b <= a:
+                    continue
+                while span_index < len(spans) and spans[span_index][1] < a:
+                    span_index += 1
+                if span_index >= len(spans) or b > spans[span_index][1] + 1e-6:
+                    continue
+                left, right = max(0.0, a), min(b, biberonnage_days * 86400)
+                if right <= left:
+                    continue
+                start_current = abs(float(previous["current_A"]))
+                end_current = abs(float(current["current_A"]))
+                seconds = right - left
+                measured_ah += (start_current + end_current) / 2 * seconds / 3600
+                covered_s += seconds
+
+            expected_current = max(0.0, total_expected)
+            margin = expected_current * anomaly_tolerance
+            lower_current = max(0.0, expected_current - margin)
+            upper_current = expected_current + margin
+            categories = {
+                key: {'category': key, 'samples': 0, 'minimum_A': None, 'maximum_A': None,
+                      'worst_current_A': None, 'worst_timestamp': None, 'maximum_deviation_A': 0.0}
+                for key in ('too_low', 'ok', 'too_high')
+            }
+            anomalies = []
+            active_anomaly = None
+            active_anomaly_span = None
+            anomaly_span_index = 0
+            for row in channel_rows:
+                measured_current = abs(float(row["current_A"]))
+                direction = (
+                    "too_low" if measured_current < lower_current - 1e-9 else
+                    "too_high" if measured_current > upper_current + 1e-9 else None
+                )
+                timestamp = float(row["timestamp"])
+                category = categories[direction or 'ok']
+                category['samples'] += 1
+                category['minimum_A'] = measured_current if category['minimum_A'] is None else min(category['minimum_A'], measured_current)
+                category['maximum_A'] = measured_current if category['maximum_A'] is None else max(category['maximum_A'], measured_current)
+                deviation = abs(measured_current - expected_current)
+                if category['worst_current_A'] is None or deviation > category['maximum_deviation_A']:
+                    category.update(worst_current_A=measured_current, worst_timestamp=timestamp, maximum_deviation_A=deviation)
+                relative_timestamp = timestamp - start_ts
+                while (
+                    anomaly_span_index < len(spans)
+                    and relative_timestamp > spans[anomaly_span_index][1] + 1e-6
+                ):
+                    anomaly_span_index += 1
+                if direction is None:
+                    active_anomaly = None
+                    continue
+                if (
+                    active_anomaly is None
+                    or active_anomaly["direction"] != direction
+                    or row["source_file"] != active_anomaly["source_file"]
+                    or anomaly_span_index != active_anomaly_span
+                ):
+                    active_anomaly = {
+                        "direction": direction,
+                        "first_timestamp": timestamp,
+                        "last_timestamp": timestamp,
+                        "sample_count": 0,
+                        "minimum_A": measured_current,
+                        "maximum_A": measured_current,
+                        "source_file": row["source_file"],
+                        "worst_current_A": measured_current,
+                        "worst_timestamp": timestamp,
+                        "maximum_deviation_A": deviation,
+                    }
+                    anomalies.append(active_anomaly)
+                active_anomaly_span = anomaly_span_index
+                if deviation > active_anomaly['maximum_deviation_A']:
+                    active_anomaly.update(worst_current_A=measured_current, worst_timestamp=timestamp, maximum_deviation_A=deviation)
+                active_anomaly["last_timestamp"] = timestamp
+                active_anomaly["sample_count"] += 1
+                active_anomaly["minimum_A"] = min(active_anomaly["minimum_A"], measured_current)
+                active_anomaly["maximum_A"] = max(active_anomaly["maximum_A"], measured_current)
+            for anomaly in anomalies:
+                anomaly['deviation_percent'] = anomaly['maximum_deviation_A'] / expected_current * 100 if expected_current else None
+                anomaly['duration_s'] = anomaly['last_timestamp'] - anomaly['first_timestamp']
+                anomaly["expected_A"] = expected_current
+
+            theoretical_ah = expected_current * covered_s / 3600
+            measured_wh = measured_ah * feeding_voltage
+            theoretical_wh = theoretical_ah * feeding_voltage
             energy_rows.append({
                 "channel": channel,
                 "address": "0x40" if channel == "A" else "0x41",
-                "signed_Ah": signed_ah,
-                "transferred_Ah": transferred_ah,
-                "energy_Wh": transferred_ah * feeding_voltage,
-            })
-        total_transferred_ah = sum(item["transferred_Ah"] for item in energy_rows)
-        total_cost_wh = sum(item["energy_Wh"] for item in energy_rows)
-        for item in energy_rows:
-            item["share_percent"] = (
-                item["energy_Wh"] / total_cost_wh * 100
-                if total_cost_wh > 0 else 0
-            )
-
-        energy_series = {
-            item["channel"]: item.get("energy_points") or []
-            for item in chart_series
-        }
-        for item in energy_rows:
-            channel_points = energy_series.get(item["channel"]) or []
-            channel_duration = max(
-                (float(point["time_s"]) for point in channel_points),
-                default=0.0,
-            )
-            theoretical_channel_ah = (
-                max(0.0, total_expected) * channel_duration / 3600
-            )
-            theoretical_channel_wh = theoretical_channel_ah * feeding_voltage
-            measured_channel_wh = item["energy_Wh"]
-            battery_need_wh = theoretical_channel_wh
-            energy_lost_wh = max(0.0, measured_channel_wh - theoretical_channel_wh)
-            pie_total_wh = battery_need_wh + energy_lost_wh
-            channel_soc_points = [{
-                "time_s": 0.0,
-                "soc_percent": feeding_start_soc,
-            }]
-            channel_theoretical_soc_points = [{
-                "time_s": 0.0,
-                "soc_percent": feeding_start_soc,
-            }]
-            for point in channel_points:
-                timestamp = float(point["time_s"])
-                channel_soc_points.append({
-                    "time_s": timestamp,
-                    "soc_percent": max(
-                        0.0,
-                        min(
-                            100.0,
-                            feeding_start_soc
-                            - float(point["energy_Ah"]) / feeding_capacity * 100,
-                        ),
-                    ),
-                })
-                channel_theoretical_soc_points.append({
-                    "time_s": timestamp,
-                    "soc_percent": max(
-                        0.0,
-                        min(
-                            100.0,
-                            feeding_start_soc
-                            - max(0.0, total_expected) * timestamp / 3600
-                            / feeding_capacity * 100,
-                        ),
-                    ),
-                })
-            item.update({
-                "duration_s": channel_duration,
-                "theoretical_Ah": theoretical_channel_ah,
-                "theoretical_Wh": theoretical_channel_wh,
-                "difference_Ah": item["transferred_Ah"] - theoretical_channel_ah,
-                "difference_Wh": measured_channel_wh - theoretical_channel_wh,
-                "battery_need_Wh": battery_need_wh,
-                "energy_lost_Wh": energy_lost_wh,
-                "battery_need_percent": (
-                    battery_need_wh / pie_total_wh * 100
-                    if pie_total_wh > 0 else 0
+                "duration_s": covered_s,
+                "expected_current_A": expected_current,
+                "tolerance_percent": max(0.0, tolerance),
+                "lower_expected_A": lower_current,
+                "upper_expected_A": upper_current,
+                "sample_count": len(channel_rows),
+                "anomaly_sample_count": sum(item["sample_count"] for item in anomalies),
+                "anomalies": anomalies,
+                "quality": {
+                    'status': 'no_data' if not channel_rows else ('fail' if anomalies else 'pass'),
+                    'checked_samples': len(channel_rows),
+                    'categories': [{**category,
+                                    'percent': category['samples'] / len(channel_rows) * 100 if channel_rows else 0,
+                                    'maximum_deviation_percent': category['maximum_deviation_A'] / expected_current * 100 if expected_current else None}
+                                   for category in categories.values()],
+                },
+                "transferred_Ah": measured_ah,
+                "energy_Wh": measured_wh,
+                "theoretical_Ah": theoretical_ah,
+                "theoretical_Wh": theoretical_wh,
+                "difference_Ah": measured_ah - theoretical_ah,
+                "difference_Wh": measured_wh - theoretical_wh,
+                "ending_soc_percent": max(
+                    0.0, min(100.0, feeding_start_soc - measured_ah / feeding_capacity * 100)
                 ),
-                "energy_lost_percent": (
-                    energy_lost_wh / pie_total_wh * 100
-                    if pie_total_wh > 0 else 0
-                ),
-                "soc_points": decimate_chart_points(
-                    channel_soc_points, "soc_percent", max_points=4000
-                ),
-                "theoretical_soc_points": decimate_chart_points(
-                    channel_theoretical_soc_points,
-                    "soc_percent",
-                    max_points=4000,
-                ),
-                "ending_soc_percent": channel_soc_points[-1]["soc_percent"],
-                "theoretical_ending_soc_percent": (
-                    channel_theoretical_soc_points[-1]["soc_percent"]
+                "theoretical_ending_soc_percent": max(
+                    0.0, min(100.0, feeding_start_soc - theoretical_ah / feeding_capacity * 100)
                 ),
             })
-        timeline = sorted({
-            float(point["time_s"])
-            for points in energy_series.values()
-            for point in points
-        } | {0.0})
-        energy_indexes = {channel: 0 for channel in energy_series}
-
-        def cumulative_energy_at(channel, timestamp):
-            points = energy_series.get(channel) or []
-            if not points:
-                return 0.0
-            index = energy_indexes[channel]
-            while (
-                index + 1 < len(points)
-                and float(points[index + 1]["time_s"]) <= timestamp
-            ):
-                index += 1
-            energy_indexes[channel] = index
-            current = points[index]
-            if index + 1 >= len(points):
-                return float(current["energy_Ah"])
-            following = points[index + 1]
-            current_time = float(current["time_s"])
-            following_time = float(following["time_s"])
-            if following_time <= current_time:
-                return float(current["energy_Ah"])
-            ratio = max(
-                0.0,
-                min(1.0, (timestamp - current_time) / (following_time - current_time)),
-            )
-            return (
-                float(current["energy_Ah"])
-                + (float(following["energy_Ah"]) - float(current["energy_Ah"])) * ratio
-            )
-
-        soc_points = []
-        theoretical_soc_points = []
-        for timestamp in timeline:
-            cumulative_ah = sum(
-                cumulative_energy_at(channel, timestamp)
-                for channel in energy_series
-            )
-            soc_points.append({
-                "time_s": timestamp,
-                "soc_percent": max(
-                    0.0,
-                    min(100.0, feeding_start_soc - cumulative_ah / feeding_capacity * 100),
-                ),
-            })
-            theoretical_cumulative_ah = max(0.0, total_expected) * timestamp / 3600
-            theoretical_soc_points.append({
-                "time_s": timestamp,
-                "soc_percent": max(
-                    0.0,
-                    min(
-                        100.0,
-                        feeding_start_soc
-                        - theoretical_cumulative_ah / feeding_capacity * 100,
-                    ),
-                ),
-            })
-        soc_points = decimate_chart_points(soc_points, "soc_percent", max_points=4000)
-        theoretical_soc_points = decimate_chart_points(
-            theoretical_soc_points, "soc_percent", max_points=4000
-        )
-        ending_soc = (
-            soc_points[-1]["soc_percent"] if soc_points else feeding_start_soc
-        )
-        theoretical_duration = max(
-            (float(point["time_s"]) for point in theoretical_soc_points),
-            default=max(0.0, duration_actual),
-        )
-        theoretical_energy_ah = max(0.0, total_expected) * theoretical_duration / 3600
-        theoretical_energy_wh = theoretical_energy_ah * feeding_voltage
-        theoretical_ending_soc = (
-            theoretical_soc_points[-1]["soc_percent"]
-            if theoretical_soc_points else feeding_start_soc
-        )
         feeding = {
             "id": str(feeding_config.get("id") or "measured"),
             "name": str(feeding_config.get("name") or "Biberonnage mesuré"),
+            "duration_days": biberonnage_days,
             "battery_capacity_Ah": feeding_capacity,
             "starting_soc_percent": feeding_start_soc,
-            "ending_soc_percent": ending_soc,
-            "soc_change_percent": ending_soc - feeding_start_soc,
-            "theoretical_ending_soc_percent": theoretical_ending_soc,
-            "theoretical_soc_change_percent": (
-                theoretical_ending_soc - feeding_start_soc
-            ),
             "demand_soc_percent": float(
                 76 if configured_demand_soc is None else configured_demand_soc
             ),
@@ -2611,19 +2786,8 @@ def dashboard_report(session):
                 90 if configured_target_soc is None else configured_target_soc
             ),
             "supply_voltage_V": feeding_voltage,
-            "net_energy_Ah": sum(item["signed_Ah"] for item in energy_rows),
-            "total_transferred_Ah": total_transferred_ah,
-            "total_cost_ef_Wh": total_cost_wh,
             "theoretical_current_A": max(0.0, total_expected),
-            "theoretical_energy_Ah": theoretical_energy_ah,
-            "theoretical_cost_ef_Wh": theoretical_energy_wh,
-            "energy_difference_Ah": total_transferred_ah - theoretical_energy_ah,
-            "cost_difference_Wh": total_cost_wh - theoretical_energy_wh,
-            "soc_difference_percent": ending_soc - theoretical_ending_soc,
-            "number_of_measurements": 1 if rows else 0,
             "channels": energy_rows,
-            "soc_points": soc_points,
-            "theoretical_soc_points": theoretical_soc_points,
         }
     relevant_kind = "dcdc" if analysis_type in ("dcdc", "wltc") else "sleep"
     available_ids = {str(item.get("id")) for item in all_devices if item.get("kind") == relevant_kind}
@@ -2680,10 +2844,14 @@ def dashboard_report(session):
         },
         "analysis": {
             "type": analysis_type,
+            "start_minute": window_start_s / 60 if is_minute_analysis else None,
+            "end_minute": (window_end_s if window_end_s is not None else max(0, end_ts - start_ts)) / 60 if is_minute_analysis else None,
             "label": ANALYSIS_TYPES.get(analysis_type, analysis_type),
             "temperature_c": None if is_autonomy else temperature_c,
             "start_day": start_day,
             "end_day": end_day,
+            "biberonnage_days": biberonnage_days,
+            "duration_checks": duration_checks,
             "dashboard_channels": channels,
             "capacity_factor": capacity_factor,
             "selected_devices": device_summaries,
@@ -2705,6 +2873,9 @@ def dashboard_report(session):
             "energy_Ah": measured_energy,
             "series": chart_series,
             "channels": channel_metrics,
+            "source_periods": source_periods,
+            "query_started_at": query_start,
+            "query_ended_at": query_end,
         },
         "sizing": {
             "output_current_A": dcdc_output,
@@ -2713,6 +2884,7 @@ def dashboard_report(session):
             "channels": sizing_channels,
         },
         "autonomy": {
+            **autonomy_result,
             "battery_capacity_Ah": battery_capacity,
             "starting_soc_percent": starting_soc,
             "minimum_soc_percent": minimum_soc,
@@ -2734,6 +2906,22 @@ def dashboard_report(session):
 
 @app.route("/api/dashboard_report")
 def api_dashboard_report():
+    saved_dashboard_id = request.args.get("saved_dashboard_id", "").strip()
+    if saved_dashboard_id:
+        init_db()
+        conn = get_db_connection()
+        archive = conn.execute(
+            "SELECT report_json FROM saved_dashboards WHERE id = ? AND project_id = ?",
+            (saved_dashboard_id, project_scope(theory_snapshot().get("project", {}))),
+        ).fetchone()
+        conn.close()
+        if not archive:
+            return jsonify({"status": "error", "message": "Dashboard enregistré introuvable."}), 404
+        return app.response_class(
+            archive["report_json"],
+            mimetype="application/json",
+        )
+
     session_id = request.args.get("session_id", "").strip()
     with measurement_lock:
         should_refresh = (
@@ -2744,7 +2932,7 @@ def api_dashboard_report():
     if should_refresh:
         try:
             reconcile_active_measurement(
-                esp32_request("GET", "/api/acquisition/status")
+                esp32_request("GET", "/api/acquisition/status", connect_network=False)
             )
         except RuntimeError:
             # Les mesures déjà écrites restent consultables même si l'ESP32
@@ -2752,6 +2940,9 @@ def api_dashboard_report():
             pass
     sessions = measurement_sessions()
     session = next((item for item in sessions if item.get("id") == session_id), sessions[0] if sessions else None)
+    project = theory_snapshot().get("project", {})
+    if session_id == database_session_id(project):
+        session = database_measurement_session(project, session)
     if not session:
         return jsonify({"status": "error", "message": "Aucune mesure disponible."}), 404
     return jsonify(dashboard_report(session))

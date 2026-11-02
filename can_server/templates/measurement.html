@@ -30,9 +30,9 @@
                 <div class="panel-title"><h2>Configuration de l’acquisition</h2></div>
                 <p class="form-intro">
                     {% if acquisition_mode == 'can' %}
-                    Les deux voies INA226 sont émises sur le bus CAN pour être visualisées et enregistrées dans CANalyzer. Le fichier ASC obtenu pourra ensuite être chargé dans le dashboard.
+                    Paramétrez la fréquence, la durée et les canaux dans l’application. Les deux voies INA226 sont émises sur le bus CAN. Activez l’enregistrement dans CANalyzer avant de démarrer pour pouvoir ensuite charger le fichier ASC dans le dashboard.
                     {% else %}
-                    Les deux voies INA226 sont reçues directement depuis l’ESP32-C3, traitées et enregistrées dans la base locale. Le dashboard sera disponible sans import ASC.
+                    Paramétrez la fréquence, la durée et les canaux dans l’application, puis démarrez la mesure. Les courants des voies INA226 s’afficheront ci-dessous en direct et seront enregistrés dans la base locale.
                     {% endif %}
                 </p>
                 <form id="measurementForm" class="form-grid">
@@ -73,6 +73,10 @@
                     </fieldset>
                     {% endfor %}
                     <p class="form-intro">La somme des fréquences des canaux actifs est limitée à 2000 Hz.</p>
+                    {% if acquisition_mode == 'digital' %}
+                    <label class="field">Unité des courants dans Excel<select name="export_unit"><option value="mA">Milliampères (mA)</option><option value="A">Ampères (A)</option></select></label>
+                    <p>Les anciennes mesures CAN et numériques sont conservées. Excel enregistre chaque mesure reçue, dans des fichiers de 1 000 lignes maximum par canal (en-tête inclus). L’affichage OLED à 50 ms utilise seulement la dernière valeur et ne pilote pas l’acquisition.</p>
+                    {% endif %}
                     <div class="actions">
                         <button class="success" id="startButton" type="submit">Démarrer la mesure</button>
                         <button class="danger" id="stopButtonA" type="button" disabled>Arrêter canal A</button>
@@ -104,9 +108,21 @@
                     En attente d’une commande.
                     {% endif %}
                 </div>
+                {% if acquisition_mode == 'digital' %}
+                <p id="excelExportStatus" role="status">Un dossier Excel sera créé pour chaque nouvelle acquisition numérique.</p>
+                <button type="button" class="secondary" id="openExcelFolder" disabled>Ouvrir le dossier Excel</button>
+                {% endif %}
                 <div class="channel-status">
-                    <article class="channel-box"><strong>INA226 A / 0x40</strong><p id="channelA">Inactif</p></article>
-                    <article class="channel-box"><strong>INA226 B / 0x41</strong><p id="channelB">Inactif</p></article>
+                    <article class="channel-box">
+                        <strong>INA226 A / 0x40</strong>
+                        <p class="channel-current">Courant mesuré : <b id="currentA" aria-live="polite">—</b></p>
+                        <p id="channelA">Inactif</p>
+                    </article>
+                    <article class="channel-box">
+                        <strong>INA226 B / 0x41</strong>
+                        <p class="channel-current">Courant mesuré : <b id="currentB" aria-live="polite">—</b></p>
+                        <p id="channelB">Inactif</p>
+                    </article>
                 </div>
                 <div class="actions" style="margin-top:18px">
                     <a class="button secondary disabled-link" id="dashboardButton" href="#" aria-disabled="true">
@@ -122,6 +138,7 @@
         const endpoints = {
             control: {{ url_for('control_esp_acquisition')|tojson }},
             status: {{ url_for('esp_target_config')|tojson }},
+            oledDisplay: {{ url_for('esp_display')|tojson }},
             dashboardImport: {{ url_for('dashboard_import')|tojson }},
             dashboardSetup: {{ url_for('dashboard_setup')|tojson }}
         };
@@ -136,6 +153,21 @@
         function setMessage(text, kind = '') {
             message.textContent = text;
             message.className = `message ${kind}`.trim();
+        }
+        async function showSelectedModeOnOled() {
+            try {
+                const response = await fetch(endpoints.oledDisplay, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        state: acquisitionMode === 'digital' ? 'digital_selected' : 'can_selected'
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Écran OLED indisponible.');
+            } catch (error) {
+                setMessage(`Écran OLED indisponible : ${error.message}`, 'error');
+            }
         }
         function formatSeconds(total) {
             total = Math.max(0, Math.ceil(Number(total) || 0));
@@ -159,17 +191,22 @@
             if (acquisitionMode === 'can' && data.running && can.tx_errors > 0
                     && (!can.tx_ok || can.last_tx_result || (can.error_flags & 0x20))) {
                 setMessage(
-                    `Acquisition active : ${can.tx_ok || 0} envois confirmés, ${can.tx_errors} échecs. ` +
+                    `Activez l’enregistrement sur CANalyzer. ${can.tx_ok || 0} envois confirmés, ${can.tx_errors} échecs. ` +
                     `Contrôleur : erreurs ${can.error_flags || 0}, compteur TX ${can.tx_error_count || 0}, code ${can.last_tx_result || 0}.`,
                     'error'
                 );
             } else if (acquisitionMode === 'can' && data.running && can.tx_ok > 0) {
-                setMessage('Acquisition CAN active : émission des trames confirmée par le contrôleur.', 'ok');
+                setMessage('Activez l’enregistrement sur CANalyzer pour sauvegarder le fichier ASC.', 'ok');
             }
             document.getElementById('startButton').disabled = Boolean(data.running);
             document.getElementById('stopButton').disabled = !data.running;
             ['A', 'B'].forEach(channel => {
                 const sensor = data.sensors?.[channel] || {};
+                const current = data.collector?.[`latest_current_${channel}`];
+                document.getElementById(`current${channel}`).textContent =
+                    current !== null && current !== undefined && Number.isFinite(Number(current))
+                        ? `${Number(current).toFixed(3)} A`
+                        : 'En attente de mesure';
                 document.getElementById(`stopButton${channel}`).disabled = !sensor.running;
                 const sensorDuration = Number(sensor.duration || 0);
                 const sensorElapsed = Number(sensor.elapsed || 0);
@@ -201,6 +238,12 @@
                     dashboardButton.removeAttribute('aria-disabled');
                 }
             }
+            const excel = data.collector?.excel_export;
+            if (acquisitionMode === 'digital' && excel) {
+                document.getElementById('excelExportStatus').textContent = `${excel.samples} mesures exportées dans ${excel.files} fichiers Excel · ${({running:'en cours', complete:'terminé', error:'échec'})[excel.status] || excel.status}${excel.error ? ' : ' + excel.error : ''} · ${excel.directory}`;
+                document.getElementById('openExcelFolder').disabled = !currentSessionId || !window.desktopEnvironment?.openMeasurementExports;
+                if (excel.status === 'running' && !data.running) window.setTimeout(() => pollStatus(false), 1000);
+            }
             if (!data.running && pollTimer) {
                 clearInterval(pollTimer);
                 pollTimer = null;
@@ -210,6 +253,10 @@
                         : 'Mesure terminée. Les valeurs de l’ESP32-C3 sont déjà enregistrées et disponibles dans le dashboard.',
                     'ok'
                 );
+            }
+            const missing = data.collector?.integrity?.missing_samples;
+            if (missing && Object.values(missing).some(count => count > 0)) {
+                setMessage(`Pertes de réception détectées : A ${missing.A || 0}, B ${missing.B || 0}. Les fichiers contiennent uniquement les mesures réellement reçues.`, 'error');
             }
         }
         async function pollStatus(showError = true) {
@@ -264,6 +311,11 @@
         document.getElementById('stopButtonA').addEventListener('click', () => stopSensor('A'));
         document.getElementById('stopButtonB').addEventListener('click', () => stopSensor('B'));
         document.getElementById('stopButton').addEventListener('click', () => stopSensor('ALL'));
+        document.getElementById('openExcelFolder')?.addEventListener('click', async () => {
+            try { await window.desktopEnvironment.openMeasurementExports(currentSessionId); }
+            catch (error) { setMessage(error.message, 'error'); }
+        });
+        showSelectedModeOnOled();
         pollStatus(false);
     </script>
 </body>

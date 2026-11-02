@@ -133,7 +133,7 @@
                 <thead>
                     <tr id="main-headers">
                         <th class="sticky-col">Device Name</th>
-                        <th class="sticky-col2" style="background-color: #4a5568;">Current</th>
+                        <th class="sticky-col2" style="background-color: #4a5568;">Current (µA)</th>
                     </tr>
                 </thead>
                 <tbody id="table-body"></tbody>
@@ -185,8 +185,6 @@
             let renderedCount = 0;
             sheet.data.forEach((row, rowIndex) => {
                 const itemName = row['Device Name'] || row['ECU Name'] || `Item ${rowIndex + 1}`;
-                const sourceColumn = batterySubMode === 'DM2' ? 'DM2 Current (mA)' : 'DM1 Current (mA)';
-                
                 const rawVal = SleepCurrent.sourceCurrent(row, batterySubMode);
                 const originalCurrent = rawVal !== null && rawVal !== undefined && rawVal !== '' ? rawVal : 0;
                 
@@ -231,7 +229,7 @@
                 currentUnitField.className = 'matrix-current-unit';
                 const currentUnitSuffix = document.createElement('span');
                 currentUnitSuffix.className = 'matrix-current-unit-suffix';
-                currentUnitSuffix.textContent = 'mA';
+                currentUnitSuffix.textContent = 'µA';
                 currentUnitField.append(currentInput, currentUnitSuffix);
                 tdDark.appendChild(currentUnitField);
                 tr.appendChild(tdDark);

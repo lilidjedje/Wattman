@@ -4,6 +4,7 @@
     if (!table || !tbody || typeof daysColumns === 'undefined') return;
 
     const mode = sessionStorage.getItem('batterySubMode') || 'DM1';
+    window.SleepCurrent?.migrateEditorCurrentsToMicroamps(sessionStorage, mode);
     const currentKey = mode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${mode}Currents`;
     const matrixKey = mode === 'Customer Mode' ? 'customerModeMatrix' : `${mode.toLowerCase()}ModeMatrix`;
     const customStorageKey = 'customDarkDevices';
@@ -14,7 +15,7 @@
     let matrix = JSON.parse(sessionStorage.getItem(matrixKey) || '{}');
 
     const currentHeader = document.querySelector('th.sticky-col2');
-    if (currentHeader) currentHeader.textContent = 'Current';
+    if (currentHeader) currentHeader.textContent = 'Current (µA)';
 
     function unitField(input, unit) {
         if (input.parentElement?.classList.contains('battery-unit-field')) return;
@@ -92,7 +93,7 @@
             return;
         }
         const input = row.querySelector('td.sticky-col2 input');
-        if (input) unitField(input, 'mA');
+        if (input) unitField(input, 'µA');
         addDeleteButton(row.cells[0], info.name, () => {
             deletedKeys.add(info.key);
             sessionStorage.setItem(deletedStorageKey, JSON.stringify([...deletedKeys]));
@@ -133,7 +134,7 @@
             sessionStorage.setItem(currentKey, JSON.stringify(currents));
         });
         currentCell.append(input);
-        unitField(input, 'mA');
+        unitField(input, 'µA');
         row.append(currentCell);
 
         daysColumns.forEach((day, index) => {
@@ -166,7 +167,7 @@
             <label>Current
                 <span class="battery-unit-field">
                     <input id="new-battery-device-current" type="number" min="0" step="0.01" value="0">
-                    <span class="battery-unit-suffix">mA</span>
+                    <span class="battery-unit-suffix">µA</span>
                 </span>
             </label>
             <button id="add-battery-device" type="button">Ajouter le Device</button>

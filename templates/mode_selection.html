@@ -115,6 +115,7 @@
     </div>
     <script src="{{ url_for('static', filename='project_storage.js') }}"></script>
     <script src="{{ url_for('static', filename='homologation_defaults.js') }}"></script>
+    <script src="{{ url_for('static', filename='sleep_current.js') }}"></script>
     <script>
         const canServerUrl = {{ can_server_url|tojson }};
         const readJson = (storage, key, fallback) => {
@@ -207,6 +208,7 @@
         }
 
         function sleepDevices(excelData) {
+            SleepCurrent.migrateEditorCurrentsToMicroamps(sessionStorage, 'Customer Mode');
             const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
             const selectedRaw = sessionStorage.getItem('selectedEcuKeys');
             const selected = new Set(readJson(sessionStorage, 'selectedEcuKeys', []));
@@ -238,31 +240,31 @@
                     const name = row['ECU Name'] || row['Device Name'] || `ECU ${rowIndex + 1}`;
                     const key = `${rowIndex}_${name}`;
                     if (deleted.has(key) || (selectedRaw !== null && !selected.has(key))) return;
-                    const nominalMilliAmp = numeric(
-                        modified[key] ?? row[column] ?? row['Current (A)'] ??
-                        row['Sleep Current (mA)'] ?? row['Homologation Current (mA)']
-                    );
+                    const hasModifiedCurrent = modified[key] !== undefined;
+                    const nominalMicroAmp = hasModifiedCurrent
+                        ? numeric(modified[key])
+                        : SleepCurrent.sourceCurrentMicroamps(row, mode);
                     devices.push({
                         id: `sleep:${mode}:${key}`,
                         kind: 'sleep',
                         mode,
                         name: `${name} — ${mode}`,
-                        nominal_A: nominalMilliAmp / 1000,
-                        source_unit: 'mA',
+                        nominal_A: nominalMicroAmp / 1000000,
+                        source_unit: 'µA',
                         day_profiles: profilesFor(label => `${rowIndex}_${label}`),
                         scenarios: {}
                     });
                 });
                 custom.forEach(device => {
                     const key = `custom:${device.id}`;
-                    const nominalMilliAmp = numeric(modified[key] ?? device.current);
+                    const nominalMicroAmp = numeric(modified[key] ?? device.current);
                     devices.push({
                         id: `sleep:${mode}:${key}`,
                         kind: 'sleep',
                         mode,
                         name: `${device.name} — ${mode}`,
-                        nominal_A: nominalMilliAmp / 1000,
-                        source_unit: 'mA',
+                        nominal_A: nominalMicroAmp / 1000000,
+                        source_unit: 'µA',
                         day_profiles: profilesFor(label => `${key}_${label}`),
                         scenarios: {}
                     });

@@ -42,3 +42,11 @@ a ajouter ou modifier.txt
 edit_gmv.html
 Datasheet.docx
 ExtraFeeding Ampere Tool_v1.3.xlsm
+
+# Generated diagnostics and Office lock files
+outputs/
+~$*
+
+# Versioned acquisition fixtures
+!test_asc/
+!test_asc/*.asc
