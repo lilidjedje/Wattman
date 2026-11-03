@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <U8x8lib.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <WebServer.h>
@@ -7,25 +8,42 @@
 #include <mcp_can.h>
 #include "esp_timer.h"
 
+constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | upload-2026-11-03-digital-excel-v1";
+
+void printFirmwareVersion() {
+  Serial.printf("[FIRMWARE] %s | build %s %s\n", FIRMWARE_VERSION, __DATE__, __TIME__);
+}
+
 // --- Configuration des Broches Matérielles ---
-#define I2C_SDA       8
-#define I2C_SCL       9
-#define PIN_CS_CAN    7
-#define PIN_INT_CAN  10
-#define SPI_SCK       4
-#define SPI_MISO      5  
-#define SPI_MOSI      3
+// ESP32-C3 Mini / SuperMini: GPIO8/9 are used by I2C; keep GPIO2 and 18/19 free.
+#if !defined(CONFIG_IDF_TARGET_ESP32C3)
+#error "Select ESP32C3 Dev Module, USB CDC On Boot: Enabled."
+#endif
+#define I2C_SDA 8
+#define I2C_SCL 9
+#define PIN_CS_CAN 7
+#define PIN_INT_CAN 10
+#define SPI_SCK 4
+#define SPI_MISO 5
+#define SPI_MOSI 6
 
-const uint8_t ADDR_INA_A = 0x40; 
-const uint8_t ADDR_INA_B = 0x41; 
+const uint8_t ADDR_INA_A = 0x40;
+const uint8_t ADDR_INA_B = 0x41;
 const uint8_t REG_CONFIG = 0x00;
-const uint8_t REG_SHUNT  = 0x01;
+const uint8_t REG_SHUNT = 0x01;
 
-#define CAN_ID_CURRENT_A     0x100  
-#define CAN_ID_STATS_A       0x101  
-#define CAN_ID_CURRENT_B     0x102  
-#define CAN_ID_STATS_B       0x103  
-#define CAN_ID_TIME_SYNC     0x105  
+// I = Vshunt / Rshunt ; INA226 shunt voltage resolution: 2.5 uV/LSB.
+constexpr float SHUNT_VOLTAGE_LSB_V = 2.5e-6f;
+constexpr float RSHUNT_A_OHMS = 0.010f;  // R010: 10 mOhm
+constexpr float RSHUNT_B_OHMS = 0.100f;  // R100: 100 mOhm
+
+#define CAN_ID_CURRENT_A 0x100
+#define CAN_ID_STATS_A 0x101
+#define CAN_ID_CURRENT_B 0x102
+#define CAN_ID_STATS_B 0x103
+#define CAN_ID_TIME_SYNC 0x105
+
+constexpr bool CAN_ZERO_CURRENT_TEST = false;  // Real INA measurements, including zero current.
 
 // L'ESP32-C3 rejoint le point d'accès créé par le Raspberry Pi.
 // Le navigateur parle au Pi ; seul le Pi communique directement avec cette API.
@@ -37,7 +55,7 @@ const uint8_t REG_SHUNT  = 0x01;
 #endif
 const char* WIFI_SSID = STA_WIFI_SSID;
 const char* WIFI_PASS = STA_WIFI_PASS;
-const char* ACCESS_POINT_SSID = "ESP32C3-Mesure";
+const char* ACCESS_POINT_SSID = "esp32_mesure";
 const char* ACCESS_POINT_PASS = "ina226mesure";
 const char* DEVICE_HOSTNAME = "esp32c3-mesure";
 
@@ -47,17 +65,19 @@ WiFiServer streamServer(3333);
 WiFiClient streamClient;
 esp_timer_handle_t acqTimer = nullptr;
 TaskHandle_t taskAcqHandle = nullptr;
+TaskHandle_t taskOledHandle = nullptr;
 QueueHandle_t streamQueue = nullptr;
 SemaphoreHandle_t streamClientMutex = nullptr;
 SemaphoreHandle_t canMutex = nullptr;
+SemaphoreHandle_t i2cMutex = nullptr;
 
 volatile uint32_t testDurationSec = 0;
 volatile uint32_t testDurationSecA = 0, testDurationSecB = 0;
 volatile uint32_t targetFrequencyA = 0, targetFrequencyB = 0;
 volatile uint32_t timerFrequency = 1000;
 volatile uint32_t schedulerAccumulatorA = 0, schedulerAccumulatorB = 0;
-volatile bool     testRunning     = false;
-unsigned long     testStartMillis = 0;
+volatile bool testRunning = false;
+unsigned long testStartMillis = 0;
 volatile uint64_t testStartMicros = 0;
 volatile uint32_t lastElapsedSec = 0;
 volatile bool sensorRunningA = false;
@@ -68,21 +88,168 @@ volatile bool canReady = false;
 volatile uint32_t canTxOk = 0;
 volatile uint32_t canTxErrors = 0;
 volatile uint8_t canLastTxResult = CAN_OK;
+volatile uint16_t canLastTxId = 0;
 volatile uint8_t canErrorFlags = 0;
 volatile uint8_t canTxErrorCount = 0;
 volatile uint8_t canOscillatorMHz = 8;
 volatile bool digitalStreamMode = false;
 
 // Variable pour stocker le temps d'origine fourni par le PC
-volatile uint32_t pcBaseTimestamp = 0; 
+volatile uint32_t pcBaseTimestamp = 0;
+volatile uint64_t pcBaseTimestampUs = 0;
+volatile bool streamEndPending = false;
+volatile bool acquisitionBusy = false;
+volatile float latestCurrentA = 0.0f, latestCurrentB = 0.0f;
+volatile bool latestValidA = false, latestValidB = false;
+uint64_t lastSampleMicrosA = 0;
+uint64_t lastSampleMicrosB = 0;
+enum OledScreenState : uint8_t {
+  OLED_WELCOME,
+  OLED_DIGITAL_SELECTED,
+  OLED_CAN_SELECTED,
+  OLED_DIGITAL_RUNNING,
+  OLED_MEASUREMENT_RUNNING,
+  OLED_CAN_RECORDING,
+  OLED_MEASUREMENT_FINISHED
+};
+volatile OledScreenState oledScreenState = OLED_WELCOME;
+volatile bool oledInitialized = false;
+U8X8_SH1106_128X64_NONAME_HW_I2C oled(U8X8_PIN_NONE, I2C_SCL, I2C_SDA);
 
-volatile uint32_t acqCountA = 0,    acqCountB = 0;
-volatile uint32_t lostCountA = 0,   lostCountB = 0;
-volatile uint32_t freqReelleA = 0,  freqReelleB = 0;
+void drawOledLinesLocked(char lines[8][17]) {
+  for (uint8_t row = 0; row < 8; row++) {
+    char padded[17];
+    memset(padded, ' ', 16);
+    padded[16] = 0;
+    memcpy(padded, lines[row], min((size_t)16, strlen(lines[row])));
+    oled.drawString(0, row, padded);
+  }
+}
+
+void drawOledLines(char lines[8][17]) {
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  drawOledLinesLocked(lines);
+  xSemaphoreGive(i2cMutex);
+}
+
+void drawOledAcquisitionStartScreen() {
+  char lines[8][17] = {};
+  if (digitalStreamMode) {
+    snprintf(lines[0], sizeof(lines[0]), "NUMERIQUE ACTIF");
+    snprintf(lines[1], sizeof(lines[1]), "Acquisition");
+    snprintf(lines[2], sizeof(lines[2]), "canal A/B");
+  } else {
+    snprintf(lines[0], sizeof(lines[0]), "MESURE EN COURS");
+    snprintf(lines[1], sizeof(lines[1]), "Acquisition");
+    snprintf(lines[2], sizeof(lines[2]), "canal A/B");
+  }
+  drawOledLines(lines);
+}
+
+void taskOled(void*) {
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  oled.begin();
+  oled.setBusClock(100000);
+  oled.setFont(u8x8_font_chroma48medium8_r);
+  xSemaphoreGive(i2cMutex);
+  oledInitialized = true;
+  for (;;) {
+    char lines[8][17] = {};
+    char currentA[17];
+    char currentB[17];
+    char remainingA[17];
+    char remainingB[17];
+    const OledScreenState screen = oledScreenState;
+
+    switch (screen) {
+      case OLED_WELCOME:
+        snprintf(lines[0], sizeof(lines[0]), "Hello !");
+        snprintf(lines[1], sizeof(lines[1]), "Parametrez votre");
+        snprintf(lines[2], sizeof(lines[2]), "mesure");
+        break;
+      case OLED_DIGITAL_SELECTED:
+        snprintf(lines[0], sizeof(lines[0]), "Vous avez choisi");
+        snprintf(lines[1], sizeof(lines[1]), "Mesure numerique");
+        break;
+      case OLED_CAN_SELECTED:
+        snprintf(lines[0], sizeof(lines[0]), "Vous avez choisi");
+        snprintf(lines[1], sizeof(lines[1]), "Mesure CAN");
+        break;
+      case OLED_DIGITAL_RUNNING:
+      case OLED_MEASUREMENT_RUNNING:
+        {
+          const float a = latestCurrentA, b = latestCurrentB;
+          if (latestValidA) {
+            snprintf(currentA, sizeof(currentA), fabsf(a) < 1 ? "A %7.3fmA" : "A %7.4fA", fabsf(a) < 1 ? a * 1000 : a);
+          } else {
+            snprintf(currentA, sizeof(currentA), "A: attente");
+          }
+          if (latestValidB) {
+            snprintf(currentB, sizeof(currentB), fabsf(b) < 1 ? "B %7.3fmA" : "B %7.4fA", fabsf(b) < 1 ? b * 1000 : b);
+          } else {
+            snprintf(currentB, sizeof(currentB), "B: attente");
+          }
+          const uint32_t elapsed = (millis() - testStartMillis) / 1000UL;
+          auto formatRemaining = [elapsed](char* output, char channel, bool running,
+                                           bool finished, uint32_t duration) {
+            if (finished) {
+              snprintf(output, 17, "%c: terminee", channel);
+            } else if (!running) {
+              snprintf(output, 17, "%c: inactive", channel);
+            } else {
+              const uint32_t remaining = elapsed < duration ? duration - elapsed : 0;
+              const uint32_t hours = remaining / 3600UL;
+              const uint32_t minutes = (remaining / 60UL) % 60UL;
+              const uint32_t seconds = remaining % 60UL;
+              snprintf(output, 17, "%c %lu:%02lu:%02lu", channel,
+                       (unsigned long)hours, (unsigned long)minutes,
+                       (unsigned long)seconds);
+            }
+          };
+          formatRemaining(remainingA, 'A', sensorRunningA, sensorFinishedA, testDurationSecA);
+          formatRemaining(remainingB, 'B', sensorRunningB, sensorFinishedB, testDurationSecB);
+          snprintf(lines[0], sizeof(lines[0]), "%s",
+                   screen == OLED_DIGITAL_RUNNING ? "NUMERIQUE ACTIF" : "MESURE EN COURS");
+          snprintf(lines[1], sizeof(lines[1]), "%s", currentA);
+          snprintf(lines[2], sizeof(lines[2]), "%s", currentB);
+          snprintf(lines[3], sizeof(lines[3]), "Temps restant");
+          snprintf(lines[4], sizeof(lines[4]), "%s", remainingA);
+          snprintf(lines[5], sizeof(lines[5]), "%s", remainingB);
+          break;
+        }
+      case OLED_CAN_RECORDING:
+        snprintf(lines[0], sizeof(lines[0]), "Parametrez votre");
+        snprintf(lines[1], sizeof(lines[1]), "mesure");
+        snprintf(lines[2], sizeof(lines[2]), "Activez sur");
+        snprintf(lines[3], sizeof(lines[3]), "CANalyzer");
+        break;
+      case OLED_MEASUREMENT_FINISHED:
+        snprintf(lines[0], sizeof(lines[0]), "Mesure finie");
+        snprintf(lines[1], sizeof(lines[1]), "%s", sensorFinishedA ? "A: terminee" : "A: arretee");
+        snprintf(lines[2], sizeof(lines[2]), "%s", sensorFinishedB ? "B: terminee" : "B: arretee");
+        break;
+    }
+
+    if (!testRunning) {
+      xSemaphoreTake(i2cMutex, portMAX_DELAY);
+      if (!testRunning) {
+        drawOledLinesLocked(lines);
+      }
+      xSemaphoreGive(i2cMutex);
+    }
+    // Keep the shared I2C bus available to INA226 during acquisition.
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+  }
+}
+
+
+volatile uint32_t acqCountA = 0, acqCountB = 0;
+volatile uint32_t lostCountA = 0, lostCountB = 0;
+volatile uint32_t freqReelleA = 0, freqReelleB = 0;
 
 struct ConfigPayload {
   uint32_t frequency;
-  uint32_t duration; 
+  uint32_t duration;
   uint32_t frequencyA;
   uint32_t frequencyB;
   uint32_t durationA;
@@ -90,7 +257,7 @@ struct ConfigPayload {
   uint32_t activeA;
   uint32_t activeB;
 };
-volatile ConfigPayload currentCfg = {1000, 10, 1000, 1000, 10, 10, 1, 1};
+volatile ConfigPayload currentCfg = { 1000, 10, 1000, 1000, 10, 10, 1, 1 };
 
 struct __attribute__((packed)) StreamFrame {
   uint16_t magic;
@@ -107,6 +274,7 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
   bool delivered = false;
   if (!digitalStreamMode) {
     xSemaphoreTake(canMutex, portMAX_DELAY);
+    canLastTxId = identifier;
     canLastTxResult = canReady ? CAN.sendMsgBuf(identifier, 0, length, payload) : CAN_FAILINIT;
     const bool canDelivered = canLastTxResult == CAN_OK;
     if (canReady) {
@@ -115,10 +283,10 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
     }
     xSemaphoreGive(canMutex);
     if (canDelivered) {
-      canTxOk++;
+      canTxOk = canTxOk + 1;
       delivered = true;
     } else {
-      canTxErrors++;
+      canTxErrors = canTxErrors + 1;
     }
   }
   if (digitalStreamMode && streamConnected && streamQueue && length <= 8) {
@@ -128,7 +296,7 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
     frame.length = length;
     frame.identifier = identifier;
     const uint64_t elapsedUs = testStartMicros ? esp_timer_get_time() - testStartMicros : 0;
-    frame.timestampUs = ((uint64_t)pcBaseTimestamp * 1000000ULL) + elapsedUs;
+    frame.timestampUs = (pcBaseTimestampUs ? pcBaseTimestampUs : (uint64_t)pcBaseTimestamp * 1000000ULL) + elapsedUs;
     memcpy(frame.payload, payload, length);
     if (xQueueSend(streamQueue, &frame, 0) == pdTRUE) delivered = true;
   }
@@ -152,8 +320,7 @@ bool initializeCan(uint8_t oscillatorMHz = 8) {
   } else {
     Serial.printf(
       "[CAN] MCP2515 indisponible avec quartz %u MHz. Verifiez SPI et alimentation.\n",
-      oscillatorMHz
-    );
+      oscillatorMHz);
   }
   xSemaphoreGive(canMutex);
   return canReady;
@@ -162,7 +329,18 @@ bool initializeCan(uint8_t oscillatorMHz = 8) {
 void taskStream(void* parameter) {
   StreamFrame frame;
   for (;;) {
-    if (xQueueReceive(streamQueue, &frame, pdMS_TO_TICKS(250)) != pdTRUE) continue;
+    if (xQueueReceive(streamQueue, &frame, pdMS_TO_TICKS(20)) != pdTRUE) {
+      if (!streamEndPending || acquisitionBusy) continue;
+      frame = {};
+      frame.magic = 0xA55A;
+      frame.version = 1;
+      frame.length = 8;
+      frame.identifier = 0x106;
+      frame.timestampUs = pcBaseTimestampUs + (esp_timer_get_time() - testStartMicros);
+      const uint32_t counts[2] = { acqCountA, acqCountB };
+      memcpy(frame.payload, counts, sizeof(counts));
+      streamEndPending = false;
+    }
     if (!streamClientMutex) continue;
     xSemaphoreTake(streamClientMutex, portMAX_DELAY);
     if (streamConnected && streamClient.connected()) {
@@ -181,10 +359,16 @@ void taskStream(void* parameter) {
 void stopAcquisition(bool completed) {
   lastElapsedSec = completed ? testDurationSec : (millis() - testStartMillis) / 1000UL;
   testRunning = false;
+  if (completed && digitalStreamMode) oledScreenState = OLED_MEASUREMENT_FINISHED;
+  if (digitalStreamMode) streamEndPending = true;
   sensorFinishedA = sensorFinishedA || (completed && currentCfg.activeA);
   sensorFinishedB = sensorFinishedB || (completed && currentCfg.activeB);
   sensorRunningA = false;
   sensorRunningB = false;
+  if (!digitalStreamMode && !sensorRunningA && !sensorRunningB) {
+    oledScreenState = OLED_CAN_RECORDING;
+  }
+  if (taskOledHandle) xTaskNotifyGive(taskOledHandle);
   esp_timer_stop(acqTimer);
 }
 
@@ -201,16 +385,20 @@ void stopSensor(char sensor) {
 }
 
 bool inaWriteRegister16(uint8_t addr, uint8_t reg, uint16_t value) {
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
   Wire.beginTransmission(addr);
   Wire.write(reg);
   Wire.write((uint8_t)((value >> 8) & 0xFF));
   Wire.write((uint8_t)(value & 0xFF));
-  return (Wire.endTransmission() == 0);
+  const bool success = Wire.endTransmission() == 0;
+  xSemaphoreGive(i2cMutex);
+  return success;
 }
 
 void configureINA226(uint8_t addr, uint32_t freq) {
   uint16_t config_bits;
-  if (freq >= 2000) {
+  if (freq >= 1000) {
     config_bits = (0b000 << 9) | (0b001 << 6) | (0b001 << 3) | 0b101;
   } else {
     config_bits = (0b000 << 9) | (0b100 << 6) | (0b100 << 3) | 0b111;
@@ -219,13 +407,20 @@ void configureINA226(uint8_t addr, uint32_t freq) {
 }
 
 inline int16_t readINA226ShuntRaw(uint8_t addr) {
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
   Wire.beginTransmission(addr);
   Wire.write(REG_SHUNT);
-  if (Wire.endTransmission(false) != 0) return 0;
-  if (Wire.requestFrom(addr, (uint8_t)2) == 2) {
-    return (int16_t)((Wire.read() << 8) | Wire.read());
+  if (Wire.endTransmission(false) != 0) {
+    xSemaphoreGive(i2cMutex);
+    return 0;
   }
-  return 0;
+  int16_t value = 0;
+  if (Wire.requestFrom(addr, (uint8_t)2) == 2) {
+    value = (int16_t)((Wire.read() << 8) | Wire.read());
+  }
+  xSemaphoreGive(i2cMutex);
+  return value;
 }
 
 void IRAM_ATTR onAcqTimer(void* arg) {
@@ -236,18 +431,31 @@ void IRAM_ATTR onAcqTimer(void* arg) {
 
 void taskAcq(void* parameter) {
   uint32_t lastPrintMs = 0;
+  uint64_t observedStart = 0;
   uint32_t lastSnapshotA = 0, lastSnapshotB = 0;
-  byte canPacket[8] = {0};
+  uint16_t lastDisplayedCanId = 0;
+  float lastDisplayedCanCurrent = 0.0f;
+  byte lastDisplayedCanData[4] = { 0 };
+  bool lastDisplayedCanSendOk = false;
+  bool hasCanSampleToDisplay = false;
+  byte canPacket[8] = { 0 };
 
   for (;;) {
+    // The timer wakes this task directly, including the first sample at t=0.
+    const uint32_t nNotify = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     if (!testRunning) {
       lastSnapshotA = acqCountA;
       lastSnapshotB = acqCountB;
       lastPrintMs = millis();
-      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
 
+    if (observedStart != testStartMicros) {
+      observedStart = testStartMicros;
+      lastSnapshotA = 0;
+      lastSnapshotB = 0;
+      lastPrintMs = testStartMillis;
+    }
     const uint32_t elapsedMs = millis() - testStartMillis;
     if (sensorRunningA && elapsedMs >= testDurationSecA * 1000UL) {
       sensorRunningA = false;
@@ -263,10 +471,9 @@ void taskAcq(void* parameter) {
       continue;
     }
 
-    uint32_t nNotify = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     if (nNotify == 0) {
-      if (sensorRunningA) lostCountA++;
-      if (sensorRunningB) lostCountB++;
+      if (sensorRunningA) lostCountA = lostCountA + 1;
+      if (sensorRunningB) lostCountB = lostCountB + 1;
       continue;
     }
 
@@ -281,24 +488,66 @@ void taskAcq(void* parameter) {
     if (acquireA && dueA > 1) lostCountA += dueA - 1;
     if (acquireB && dueB > 1) lostCountB += dueB - 1;
 
+    acquisitionBusy = true;
     if (acquireA) {
-      acqCountA++;
+      acqCountA = acqCountA + 1;
+      const uint64_t sampleMicros = esp_timer_get_time();
+      const uint64_t intervalMicros = lastSampleMicrosA ? sampleMicros - lastSampleMicrosA : 0;
+      lastSampleMicrosA = sampleMicros;
+      const uint16_t sampleFrequencyA = intervalMicros
+                                          ? (uint16_t)min((1000000ULL + intervalMicros / 2) / intervalMicros, 65535ULL)
+                                          : (uint16_t)targetFrequencyA;
       int16_t rawA = readINA226ShuntRaw(ADDR_INA_A);
-      float IA = rawA * 2.5e-6f / 0.1f;
+      float IA = rawA * SHUNT_VOLTAGE_LSB_V / RSHUNT_A_OHMS;
+      latestCurrentA = IA;
+      latestValidA = true;
+      if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawA == 0) {
+        IA = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
+      }
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &IA, sizeof(float));
-      if (!sendCanFrame(CAN_ID_CURRENT_A, 4, canPacket)) lostCountA++;
+      if (digitalStreamMode) memcpy(&canPacket[4], &sampleFrequencyA, sizeof(sampleFrequencyA));
+      const bool sent = sendCanFrame(CAN_ID_CURRENT_A, digitalStreamMode ? 6 : 4, canPacket);
+      if (!sent) lostCountA = lostCountA + 1;
+      if (!digitalStreamMode) {
+        lastDisplayedCanId = CAN_ID_CURRENT_A;
+        lastDisplayedCanCurrent = IA;
+        memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+        lastDisplayedCanSendOk = sent;
+        hasCanSampleToDisplay = true;
+      }
     }
 
     if (acquireB) {
-      acqCountB++;
+      acqCountB = acqCountB + 1;
+      const uint64_t sampleMicros = esp_timer_get_time();
+      const uint64_t intervalMicros = lastSampleMicrosB ? sampleMicros - lastSampleMicrosB : 0;
+      lastSampleMicrosB = sampleMicros;
+      const uint16_t sampleFrequencyB = intervalMicros
+                                          ? (uint16_t)min((1000000ULL + intervalMicros / 2) / intervalMicros, 65535ULL)
+                                          : (uint16_t)targetFrequencyB;
       int16_t rawB = readINA226ShuntRaw(ADDR_INA_B);
-      float IB = rawB * 2.5e-6f / 0.1f;
+      float IB = rawB * SHUNT_VOLTAGE_LSB_V / RSHUNT_B_OHMS;
+      latestCurrentB = IB;
+      latestValidB = true;
+      if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawB == 0) {
+        IB = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
+      }
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &IB, sizeof(float));
-      if (!sendCanFrame(CAN_ID_CURRENT_B, 4, canPacket)) lostCountB++;
+      if (digitalStreamMode) memcpy(&canPacket[4], &sampleFrequencyB, sizeof(sampleFrequencyB));
+      const bool sent = sendCanFrame(CAN_ID_CURRENT_B, digitalStreamMode ? 6 : 4, canPacket);
+      if (!sent) lostCountB = lostCountB + 1;
+      if (!digitalStreamMode) {
+        lastDisplayedCanId = CAN_ID_CURRENT_B;
+        lastDisplayedCanCurrent = IB;
+        memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+        lastDisplayedCanSendOk = sent;
+        hasCanSampleToDisplay = true;
+      }
     }
 
+    acquisitionBusy = false;
     uint32_t nowMs = millis();
     if (nowMs - lastPrintMs >= 1000) {
       // Recover a bus-off controller using the selected physical crystal.
@@ -311,19 +560,19 @@ void taskAcq(void* parameter) {
       lastPrintMs = nowMs;
 
       if (sensorRunningA) {
-        uint16_t statsA[2] = {(uint16_t)freqReelleA, (uint16_t)lostCountA};
+        uint16_t statsA[2] = { (uint16_t)freqReelleA, (uint16_t)lostCountA };
         memset(canPacket, 0, 8);
         memcpy(&canPacket[0], &statsA[0], 2);
         memcpy(&canPacket[2], &statsA[1], 2);
-        if (!sendCanFrame(CAN_ID_STATS_A, 4, canPacket)) lostCountA++;
+        if (!sendCanFrame(CAN_ID_STATS_A, 4, canPacket)) lostCountA = lostCountA + 1;
       }
 
       if (sensorRunningB) {
-        uint16_t statsB[2] = {(uint16_t)freqReelleB, (uint16_t)lostCountB};
+        uint16_t statsB[2] = { (uint16_t)freqReelleB, (uint16_t)lostCountB };
         memset(canPacket, 0, 8);
         memcpy(&canPacket[0], &statsB[0], 2);
         memcpy(&canPacket[2], &statsB[1], 2);
-        if (!sendCanFrame(CAN_ID_STATS_B, 4, canPacket)) lostCountB++;
+        if (!sendCanFrame(CAN_ID_STATS_B, 4, canPacket)) lostCountB = lostCountB + 1;
       }
 
       // Envoi du timestamp calculé à partir de la valeur initiale reçue du PC
@@ -331,6 +580,26 @@ void taskAcq(void* parameter) {
       memset(canPacket, 0, 8);
       memcpy(&canPacket[0], &calcul_ts, 4);
       sendCanFrame(CAN_ID_TIME_SYNC, 4, canPacket);
+      if (!digitalStreamMode) {
+        if (hasCanSampleToDisplay) {
+          Serial.printf(
+            "[CAN TX] ID=0x%03X DLC=4 DATA=%02X %02X %02X %02X courant=%.1f A statut=%s | OK=%lu erreurs=%lu flags=0x%02X TXerr=%u\n",
+            (unsigned)lastDisplayedCanId,
+            lastDisplayedCanData[0],
+            lastDisplayedCanData[1],
+            lastDisplayedCanData[2],
+            lastDisplayedCanData[3],
+            lastDisplayedCanCurrent,
+            lastDisplayedCanSendOk ? "OK" : "ECHEC",
+            (unsigned long)canTxOk,
+            (unsigned long)canTxErrors,
+            (unsigned)canErrorFlags,
+            (unsigned)canTxErrorCount);
+          hasCanSampleToDisplay = false;
+        } else {
+          Serial.println("[CAN TX] Aucune trame courant a afficher pendant cette seconde.");
+        }
+      }
     }
   }
 }
@@ -459,12 +728,12 @@ void handleSetDuration() {
     server.send(423, "text/plain", "Acquisition déjà en cours.");
     return;
   }
-  
+
   // Récupération de l'heure envoyée par le client web
   if (server.hasArg("clientTime")) {
     pcBaseTimestamp = server.arg("clientTime").toInt();
   } else {
-    pcBaseTimestamp = 1781582267; // Fallback par défaut juin 2026
+    pcBaseTimestamp = 1781582267;  // Fallback par défaut juin 2026
   }
 
   uint32_t targetFreq = server.arg("freq").toInt();
@@ -496,23 +765,29 @@ void handleSetDuration() {
   sensorFinishedA = false;
   sensorFinishedB = false;
 
-  if (targetFreq >= 2000) Wire.setClock(1000000);
-  else Wire.setClock(400000); 
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  if (targetFreq >= 1000) Wire.setClock(1000000);
+  else Wire.setClock(400000);
+  xSemaphoreGive(i2cMutex);
 
   if (currentCfg.activeA) configureINA226(ADDR_INA_A, targetFreq);
   if (currentCfg.activeB) configureINA226(ADDR_INA_B, targetFreq);
 
-  acqCountA = 0; lostCountA = 0;
-  acqCountB = 0; lostCountB = 0;
+  acqCountA = 0;
+  lostCountA = 0;
+  acqCountB = 0;
+  lostCountB = 0;
 
   // Envoi forcé immédiat du paquet temporel de milliseconde 0 avant les signaux INA
-  byte canPacketTime[8] = {0};
+  byte canPacketTime[8] = { 0 };
   memcpy(&canPacketTime[0], (const void*)&pcBaseTimestamp, 4);
   sendCanFrame(CAN_ID_TIME_SYNC, 4, canPacketTime);
 
   uint64_t period_us = 1000000ULL / targetFreq;
   testStartMillis = millis();
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
   testRunning = true;
+  xSemaphoreGive(i2cMutex);
   esp_timer_start_periodic(acqTimer, period_us);
 
   server.send(200, "text/plain", "Test démarré.");
@@ -577,12 +852,19 @@ void handleApiStartAcquisition() {
     return;
   }
   digitalStreamMode = requestedMode == "digital";
+  Serial.printf(
+    "[ACQ] Mode demande: %s%s\n",
+    digitalStreamMode ? "numerique Wi-Fi" : "CAN",
+    digitalStreamMode ? " (aucune trame CAN ne sera emise)" : "");
+  if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST) {
+    Serial.println("[CAN TEST] Mesure INA brute nulle: envoi de 42.0 a 42.9 A, puis repetition.");
+  }
 
   // Le POST HTTP peut arriver juste après l'ouverture du socket TCP, avant
   // l'itération suivante de taskWeb. Accepter immédiatement ce client évite
   // de refuser à tort le démarrage de la mesure numérique.
   if (digitalStreamMode && !streamConnected && streamServer.hasClient()) {
-    WiFiClient incoming = streamServer.available();
+    WiFiClient incoming = streamServer.accept();
     xSemaphoreTake(streamClientMutex, portMAX_DELAY);
     if (streamClient) streamClient.stop();
     streamClient = incoming;
@@ -616,8 +898,7 @@ void handleApiStartAcquisition() {
     sendAcquisitionError(
       503,
       "CAN obligatoire : MCP2515 indisponible. Verifiez le cablage SPI, "
-      "l'alimentation et le quartz du module."
-    );
+      "l'alimentation et le quartz du module.");
     return;
   }
   if (digitalStreamMode && !streamConnected) {
@@ -649,6 +930,16 @@ void handleApiStartAcquisition() {
   }
 
   pcBaseTimestamp = server.arg("timestamp").toInt();
+  pcBaseTimestampUs = server.hasArg("timestamp_us") ? strtoull(server.arg("timestamp_us").c_str(), nullptr, 10) : (uint64_t)pcBaseTimestamp * 1000000ULL;
+  if (pcBaseTimestampUs < 1000000000000000ULL) {
+    sendAcquisitionError(400, "Horloge PC non synchronisee.");
+    return;
+  }
+  streamEndPending = false;
+  latestValidA = false;
+  latestValidB = false;
+  lastSampleMicrosA = 0;
+  lastSampleMicrosB = 0;
   timerFrequency = max(frequencyA, frequencyB);
   testDurationSec = max(durationA, durationB);
   targetFrequencyA = frequencyA;
@@ -668,33 +959,56 @@ void handleApiStartAcquisition() {
   sensorFinishedA = false;
   sensorFinishedB = false;
   lastElapsedSec = 0;
-  acqCountA = 0; lostCountA = 0; freqReelleA = 0;
-  acqCountB = 0; lostCountB = 0; freqReelleB = 0;
+  acqCountA = 0;
+  lostCountA = 0;
+  freqReelleA = 0;
+  acqCountB = 0;
+  lostCountB = 0;
+  freqReelleB = 0;
   schedulerAccumulatorA = 0;
   schedulerAccumulatorB = 0;
   canTxOk = 0;
   canTxErrors = 0;
   canLastTxResult = CAN_OK;
 
-  Wire.setClock(timerFrequency >= 2000 ? 1000000 : 400000);
+  xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+  xSemaphoreGive(i2cMutex);
   if (activeA) configureINA226(ADDR_INA_A, frequencyA);
   if (activeB) configureINA226(ADDR_INA_B, frequencyB);
 
   testStartMillis = millis();
   testStartMicros = esp_timer_get_time();
-  byte timePacket[4] = {0};
+  byte timePacket[4] = { 0 };
   memcpy(timePacket, (const void*)&pcBaseTimestamp, sizeof(pcBaseTimestamp));
   bool transportReady = sendCanFrame(CAN_ID_TIME_SYNC, sizeof(timePacket), timePacket);
+  if (!digitalStreamMode) {
+    Serial.printf(
+      "[CAN] Demarrage mesure: canal A=%s (%lu Hz), canal B=%s (%lu Hz), premier envoi=%s\n",
+      activeA ? "ON" : "OFF",
+      (unsigned long)frequencyA,
+      activeB ? "ON" : "OFF",
+      (unsigned long)frequencyB,
+      transportReady ? "OK" : "ECHEC");
+  }
   // A CAN listener may start after acquisition. A missing first ACK must not
   // cancel all future samples or silently change an 8 MHz crystal to 16 MHz.
   if (digitalStreamMode && !transportReady) {
     sendAcquisitionError(
       503,
-      "L'application ne recoit pas le flux numerique Wi-Fi."
-    );
+      "L'application ne recoit pas le flux numerique Wi-Fi.");
     return;
   }
 
+  // Start each active channel at t=0, then keep its own timer-driven cadence.
+  schedulerAccumulatorA = activeA ? timerFrequency - frequencyA : 0;
+  schedulerAccumulatorB = activeB ? timerFrequency - frequencyB : 0;
+  oledScreenState = digitalStreamMode ? OLED_DIGITAL_RUNNING : OLED_MEASUREMENT_RUNNING;
+  if (oledInitialized) {
+    drawOledAcquisitionStartScreen();
+  } else if (taskOledHandle) {
+    xTaskNotifyGive(taskOledHandle);
+  }
   testRunning = true;
   esp_err_t timerStatus = esp_timer_start_periodic(acqTimer, 1000000ULL / timerFrequency);
   if (timerStatus != ESP_OK) {
@@ -702,6 +1016,7 @@ void handleApiStartAcquisition() {
     sendAcquisitionError(500, "Le timer d'acquisition n'a pas demarre.");
     return;
   }
+  xTaskNotifyGive(taskAcqHandle);
   sendAcquisitionStatus();
 }
 
@@ -718,7 +1033,29 @@ void handleApiStopAcquisition() {
     sendAcquisitionError(400, "Capteur invalide.");
     return;
   }
+  if (digitalStreamMode && !testRunning) oledScreenState = OLED_MEASUREMENT_FINISHED;
   sendAcquisitionStatus();
+}
+
+void handleApiDisplay() {
+  String requestedState = server.arg("state");
+  requestedState.toLowerCase();
+  OledScreenState requestedScreen;
+  if (requestedState == "welcome") {
+    requestedScreen = OLED_WELCOME;
+  } else if (requestedState == "digital_selected") {
+    requestedScreen = OLED_DIGITAL_SELECTED;
+  } else if (requestedState == "can_selected") {
+    requestedScreen = OLED_CAN_SELECTED;
+  } else {
+    server.send(400, "application/json", "{\"message\":\"Etat OLED invalide.\"}");
+    return;
+  }
+  if (!testRunning) {
+    oledScreenState = requestedScreen;
+    if (taskOledHandle) xTaskNotifyGive(taskOledHandle);
+  }
+  server.send(200, "application/json", "{\"status\":\"success\"}");
 }
 
 // Start the radio before any external peripheral can delay setup().
@@ -776,9 +1113,12 @@ void taskWeb(void* parameter) {
   }
 
   server.on("/", HTTP_GET, handleRoot);
+  server.on("/api/display", HTTP_GET, handleApiDisplay);
   server.on("/api/acquisition/start", HTTP_POST, handleApiStartAcquisition);
   server.on("/api/acquisition/stop", HTTP_POST, handleApiStopAcquisition);
-  server.on("/api/acquisition/status", HTTP_GET, []() { sendAcquisitionStatus(); });
+  server.on("/api/acquisition/status", HTTP_GET, []() {
+    sendAcquisitionStatus();
+  });
   server.begin();
   Serial.println("[HTTP] API de controle active sur le port 80.");
   streamServer.begin();
@@ -788,7 +1128,7 @@ void taskWeb(void* parameter) {
     // hasClient() peut attendre une nouvelle connexion TCP et affamer l'API.
     server.handleClient();
     if (streamServer.hasClient()) {
-      WiFiClient incoming = streamServer.available();
+      WiFiClient incoming = streamServer.accept();
       xSemaphoreTake(streamClientMutex, portMAX_DELAY);
       if (streamClient) streamClient.stop();
       streamClient = incoming;
@@ -801,30 +1141,59 @@ void taskWeb(void* parameter) {
   }
 }
 
-void setup() {
-  Serial.begin(115200);
-  while (!startAccessPoint()) {
+void fatalStartup(const char* message) {
+  for (;;) {
+    Serial.printf("[FATAL] %s\n", message);
     delay(2000);
   }
-  // Complete peripheral initialization before the HTTP task can access it.
+}
+
+void setup() {
+  Serial.begin(115200);
+  const uint32_t serialStartedAt = millis();
+  while (!Serial && millis() - serialStartedAt < 1500) delay(10);
+  printFirmwareVersion();
+  Serial.println("\n[BOOT] Wattman ESP32-C3 Mini - INA A R010 / INA B R100");
+  Serial.printf("[I2C] SDA=%u SCL=%u; A=0x40 (0.010 ohm), B=0x41 (0.100 ohm)\n", I2C_SDA, I2C_SCL);
   canMutex = xSemaphoreCreateMutex();
-  Wire.begin(I2C_SDA, I2C_SCL);
+  streamClientMutex = xSemaphoreCreateMutex();
+  i2cMutex = xSemaphoreCreateMutex();
+  streamQueue = xQueueCreate(2048, sizeof(StreamFrame));
+  if (!canMutex || !streamClientMutex || !i2cMutex || !streamQueue) fatalStartup("Resource allocation failed.");
+  if (!Wire.begin(I2C_SDA, I2C_SCL)) fatalStartup("I2C initialization failed.");
   Wire.setClock(400000);
+  Wire.setTimeOut(20);
+  const uint8_t addresses[] = { ADDR_INA_A, ADDR_INA_B };
+  for (uint8_t addr : addresses) {
+    Wire.beginTransmission(addr);
+    Serial.printf("[I2C] INA 0x%02X: %s\n", addr,
+                  Wire.endTransmission() == 0 ? "detected" : "absent (check wiring)");
+  }
+  Serial.printf("[SPI] SCK=%u MISO=%u MOSI=%u CS=%u\n", SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CS_CAN);
+  // External MCP2515 initializes on demand; its absence cannot block Wi-Fi.
+  pinMode(PIN_CS_CAN, OUTPUT);
+  digitalWrite(PIN_CS_CAN, HIGH);
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CS_CAN);
-  // CAN is initialized by handleApiStartAcquisition() only for CAN mode.
-  // A missing MCP2515 must not delay Wi-Fi or digital acquisition.
   esp_timer_create_args_t targs = {};
   targs.callback = &onAcqTimer;
   targs.dispatch_method = ESP_TIMER_TASK;
   targs.name = "timer_global";
-  esp_timer_create(&targs, &acqTimer);
-  streamQueue = xQueueCreate(512, sizeof(StreamFrame));
-  streamClientMutex = xSemaphoreCreateMutex();
-  xTaskCreate(taskAcq, "taskAcq", 4096, nullptr, 2, &taskAcqHandle);
-  xTaskCreate(taskStream, "taskStream", 4096, nullptr, 2, nullptr);
-  if (xTaskCreate(taskWeb, "taskWeb", 8192, nullptr, 2, nullptr) != pdPASS) {
-    Serial.println("[HTTP] Echec de creation de taskWeb : memoire insuffisante.");
+  if (esp_timer_create(&targs, &acqTimer) != ESP_OK) fatalStartup("Timer creation failed.");
+  while (!startAccessPoint()) delay(2000);
+  if (xTaskCreate(taskAcq, "taskAcq", 4096, nullptr, 3, &taskAcqHandle) != pdPASS
+      || xTaskCreate(taskStream, "taskStream", 4096, nullptr, 4, nullptr) != pdPASS
+      || xTaskCreate(taskWeb, "taskWeb", 8192, nullptr, 2, nullptr) != pdPASS
+      || xTaskCreate(taskOled, "taskOled", 4096, nullptr, 1, &taskOledHandle) != pdPASS) {
+    fatalStartup("Task creation failed.");
   }
+  Serial.println("[READY] HTTP port 80; TCP stream port 3333.");
 }
 
-void loop() { vTaskDelay(pdMS_TO_TICKS(1000)); }
+void loop() {
+  // Reprint identification when a monitor connects after startup.
+  static bool serialWasConnected = false;
+  const bool serialConnected = bool(Serial);
+  if (serialConnected && !serialWasConnected) printFirmwareVersion();
+  serialWasConnected = serialConnected;
+  vTaskDelay(pdMS_TO_TICKS(100));
+}
