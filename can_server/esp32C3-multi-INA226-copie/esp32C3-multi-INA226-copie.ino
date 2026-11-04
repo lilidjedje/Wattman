@@ -8,7 +8,7 @@
 #include <mcp_can.h>
 #include "esp_timer.h"
 
-constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | upload-2026-11-03-digital-excel-v1";
+constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v5 | oled-flip-180";
 
 void printFirmwareVersion() {
   Serial.printf("[FIRMWARE] %s | build %s %s\n", FIRMWARE_VERSION, __DATE__, __TIME__);
@@ -84,6 +84,7 @@ volatile bool sensorRunningA = false;
 volatile bool sensorRunningB = false;
 volatile bool sensorFinishedA = false;
 volatile bool sensorFinishedB = false;
+volatile bool sensorStoppedA = false, sensorStoppedB = false;
 volatile bool canReady = false;
 volatile uint32_t canTxOk = 0;
 volatile uint32_t canTxErrors = 0;
@@ -93,6 +94,7 @@ volatile uint8_t canErrorFlags = 0;
 volatile uint8_t canTxErrorCount = 0;
 volatile uint8_t canOscillatorMHz = 8;
 volatile bool digitalStreamMode = false;
+volatile bool recorderMirror = false;
 
 // Variable pour stocker le temps d'origine fourni par le PC
 volatile uint32_t pcBaseTimestamp = 0;
@@ -116,79 +118,116 @@ volatile OledScreenState oledScreenState = OLED_WELCOME;
 volatile bool oledInitialized = false;
 U8X8_SH1106_128X64_NONAME_HW_I2C oled(U8X8_PIN_NONE, I2C_SCL, I2C_SDA);
 
-void drawOledLinesLocked(char lines[8][17]) {
-  for (uint8_t row = 0; row < 8; row++) {
-    char padded[17];
-    memset(padded, ' ', 16);
-    padded[16] = 0;
-    memcpy(padded, lines[row], min((size_t)16, strlen(lines[row])));
-    oled.drawString(0, row, padded);
-  }
-}
+// SH1106 128x64: 8x8 pixel cells, with an empty cell on each edge.
+// Six useful rows of 14 characters: x=8..119, y=8..55.
+constexpr uint8_t OLED_COLUMNS = 16;
+constexpr uint8_t OLED_ROWS = 8;
+constexpr uint8_t OLED_TEXT_COLUMNS = OLED_COLUMNS - 2;
+constexpr uint8_t OLED_TEXT_ROWS = OLED_ROWS - 2;
+constexpr uint32_t OLED_BUS_HZ = 400000;
+char oledPrevious[OLED_ROWS][OLED_COLUMNS];  // Accessed only by taskOled.
 
 void drawOledLines(char lines[8][17]) {
-  xSemaphoreTake(i2cMutex, portMAX_DELAY);
-  drawOledLinesLocked(lines);
-  xSemaphoreGive(i2cMutex);
+  for (uint8_t row = 0; row < OLED_TEXT_ROWS; ++row) {
+    char padded[OLED_TEXT_COLUMNS];
+    memset(padded, ' ', sizeof(padded));
+    memcpy(padded, lines[row], strnlen(lines[row], OLED_TEXT_COLUMNS));
+    for (uint8_t col = 0; col < OLED_TEXT_COLUMNS;) {
+      if (padded[col] == oledPrevious[row + 1][col + 1]) {
+        ++col;
+        continue;
+      }
+      // At most two tiles per transaction; release I2C between updates so
+      // higher-priority INA reads can proceed. Never clear the whole frame.
+      const uint8_t first = col;
+      char changed[3] = {};
+      uint8_t count = 0;
+      while (col < OLED_TEXT_COLUMNS && count < 2
+             && padded[col] != oledPrevious[row + 1][col + 1]) {
+        changed[count++] = padded[col++];
+      }
+      if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(2)) != pdTRUE) return;
+      Wire.setClock(OLED_BUS_HZ);
+      oled.drawString(first + 1, row + 1, changed);
+      Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+      xSemaphoreGive(i2cMutex);
+      memcpy(&oledPrevious[row + 1][first + 1], changed, count);
+      vTaskDelay(1);
+    }
+  }
 }
 
-void drawOledAcquisitionStartScreen() {
-  char lines[8][17] = {};
-  if (digitalStreamMode) {
-    snprintf(lines[0], sizeof(lines[0]), "NUMERIQUE ACTIF");
-    snprintf(lines[1], sizeof(lines[1]), "Acquisition");
-    snprintf(lines[2], sizeof(lines[2]), "canal A/B");
-  } else {
-    snprintf(lines[0], sizeof(lines[0]), "MESURE EN COURS");
-    snprintf(lines[1], sizeof(lines[1]), "Acquisition");
-    snprintf(lines[2], sizeof(lines[2]), "canal A/B");
-  }
-  drawOledLines(lines);
+void formatOledCurrent(char* output, char channel, float current, bool valid) {
+  if (!valid) { snprintf(output, 17, "%c: attente", channel); return; }
+  if (fabsf(current) >= 1.0f) snprintf(output, 17, "%c %7.4f A", channel, current);
+  else if (fabsf(current) >= 0.001f) snprintf(output, 17, "%c %7.3f mA", channel, current * 1000.0f);
+  else snprintf(output, 17, "%c %7.2f uA", channel, current * 1000000.0f);
 }
 
 void taskOled(void*) {
   xSemaphoreTake(i2cMutex, portMAX_DELAY);
+  oled.setBusClock(OLED_BUS_HZ);
   oled.begin();
-  oled.setBusClock(100000);
+  oled.setPowerSave(0);
+  oled.setFlipMode(1);  // Rotate the existing SH1106 by 180 degrees.
   oled.setFont(u8x8_font_chroma48medium8_r);
+  oled.clearDisplay();
+  memset(oledPrevious, ' ', sizeof(oledPrevious));
   xSemaphoreGive(i2cMutex);
   oledInitialized = true;
+  uint32_t lastKeepAwake = millis();
+  uint32_t lastIdleRedraw = millis();
+  bool wasRunning = false;
   for (;;) {
+    const uint32_t now = millis();
+    const bool running = testRunning;
+    // Keep the panel awake independently of acquisition and HTTP clients.
+    // All OLED commands share the INA mutex, including this short command.
+    if ((!running && wasRunning) || now - lastKeepAwake >= 1000) {
+      if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
+        Wire.setClock(OLED_BUS_HZ);
+        oled.setPowerSave(0);
+        Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+        xSemaphoreGive(i2cMutex);
+        lastKeepAwake = now;
+      }
+    }
+    // The text cache cannot detect a blank panel or an interrupted I2C write.
+    // Retry the entire useful area at rest, without clearing or flashing it.
+    if (!running && (wasRunning || now - lastIdleRedraw >= 5000)) {
+      memset(oledPrevious, 0, sizeof(oledPrevious));
+      lastIdleRedraw = now;
+    }
+    wasRunning = running;
     char lines[8][17] = {};
     char currentA[17];
     char currentB[17];
     char remainingA[17];
     char remainingB[17];
-    const OledScreenState screen = oledScreenState;
+    const OledScreenState screen = testRunning
+        ? (digitalStreamMode ? OLED_DIGITAL_RUNNING : OLED_CAN_RECORDING)
+        : oledScreenState;
 
     switch (screen) {
       case OLED_WELCOME:
         snprintf(lines[0], sizeof(lines[0]), "Hello !");
-        snprintf(lines[1], sizeof(lines[1]), "Parametrez votre");
+        snprintf(lines[1], sizeof(lines[1]), "Reglez votre");
         snprintf(lines[2], sizeof(lines[2]), "mesure");
         break;
       case OLED_DIGITAL_SELECTED:
-        snprintf(lines[0], sizeof(lines[0]), "Vous avez choisi");
-        snprintf(lines[1], sizeof(lines[1]), "Mesure numerique");
+        snprintf(lines[0], sizeof(lines[0]), "Mode choisi :");
+        snprintf(lines[1], sizeof(lines[1]), "Numerique");
         break;
       case OLED_CAN_SELECTED:
-        snprintf(lines[0], sizeof(lines[0]), "Vous avez choisi");
+        snprintf(lines[0], sizeof(lines[0]), "Mode choisi :");
         snprintf(lines[1], sizeof(lines[1]), "Mesure CAN");
         break;
       case OLED_DIGITAL_RUNNING:
       case OLED_MEASUREMENT_RUNNING:
         {
           const float a = latestCurrentA, b = latestCurrentB;
-          if (latestValidA) {
-            snprintf(currentA, sizeof(currentA), fabsf(a) < 1 ? "A %7.3fmA" : "A %7.4fA", fabsf(a) < 1 ? a * 1000 : a);
-          } else {
-            snprintf(currentA, sizeof(currentA), "A: attente");
-          }
-          if (latestValidB) {
-            snprintf(currentB, sizeof(currentB), fabsf(b) < 1 ? "B %7.3fmA" : "B %7.4fA", fabsf(b) < 1 ? b * 1000 : b);
-          } else {
-            snprintf(currentB, sizeof(currentB), "B: attente");
-          }
+          formatOledCurrent(currentA, 'A', a, latestValidA);
+          formatOledCurrent(currentB, 'B', b, latestValidB);
           const uint32_t elapsed = (millis() - testStartMillis) / 1000UL;
           auto formatRemaining = [elapsed](char* output, char channel, bool running,
                                            bool finished, uint32_t duration) {
@@ -210,18 +249,23 @@ void taskOled(void*) {
           formatRemaining(remainingB, 'B', sensorRunningB, sensorFinishedB, testDurationSecB);
           snprintf(lines[0], sizeof(lines[0]), "%s",
                    screen == OLED_DIGITAL_RUNNING ? "NUMERIQUE ACTIF" : "MESURE EN COURS");
-          snprintf(lines[1], sizeof(lines[1]), "%s", currentA);
-          snprintf(lines[2], sizeof(lines[2]), "%s", currentB);
-          snprintf(lines[3], sizeof(lines[3]), "Temps restant");
-          snprintf(lines[4], sizeof(lines[4]), "%s", remainingA);
-          snprintf(lines[5], sizeof(lines[5]), "%s", remainingB);
+          uint8_t row = 1;
+          if (targetFrequencyA > 0) {
+            snprintf(lines[row++], sizeof(lines[0]), "%s", currentA);
+            snprintf(lines[row++], sizeof(lines[0]), "%s", remainingA);
+          }
+          if (targetFrequencyB > 0) {
+            snprintf(lines[row++], sizeof(lines[0]), "%s", currentB);
+            snprintf(lines[row++], sizeof(lines[0]), "%s", remainingB);
+          }
           break;
         }
       case OLED_CAN_RECORDING:
-        snprintf(lines[0], sizeof(lines[0]), "Parametrez votre");
-        snprintf(lines[1], sizeof(lines[1]), "mesure");
-        snprintf(lines[2], sizeof(lines[2]), "Activez sur");
-        snprintf(lines[3], sizeof(lines[3]), "CANalyzer");
+        snprintf(lines[0], sizeof(lines[0]), "Ouvrez");
+        snprintf(lines[1], sizeof(lines[1]), "CANalyzer pour");
+        snprintf(lines[2], sizeof(lines[2]), "visualiser les");
+        snprintf(lines[3], sizeof(lines[3]), "valeurs de");
+        snprintf(lines[4], sizeof(lines[4]), "courants");
         break;
       case OLED_MEASUREMENT_FINISHED:
         snprintf(lines[0], sizeof(lines[0]), "Mesure finie");
@@ -230,14 +274,8 @@ void taskOled(void*) {
         break;
     }
 
-    if (!testRunning) {
-      xSemaphoreTake(i2cMutex, portMAX_DELAY);
-      if (!testRunning) {
-        drawOledLinesLocked(lines);
-      }
-      xSemaphoreGive(i2cMutex);
-    }
-    // Keep the shared I2C bus available to INA226 during acquisition.
+    drawOledLines(lines);
+    // One current snapshot per second; acquisition remains independently timed.
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
   }
 }
@@ -269,10 +307,36 @@ struct __attribute__((packed)) StreamFrame {
 };
 
 volatile bool streamConnected = false;
+#include "wattman_tft.h"
+QueueHandle_t canTransmitQueue = nullptr;
+bool initializeCan(uint8_t oscillatorMHz);
+
+// CAN acknowledgements must never block INA acquisition or Pi recording.
+void taskCanTransmit(void*) {
+  StreamFrame frame;
+  uint32_t lastRecovery = 0;
+  for (;;) {
+    if (xQueueReceive(canTransmitQueue, &frame, portMAX_DELAY) != pdTRUE) continue;
+    if ((canErrorFlags & 0x20) && millis() - lastRecovery >= 1000) {
+      lastRecovery = millis();
+      initializeCan(canOscillatorMHz);
+    }
+    xSemaphoreTake(canMutex, portMAX_DELAY);
+    canLastTxId = frame.identifier;
+    canLastTxResult = canReady ? CAN.sendMsgBuf(frame.identifier, 0, frame.length, frame.payload) : CAN_FAILINIT;
+    if (canReady) {
+      canErrorFlags = CAN.getError();
+      canTxErrorCount = CAN.errorCountTX();
+    }
+    xSemaphoreGive(canMutex);
+    if (canLastTxResult == CAN_OK) ++canTxOk;
+    else ++canTxErrors;
+  }
+}
 
 bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
   bool delivered = false;
-  if (!digitalStreamMode) {
+  if (!digitalStreamMode && !recorderMirror) {
     xSemaphoreTake(canMutex, portMAX_DELAY);
     canLastTxId = identifier;
     canLastTxResult = canReady ? CAN.sendMsgBuf(identifier, 0, length, payload) : CAN_FAILINIT;
@@ -289,7 +353,7 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
       canTxErrors = canTxErrors + 1;
     }
   }
-  if (digitalStreamMode && streamConnected && streamQueue && length <= 8) {
+  if ((digitalStreamMode || recorderMirror) && streamConnected && streamQueue && length <= 8) {
     StreamFrame frame = {};
     frame.magic = 0xA55A;
     frame.version = 1;
@@ -299,6 +363,10 @@ bool sendCanFrame(uint16_t identifier, uint8_t length, byte* payload) {
     frame.timestampUs = (pcBaseTimestampUs ? pcBaseTimestampUs : (uint64_t)pcBaseTimestamp * 1000000ULL) + elapsedUs;
     memcpy(frame.payload, payload, length);
     if (xQueueSend(streamQueue, &frame, 0) == pdTRUE) delivered = true;
+    if (recorderMirror && !digitalStreamMode && canTransmitQueue) {
+      // Mirror only the original CAN payload, with its original identifier.
+      if (xQueueSend(canTransmitQueue, &frame, 0) != pdTRUE) ++canTxErrors;
+    }
   }
   return delivered;
 }
@@ -357,10 +425,14 @@ void taskStream(void* parameter) {
 }
 
 void stopAcquisition(bool completed) {
+  if (!completed) {
+    sensorStoppedA = sensorStoppedA || sensorRunningA;
+    sensorStoppedB = sensorStoppedB || sensorRunningB;
+  }
   lastElapsedSec = completed ? testDurationSec : (millis() - testStartMillis) / 1000UL;
   testRunning = false;
   if (completed && digitalStreamMode) oledScreenState = OLED_MEASUREMENT_FINISHED;
-  if (digitalStreamMode) streamEndPending = true;
+  if (digitalStreamMode || recorderMirror) streamEndPending = true;
   sensorFinishedA = sensorFinishedA || (completed && currentCfg.activeA);
   sensorFinishedB = sensorFinishedB || (completed && currentCfg.activeB);
   sensorRunningA = false;
@@ -374,10 +446,12 @@ void stopAcquisition(bool completed) {
 
 void stopSensor(char sensor) {
   if (sensor == 'A') {
+    sensorStoppedA = true;
     sensorRunningA = false;
     sensorFinishedA = true;
   }
   if (sensor == 'B') {
+    sensorStoppedB = true;
     sensorRunningB = false;
     sensorFinishedB = true;
   }
@@ -552,7 +626,7 @@ void taskAcq(void* parameter) {
     if (nowMs - lastPrintMs >= 1000) {
       // Recover a bus-off controller using the selected physical crystal.
       // Missing an ACK never justifies changing the CAN bit timing.
-      if (!digitalStreamMode && (canErrorFlags & 0x20)) initializeCan(canOscillatorMHz);
+      if (!digitalStreamMode && !recorderMirror && (canErrorFlags & 0x20)) initializeCan(canOscillatorMHz);
       if (sensorRunningA) freqReelleA = acqCountA - lastSnapshotA;
       if (sensorRunningB) freqReelleB = acqCountB - lastSnapshotB;
       lastSnapshotA = acqCountA;
@@ -764,6 +838,8 @@ void handleSetDuration() {
   sensorRunningB = currentCfg.activeB;
   sensorFinishedA = false;
   sensorFinishedB = false;
+  sensorStoppedA = false;
+  sensorStoppedB = false;
 
   xSemaphoreTake(i2cMutex, portMAX_DELAY);
   if (targetFreq >= 1000) Wire.setClock(1000000);
@@ -814,6 +890,8 @@ void sendAcquisitionStatus(int statusCode = 200) {
   json += ",\"error_flags\":" + String(canErrorFlags);
   json += ",\"tx_error_count\":" + String(canTxErrorCount);
   json += ",\"tcp_connected\":" + jsonBool(streamConnected);
+  json += ",\"recorder_mirror_supported\":true";
+  json += ",\"recorder_mirror\":" + jsonBool(recorderMirror);
   json += "}";
   json += ",\"sensors\":{\"A\":{\"running\":" + jsonBool(sensorRunningA);
   json += ",\"finished\":" + jsonBool(sensorFinishedA);
@@ -841,7 +919,7 @@ void sendAcquisitionError(int statusCode, const char* message) {
 
 void handleApiStartAcquisition() {
   if (testRunning) {
-    sendAcquisitionError(423, "Une mesure est deja en cours.");
+    sendAcquisitionError(423, "Un test est deja actif sur ce canal. Attendez la fin avant d'en lancer un autre.");
     return;
   }
   String requestedMode = server.arg("mode");
@@ -852,6 +930,7 @@ void handleApiStartAcquisition() {
     return;
   }
   digitalStreamMode = requestedMode == "digital";
+  recorderMirror = server.arg("recorder_mirror").toInt() == 1;
   Serial.printf(
     "[ACQ] Mode demande: %s%s\n",
     digitalStreamMode ? "numerique Wi-Fi" : "CAN",
@@ -863,7 +942,7 @@ void handleApiStartAcquisition() {
   // Le POST HTTP peut arriver juste après l'ouverture du socket TCP, avant
   // l'itération suivante de taskWeb. Accepter immédiatement ce client évite
   // de refuser à tort le démarrage de la mesure numérique.
-  if (digitalStreamMode && !streamConnected && streamServer.hasClient()) {
+  if ((digitalStreamMode || recorderMirror) && !streamConnected && streamServer.hasClient()) {
     WiFiClient incoming = streamServer.accept();
     xSemaphoreTake(streamClientMutex, portMAX_DELAY);
     if (streamClient) streamClient.stop();
@@ -875,7 +954,7 @@ void handleApiStartAcquisition() {
 
   // En mode CAN, le MCP2515 est obligatoire. En mode numérique, les mesures
   // INA226 partent uniquement sur le flux Wi-Fi direct vers l'application.
-  if (!digitalStreamMode) {
+  if (!digitalStreamMode && !recorderMirror) {
     // Fermer explicitement un éventuel flux numérique précédent. En mode CAN,
     // aucune trame ne doit partir sur le port TCP 3333.
     xSemaphoreTake(streamClientMutex, portMAX_DELAY);
@@ -901,7 +980,7 @@ void handleApiStartAcquisition() {
       "l'alimentation et le quartz du module.");
     return;
   }
-  if (digitalStreamMode && !streamConnected) {
+  if ((digitalStreamMode || recorderMirror) && !streamConnected) {
     sendAcquisitionError(503, "Application non connectee au flux numerique Wi-Fi.");
     return;
   }
@@ -959,6 +1038,8 @@ void handleApiStartAcquisition() {
   sensorFinishedA = false;
   sensorFinishedB = false;
   lastElapsedSec = 0;
+  sensorStoppedA = false;
+  sensorStoppedB = false;
   acqCountA = 0;
   lostCountA = 0;
   freqReelleA = 0;
@@ -1004,11 +1085,10 @@ void handleApiStartAcquisition() {
   schedulerAccumulatorA = activeA ? timerFrequency - frequencyA : 0;
   schedulerAccumulatorB = activeB ? timerFrequency - frequencyB : 0;
   oledScreenState = digitalStreamMode ? OLED_DIGITAL_RUNNING : OLED_MEASUREMENT_RUNNING;
-  if (oledInitialized) {
-    drawOledAcquisitionStartScreen();
-  } else if (taskOledHandle) {
-    xTaskNotifyGive(taskOledHandle);
-  }
+  xSemaphoreTake(displayStateMutex, portMAX_DELAY);
+  tftStage = TFT_ACQUISITION;
+  xSemaphoreGive(displayStateMutex);
+  if (taskOledHandle) xTaskNotifyGive(taskOledHandle);
   testRunning = true;
   esp_err_t timerStatus = esp_timer_start_periodic(acqTimer, 1000000ULL / timerFrequency);
   if (timerStatus != ESP_OK) {
@@ -1041,21 +1121,47 @@ void handleApiDisplay() {
   String requestedState = server.arg("state");
   requestedState.toLowerCase();
   OledScreenState requestedScreen;
-  if (requestedState == "welcome") {
+  TftStage requestedTft;
+  if (requestedState == "welcome" || requestedState == "method_selection") {
     requestedScreen = OLED_WELCOME;
+    requestedTft = TFT_METHOD;
+  } else if (requestedState == "project_welcome") {
+    requestedScreen = OLED_WELCOME;
+    requestedTft = TFT_PROJECT;
   } else if (requestedState == "digital_selected") {
     requestedScreen = OLED_DIGITAL_SELECTED;
+    requestedTft = TFT_DIGITAL_SELECTED;
   } else if (requestedState == "can_selected") {
     requestedScreen = OLED_CAN_SELECTED;
+    requestedTft = TFT_CAN_SELECTED;
+  } else if (requestedState == "digital_ready") {
+    requestedScreen = OLED_DIGITAL_SELECTED;
+    requestedTft = TFT_DIGITAL_READY;
+  } else if (requestedState == "can_ready") {
+    requestedScreen = OLED_CAN_SELECTED;
+    requestedTft = TFT_CAN_READY;
   } else {
     server.send(400, "application/json", "{\"message\":\"Etat OLED invalide.\"}");
     return;
   }
   if (!testRunning) {
+    xSemaphoreTake(displayStateMutex, portMAX_DELAY);
+    tftStage = requestedTft;
+    if (requestedTft == TFT_PROJECT) {
+      strlcpy(displayPilot, server.arg("pilot").c_str(), sizeof(displayPilot));
+      strlcpy(displayProject, server.arg("project").c_str(), sizeof(displayProject));
+    }
+    xSemaphoreGive(displayStateMutex);
+    if (requestedTft == TFT_PROJECT) {
+      if (displayPreferences.getString("pilot") != displayPilot) displayPreferences.putString("pilot", displayPilot);
+      if (displayPreferences.getString("project") != displayProject) displayPreferences.putString("project", displayProject);
+    }
     oledScreenState = requestedScreen;
     if (taskOledHandle) xTaskNotifyGive(taskOledHandle);
   }
-  server.send(200, "application/json", "{\"status\":\"success\"}");
+  server.send(200, "application/json", testRunning
+      ? "{\"status\":\"success\",\"applied\":false}"
+      : "{\"status\":\"success\",\"applied\":true}");
 }
 
 // Start the radio before any external peripheral can delay setup().
@@ -1130,10 +1236,14 @@ void taskWeb(void* parameter) {
     if (streamServer.hasClient()) {
       WiFiClient incoming = streamServer.accept();
       xSemaphoreTake(streamClientMutex, portMAX_DELAY);
-      if (streamClient) streamClient.stop();
-      streamClient = incoming;
-      streamClient.setNoDelay(true);
-      streamConnected = true;
+      if (testRunning && streamConnected && streamClient.connected()) {
+        incoming.stop(); // A second PC must not steal the Pi's recording stream.
+      } else {
+        if (streamClient) streamClient.stop();
+        streamClient = incoming;
+        streamClient.setNoDelay(true);
+        streamConnected = true;
+      }
       xSemaphoreGive(streamClientMutex);
       Serial.println("[TCP] Application connectee au flux numerique sur le port 3333.");
     }
@@ -1156,9 +1266,17 @@ void setup() {
   Serial.println("\n[BOOT] Wattman ESP32-C3 Mini - INA A R010 / INA B R100");
   Serial.printf("[I2C] SDA=%u SCL=%u; A=0x40 (0.010 ohm), B=0x41 (0.100 ohm)\n", I2C_SDA, I2C_SCL);
   canMutex = xSemaphoreCreateMutex();
+  displayStateMutex = xSemaphoreCreateMutex();
+  if (!displayStateMutex) fatalStartup("Display mutex creation failed.");
+  displayPreferences.begin("wattman-display", false);
+  strlcpy(displayPilot, displayPreferences.getString("pilot").c_str(), sizeof(displayPilot));
+  strlcpy(displayProject, displayPreferences.getString("project").c_str(), sizeof(displayProject));
+  if (displayPilot[0] || displayProject[0]) tftStage = TFT_PROJECT;
   streamClientMutex = xSemaphoreCreateMutex();
   i2cMutex = xSemaphoreCreateMutex();
   streamQueue = xQueueCreate(2048, sizeof(StreamFrame));
+  canTransmitQueue = xQueueCreate(64, sizeof(StreamFrame));
+  if (!canTransmitQueue) fatalStartup("CAN queue creation failed.");
   if (!canMutex || !streamClientMutex || !i2cMutex || !streamQueue) fatalStartup("Resource allocation failed.");
   if (!Wire.begin(I2C_SDA, I2C_SCL)) fatalStartup("I2C initialization failed.");
   Wire.setClock(400000);
@@ -1173,7 +1291,10 @@ void setup() {
   // External MCP2515 initializes on demand; its absence cannot block Wi-Fi.
   pinMode(PIN_CS_CAN, OUTPUT);
   digitalWrite(PIN_CS_CAN, HIGH);
+  pinMode(TFT_CS, OUTPUT);
+  digitalWrite(TFT_CS, HIGH);
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CS_CAN);
+  initializeMessageTft();
   esp_timer_create_args_t targs = {};
   targs.callback = &onAcqTimer;
   targs.dispatch_method = ESP_TIMER_TASK;
@@ -1181,9 +1302,11 @@ void setup() {
   if (esp_timer_create(&targs, &acqTimer) != ESP_OK) fatalStartup("Timer creation failed.");
   while (!startAccessPoint()) delay(2000);
   if (xTaskCreate(taskAcq, "taskAcq", 4096, nullptr, 3, &taskAcqHandle) != pdPASS
+      || xTaskCreate(taskCanTransmit, "taskCanTransmit", 4096, nullptr, 1, nullptr) != pdPASS
       || xTaskCreate(taskStream, "taskStream", 4096, nullptr, 4, nullptr) != pdPASS
       || xTaskCreate(taskWeb, "taskWeb", 8192, nullptr, 2, nullptr) != pdPASS
-      || xTaskCreate(taskOled, "taskOled", 4096, nullptr, 1, &taskOledHandle) != pdPASS) {
+      || xTaskCreate(taskOled, "taskOled", 4096, nullptr, 1, &taskOledHandle) != pdPASS
+      || xTaskCreate(taskTft, "taskTft", 6144, nullptr, 1, nullptr) != pdPASS) {
     fatalStartup("Task creation failed.");
   }
   Serial.println("[READY] HTTP port 80; TCP stream port 3333.");

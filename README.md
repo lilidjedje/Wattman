@@ -1,5 +1,20 @@
 # Wattman — Engineering Calculator
 
+## Prototype actuel : ESP32-C3 et deux écrans
+
+Le firmware du prototype est
+[`esp32C3-multi-INA226-copie.ino`](can_server/esp32C3-multi-INA226-copie/esp32C3-multi-INA226-copie.ino),
+version `dual-display-v5 | oled-flip-180`. Garder `wattman_tft.h` dans le même
+dossier. Il gère l'OLED SH1106 sur GPIO8/GPIO9 et le TFT couleur 128×128 sur
+le SPI partagé avec le MCP2515. Son réseau Wi-Fi est **esp32_mesure**.
+
+- [Branchement des deux écrans et vérifications du prototype](can_server/esp32C3-multi-INA226-copie/BRANCHEMENT_TFT_ST7735.md)
+- [Installation Raspberry Pi expliquée pour débutante](desktop/raspberry/GUIDE_DEBUTANTE.md)
+- [Collecteur autonome : fonctionnement et limites](desktop/raspberry/README.md)
+
+Le firmware est compilé et téléversé sur le prototype. Le rendu des écrans et
+l'installation sur le Raspberry Pi restent à valider sur le matériel.
+
 La version principale est maintenant une application Electron Windows. Elle
 conserve les pages et calculs existants, utilise des fichiers projet JSON et
 ne démarre aucun serveur HTTP.
@@ -52,9 +67,10 @@ l'ESP32-C3 multi INA226, sans Raspberry Pi, via son adresse IP.
 ### Connexion ESP32-C3 / multi-INA226
 
 1. Flasher le sketch
-   `can_server/esp32C3-multi-INA226/esp32C3-multi-INA226.ino`.
+   `can_server/esp32C3-multi-INA226-copie/esp32C3-multi-INA226-copie.ino`
+   avec le fichier voisin `wattman_tft.h`.
 2. Vérifier simplement que le Wi-Fi du PC est activé. L'application crée le
-   profil `ESP32C3-Mesure` et s'y connecte automatiquement.
+   profil `esp32_mesure` et s'y connecte automatiquement.
 3. Ouvrir « Analyse de logs » pour arriver sur **CAN Measurement Workstation**,
    puis choisir la source :
    - **Mesure CAN** pilote l'ESP32-C3 et émet les mesures sur le bus CAN afin
@@ -71,7 +87,7 @@ mesure ». Il indique ensuite le mode sélectionné et, en mode CAN, demande
 d'activer l'enregistrement sur CANalyzer. Ces messages nécessitent le
 téléversement du sketch principal.
 
-Le réseau Wi-Fi à rechercher est **ESP32C3-Mesure**, mot de passe
+Le réseau Wi-Fi à rechercher est **esp32_mesure**, mot de passe
 **ina226mesure**. Une fois connecté, ouvrir `http://192.168.4.1` pour vérifier
 l'accès à l'ESP32. Accepter de rester connecté même si Windows indique
 « Pas d'Internet ».
@@ -81,7 +97,7 @@ vérifie sa création (nouvelle tentative toutes les 2 secondes en cas d'échec)
 Le MCP2515 est initialisé uniquement au démarrage d'une mesure CAN.
 Après cette modification, téléverser à nouveau le sketch principal indiqué
 ci-dessus et redémarrer la carte. Le moniteur série à **115200 bauds** doit
-afficher `[WIFI] Point d'acces visible : ESP32C3-Mesure` ou l'erreur de démarrage.
+afficher `[WIFI] Point d'acces visible : esp32_mesure` ou l'erreur de démarrage.
 Attention : l'ancienne copie sous `can_server/can_server_deploy/` utilise le
 Wi-Fi du Raspberry Pi et ne crée pas ce point d'accès.
 

@@ -897,7 +897,7 @@ assert 'Frozen complete database' in page.get_data(as_text=True)
         self.assertIn('xTaskCreate(taskWeb, "taskWeb", 8192', source)
 
     def test_oled_workflow_api_validates_and_forwards_display_states(self):
-        states = ("welcome", "digital_selected", "can_selected")
+        states = ("welcome", "digital_selected", "can_selected", "method_selection", "digital_ready", "can_ready")
         with patch.object(
             self.module,
             "esp32_request",
@@ -917,10 +917,22 @@ assert 'Frozen complete database' in page.get_data(as_text=True)
     def test_oled_workflow_is_connected_to_workstation_and_acquisition_pages(self):
         home = self.client.get("/").get_data(as_text=True)
         measurement = self.client.get("/measurement?mode=digital").get_data(as_text=True)
-        self.assertIn("sendOledState('welcome')", home)
+        self.assertIn("sendOledState('method_selection')", home)
         self.assertIn("digital_selected", home)
         self.assertIn("showSelectedModeOnOled();", measurement)
+        self.assertIn("'digital_ready' : 'can_ready'", measurement)
         self.assertIn("Activez l’enregistrement sur CANalyzer", measurement)
+
+    def test_project_greeting_forwards_clean_metadata_without_connecting_wifi(self):
+        with patch.object(self.module, 'esp32_request', return_value={'status': 'success'}) as device:
+            response = self.client.post('/api/esp_display', json={
+                'state': 'project_welcome', 'pilot': '  Léa\n Martin ',
+                'project': 'Projet été ' + 'x' * 100})
+        self.assertEqual(response.status_code, 200)
+        params = device.call_args.args[2]
+        self.assertEqual(params['pilot'], 'Léa Martin')
+        self.assertEqual(len(params['project']), 64)
+        self.assertFalse(device.call_args.kwargs['connect_network'])
 
     def test_oled_refresh_does_not_change_timer_driven_acquisition(self):
         firmware_path = os.path.join(
@@ -934,6 +946,78 @@ assert 'Frozen complete database' in page.get_data(as_text=True)
         self.assertNotIn("readINA226ShuntRaw", oled_task)
         self.assertIn("esp_timer_start_periodic(acqTimer, 1000000ULL / timerFrequency)", source)
         self.assertIn('server.on("/api/display", HTTP_GET, handleApiDisplay)', source)
+
+    def test_busy_channel_refuses_start_without_touching_device_or_collector(self):
+        for mode in ('digital', 'can'):
+            with self.subTest(mode=mode):
+                self.module.active_measurement.update(
+                    id='already-running', status='running', channels=['A'])
+                before = dict(self.module.active_measurement)
+                with patch.object(self.module, 'esp32_request') as esp, \
+                     patch.object(self.module.can_collector, 'start') as start, \
+                     patch.object(self.module.can_collector, 'stop') as stop:
+                    response = self.client.post('/api/control_esp_acquisition', data={
+                        'acquisition_mode': mode, 'activeA': '1', 'freqA': '1',
+                        'dureeValeurA': '7', 'dureeUniteA': 'j',
+                    })
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.get_json()['code'], 'channel_busy')
+                self.assertEqual(response.get_json()['channels'], ['A'])
+                self.assertIn('Attendez la fin', response.get_json()['message'])
+                self.assertEqual(self.module.active_measurement, before)
+                esp.assert_not_called()
+                start.assert_not_called()
+                stop.assert_not_called()
+
+    def test_multi_day_duration_conversion(self):
+        self.assertEqual(self.module.duration_in_seconds(7, 'j'), 604800)
+        with self.assertRaises(ValueError):
+            self.module.duration_in_seconds(8, 'j')
+
+    def test_autonomous_can_records_on_pi_and_requests_mirrored_stream(self):
+        calls = []
+        def device(method, route, params=None):
+            calls.append((method, route, params))
+            return {'running': method == 'POST', 'recorder_mirror_supported': True,
+                    'sensors': {}, 'can': {'ready': True, 'tx_ok': 0}}
+        with patch.object(self.module, 'AUTONOMOUS_RECORDER', True), \
+             patch.object(self.module, 'ESP32_SIMULATOR', False), \
+             patch.object(self.module, 'esp32_request', side_effect=device), \
+             patch.object(self.module, 'ensure_esp32_network'), \
+             patch.object(self.module.can_collector, 'start') as capture:
+            response = self.client.post('/api/control_esp_acquisition', data={
+                'acquisition_mode': 'can', 'freq': '1',
+                'dureeValeur': '2', 'dureeUnite': 's'})
+        self.assertEqual(response.status_code, 200)
+        capture.assert_called_once()
+        self.assertIsNone(capture.call_args.kwargs['export_directory'])
+        self.assertEqual(calls[-1][2]['recorder_mirror'], 1)
+        session = response.get_json()['session']
+        self.assertTrue(session['autonomous_recorder'])
+        self.assertTrue(session['source_files'])
+        self.assertIn('/dashboard/setup', response.get_json()['next_url'])
+
+    def test_autonomous_start_checks_device_even_after_pc_session_is_gone(self):
+        with patch.object(self.module, 'AUTONOMOUS_RECORDER', True), \
+             patch.object(self.module, 'esp32_request', return_value={'running': True}), \
+             patch.object(self.module.can_collector, 'start') as capture:
+            response = self.client.post('/api/control_esp_acquisition', data={
+                'acquisition_mode': 'digital', 'freq': '1',
+                'dureeValeur': '2', 'dureeUnite': 's'})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['code'], 'channel_busy')
+        capture.assert_not_called()
+
+    def test_autonomous_completion_with_missing_samples_is_incomplete(self):
+        self.module.active_measurement.update(status='running', id='missing-data',
+                                             started_at=0, channel_settings={})
+        with patch.object(self.module, 'AUTONOMOUS_RECORDER', True), \
+             patch.object(self.module, 'ESP32_SIMULATOR', False), \
+             patch.object(self.module.can_collector, 'stop'), \
+             patch.object(self.module.can_collector, 'state', return_value={
+                 'integrity': {'end_confirmed': True, 'missing_samples': {'A': 1}}}):
+            status = self.module.reconcile_active_measurement({'running': False})
+        self.assertEqual(status['session']['status'], 'incomplete')
 
     def test_can_choice_opens_asc_import_without_starting_measurement(self):
         response = self.client.post(

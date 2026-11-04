@@ -73,6 +73,11 @@
                     </fieldset>
                     {% endfor %}
                     <p class="form-intro">La somme des fréquences des canaux actifs est limitée à 2000 Hz.</p>
+                    {% if autonomous_recorder %}
+                    <p>Enregistrement autonome sur le Raspberry Pi : le PC peut être déconnecté ou éteint. Le Pi et l’ESP32 doivent rester alimentés et connectés entre eux. Les données brutes sont conservées sur le Pi en numérique comme en CAN.</p>
+                    {% else %}
+                    <p>Enregistrement sur le PC : utilisez le collecteur Raspberry Pi pour une mesure avec le PC éteint.</p>
+                    {% endif %}
                     {% if acquisition_mode == 'digital' %}
                     <label class="field">Unité des courants dans Excel<select name="export_unit"><option value="mA">Milliampères (mA)</option><option value="A">Ampères (A)</option></select></label>
                     <p>Les anciennes mesures CAN et numériques sont conservées. Excel enregistre chaque mesure reçue, dans des fichiers de 1 000 lignes maximum par canal (en-tête inclus). L’affichage OLED à 50 ms utilise seulement la dernière valeur et ne pilote pas l’acquisition.</p>
@@ -134,6 +139,7 @@
         </div>
     </main>
 
+    <script src="{{ url_for('static', filename='js/device-display.js') }}"></script>
     <script>
         const endpoints = {
             control: {{ url_for('control_esp_acquisition')|tojson }},
@@ -156,15 +162,9 @@
         }
         async function showSelectedModeOnOled() {
             try {
-                const response = await fetch(endpoints.oledDisplay, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        state: acquisitionMode === 'digital' ? 'digital_selected' : 'can_selected'
-                    })
+                await DeviceDisplay.show(endpoints.oledDisplay, {
+                    state: acquisitionMode === 'digital' ? 'digital_ready' : 'can_ready'
                 });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.message || 'Écran OLED indisponible.');
             } catch (error) {
                 setMessage(`Écran OLED indisponible : ${error.message}`, 'error');
             }
@@ -177,10 +177,15 @@
         async function sendControl(payload) {
             const response = await fetch(endpoints.control, { method: 'POST', body: payload });
             const data = await response.json();
-            if (!response.ok) throw new Error(data.message || 'Commande refusée.');
+            if (!response.ok) {
+                const error = new Error(data.message || 'Commande refusée.');
+                error.code = data.code;
+                throw error;
+            }
             return data;
         }
         function renderStatus(data) {
+            const autonomous = Boolean(data.autonomous_recorder);
             document.getElementById('globalState').textContent = data.running ? 'MESURE' : 'PRÊT';
             const can = data.can || {};
             document.getElementById('canState').textContent = acquisitionMode === 'can'
@@ -188,7 +193,9 @@
                     ? `CAN · ${(can.bitrate || 500000) / 1000} kbit/s · quartz ${can.oscillator_mhz || '?'} MHz · ${can.tx_ok || 0} envois confirmés · ${can.tx_errors || 0} échecs`
                     : 'CAN : MCP2515 indisponible')
                 : 'CAN contourné · flux numérique Wi-Fi';
-            if (acquisitionMode === 'can' && data.running && can.tx_errors > 0
+            if (autonomous && data.running) {
+                setMessage('Le Raspberry Pi enregistre les mesures. CANalyzer peut observer le CAN lorsque le PC est allumé.', 'ok');
+            } else if (acquisitionMode === 'can' && data.running && can.tx_errors > 0
                     && (!can.tx_ok || can.last_tx_result || (can.error_flags & 0x20))) {
                 setMessage(
                     `Activez l’enregistrement sur CANalyzer. ${can.tx_ok || 0} envois confirmés, ${can.tx_errors} échecs. ` +
@@ -198,7 +205,8 @@
             } else if (acquisitionMode === 'can' && data.running && can.tx_ok > 0) {
                 setMessage('Activez l’enregistrement sur CANalyzer pour sauvegarder le fichier ASC.', 'ok');
             }
-            document.getElementById('startButton').disabled = Boolean(data.running);
+            // Keep the command available so a busy channel gives an explicit popup.
+            document.getElementById('startButton').disabled = false;
             document.getElementById('stopButton').disabled = !data.running;
             ['A', 'B'].forEach(channel => {
                 const sensor = data.sensors?.[channel] || {};
@@ -227,11 +235,11 @@
             });
             if (data.session?.id) {
                 currentSessionId = data.session.id;
-                if (acquisitionMode === 'digital' || !data.running) {
-                    dashboardButton.href = acquisitionMode === 'can'
+                if (autonomous || acquisitionMode === 'digital' || !data.running) {
+                    dashboardButton.href = acquisitionMode === 'can' && !autonomous
                         ? endpoints.dashboardImport
                         : `${endpoints.dashboardSetup}?session_id=${encodeURIComponent(currentSessionId)}`;
-                    dashboardButton.textContent = acquisitionMode === 'can'
+                    dashboardButton.textContent = acquisitionMode === 'can' && !autonomous
                         ? 'Charger le fichier ASC de CANalyzer'
                         : (data.running ? 'Ouvrir le dashboard en direct' : 'Afficher le dashboard des mesures');
                     dashboardButton.classList.remove('disabled-link');
@@ -248,7 +256,7 @@
                 clearInterval(pollTimer);
                 pollTimer = null;
                 setMessage(
-                    acquisitionMode === 'can'
+                    autonomous ? 'Acquisition terminée sur le Pi. Consultez le dashboard et le contrôle des pertes avant de valider les données.' : acquisitionMode === 'can'
                         ? 'Mesure CAN terminée. Enregistrez le log dans CANalyzer, puis chargez son fichier ASC.'
                         : 'Mesure terminée. Les valeurs de l’ESP32-C3 sont déjà enregistrées et disponibles dans le dashboard.',
                     'ok'
@@ -276,9 +284,10 @@
             try {
                 setMessage('Transmission de la fréquence et de la durée à l’ESP32-C3…');
                 const data = await sendControl(new FormData(form));
+                window.DeviceDisplay?.cancel(); // No late navigation retry after measurement completion.
                 renderStatus(data.acquisition);
                 currentSessionId = data.session?.id || '';
-                if (acquisitionMode === 'digital' && currentSessionId) {
+                if ((acquisitionMode === 'digital' || data.session?.autonomous_recorder) && currentSessionId) {
                     dashboardButton.href = `${endpoints.dashboardSetup}?session_id=${encodeURIComponent(currentSessionId)}`;
                     dashboardButton.textContent = 'Ouvrir le dashboard en direct';
                     dashboardButton.classList.remove('disabled-link');
@@ -294,6 +303,7 @@
                 pollTimer = setInterval(pollStatus, 1000);
             } catch (error) {
                 setMessage(error.message, 'error');
+                window.alert(error.message);
             }
         });
         async function stopSensor(sensor) {

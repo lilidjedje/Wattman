@@ -11,6 +11,8 @@ import subprocess
 import threading
 import uuid
 import math
+import shutil
+from functools import wraps
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -37,6 +39,7 @@ app.config["MAX_FORM_MEMORY_SIZE"] = THEORY_IMPORT_LIMIT
 # Les mesures numériques arrivent toujours directement de l'ESP32-C3 par Wi-Fi.
 # Le mode CAN est exploité séparément, par import des fichiers ASC.
 can_collector = TcpCanCollector()
+AUTONOMOUS_RECORDER = os.environ.get('WATTMAN_AUTONOMOUS_RECORDER') == '1'
 def archive_record(archive_id):
     init_db()
     conn = get_db_connection()
@@ -122,9 +125,11 @@ def read_json_file(path, fallback):
 
 
 def write_json_file(path, payload):
-    temporary_path = f"{path}.tmp"
+    temporary_path = f"{path}.{uuid.uuid4().hex}.tmp"
     with open(temporary_path, "w", encoding="utf-8") as target:
         json.dump(payload, target, ensure_ascii=False, indent=2)
+        target.flush()
+        os.fsync(target.fileno())
     for attempt in range(5):
         try:
             os.replace(temporary_path, path)
@@ -148,9 +153,10 @@ def measurement_sessions():
 
 
 def save_measurement_session(session):
-    sessions = [item for item in measurement_sessions() if item.get("id") != session.get("id")]
-    sessions.insert(0, session)
-    write_json_file(SESSIONS_FILE, sessions)
+    with measurement_lock:
+        sessions = [item for item in measurement_sessions() if item.get("id") != session.get("id")]
+        sessions.insert(0, session)
+        write_json_file(SESSIONS_FILE, sessions)
 
 
 def saved_dashboards():
@@ -243,6 +249,7 @@ def measurement():
         "measurement.html",
         theory=theory_snapshot(),
         acquisition_mode=acquisition_mode,
+        autonomous_recorder=AUTONOMOUS_RECORDER,
     )
 
 
@@ -1652,10 +1659,15 @@ def esp_display():
     """Affiche sur le SH1106 les étapes choisies dans l'application."""
     payload = request.get_json(silent=True) or {}
     display_state = str(payload.get("state") or "").strip().lower()
-    if display_state not in {"welcome", "digital_selected", "can_selected"}:
+    if display_state not in {"welcome", "project_welcome", "method_selection",
+                             "digital_selected", "can_selected", "digital_ready", "can_ready"}:
         return jsonify({"status": "error", "message": "État d'affichage OLED invalide."}), 400
     try:
-        return jsonify(esp32_request("GET", "/api/display", {"state": display_state}, connect_network=False))
+        params = {"state": display_state}
+        if display_state == 'project_welcome':
+            for key in ('pilot', 'project'):
+                params[key] = ' '.join(str(payload.get(key) or '').split())[:64]
+        return jsonify(esp32_request("GET", "/api/display", params, connect_network=False))
     except RuntimeError as error:
         return jsonify({"status": "error", "message": str(error)}), 502
 
@@ -1684,7 +1696,7 @@ def actual_frequency_from_status(status, fallback=0):
 
 
 def synchronize_digital_samples(session):
-    if session.get('acquisition_mode') != 'digital' or not session.get('source_files'):
+    if not session.get('source_files'):
         return
     connection = get_db_connection()
     try:
@@ -1727,7 +1739,19 @@ def channel_status_metrics(status, channel_settings):
     return result
 
 
+measurement_control_lock = threading.RLock()
+
+
+def serialized_measurement_control(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with measurement_control_lock:
+            return function(*args, **kwargs)
+    return wrapped
+
+
 @app.route("/api/control_esp_acquisition", methods=["POST"])
+@serialized_measurement_control
 def control_esp_acquisition():
     """Transmet directement les commandes de mesure du PC vers l'ESP32."""
     action = request.form.get("action", "start")
@@ -1771,7 +1795,12 @@ def control_esp_acquisition():
             })
 
         if active_measurement.get('status') == 'running':
-            raise ValueError("Une mesure est deja en cours. Arretez-la avant d'en demarrer une autre.")
+            channels = active_measurement.get('channels') or ['A', 'B']
+            return jsonify({
+                'status': 'error', 'code': 'channel_busy', 'channels': channels,
+                'message': "Un test est déjà en cours sur le(s) canal(aux) "
+                           + ', '.join(channels) + ". Attendez la fin du test avant d'en lancer un autre.",
+            }), 409
         export_unit = request.form.get('export_unit', 'mA')
         if export_unit not in ('A', 'mA'):
             raise ValueError("Unite Excel invalide.")
@@ -1781,7 +1810,7 @@ def control_esp_acquisition():
         oscillator_mhz = int(request.form.get("oscillator_mhz", 8))
         if acquisition_mode == "can" and oscillator_mhz not in {8, 16}:
             raise ValueError("Le quartz du MCP2515 doit être de 8 ou 16 MHz.")
-        if acquisition_mode == "can":
+        if acquisition_mode == "can" and not AUTONOMOUS_RECORDER:
             # Une acquisition CAN ne doit conserver aucun socket du collecteur
             # numérique d'une mesure précédente.
             can_collector.stop()
@@ -1816,14 +1845,27 @@ def control_esp_acquisition():
 
         duration = max(item["requested_duration_s"] for item in channel_settings.values())
         frequency = max(item["requested_frequency_hz"] for item in channel_settings.values())
-        if acquisition_mode == "digital" and not ESP32_SIMULATOR:
+        if AUTONOMOUS_RECORDER:
+            device_status = esp32_request('GET', '/api/acquisition/status')
+            if device_status.get('running'):
+                return jsonify(status='error', code='channel_busy', message=
+                    "Un test est déjà actif sur l'ESP32. Attendez sa fin ou arrêtez-le explicitement."), 409
+            if not ESP32_SIMULATOR and not device_status.get('recorder_mirror_supported'):
+                raise ValueError('Téléversez le firmware compatible avec le collecteur autonome avant de démarrer.')
+            # Conservative allowance for rows plus the five SQLite indexes.
+            required = sum(v['requested_frequency_hz'] * v['requested_duration_s']
+                           for v in channel_settings.values()) * 512 + 256 * 1024**2
+            if shutil.disk_usage(DATA_DIR).free < required:
+                raise ValueError('Espace insuffisant sur le collecteur pour cette durée/fréquence. Réduisez la fréquence ou libérez du stockage.')
+        capture_locally = acquisition_mode == 'digital' or AUTONOMOUS_RECORDER
+        if capture_locally and not ESP32_SIMULATOR:
             ensure_esp32_network()
             can_collector.start(
                 source_file=f"live_{session_id}",
                 channels=channels,
                 duration_s=duration,
                 target_url=configured_esp32_base_url(),
-                export_directory=os.path.join(DATA_DIR, 'exports_numeriques', session_id),
+                export_directory=None if AUTONOMOUS_RECORDER else os.path.join(DATA_DIR, 'exports_numeriques', session_id),
                 export_unit=export_unit,
             )
         measurement_epoch_us = time.time_ns() // 1000
@@ -1841,6 +1883,7 @@ def control_esp_acquisition():
                 "timestamp": int(measurement_epoch),
                 "timestamp_us": measurement_epoch_us,
                 "mode": acquisition_mode,
+                "recorder_mirror": int(AUTONOMOUS_RECORDER),
                 "oscillator_mhz": oscillator_mhz,
             })
         except Exception:
@@ -1864,8 +1907,9 @@ def control_esp_acquisition():
                 "channel_settings": channel_status_metrics(status, channel_settings),
                 "channels": channels,
                 "acquisition_mode": acquisition_mode,
-                "source_files": [f"live_{session_id}"] if acquisition_mode == "digital" else [],
-                "excel_export_directory": os.path.join(DATA_DIR, 'exports_numeriques', session_id) if acquisition_mode == 'digital' else None,
+                "source_files": [f"live_{session_id}"] if capture_locally else [],
+                "autonomous_recorder": AUTONOMOUS_RECORDER,
+                "excel_export_directory": os.path.join(DATA_DIR, 'exports_numeriques', session_id) if acquisition_mode == 'digital' and not AUTONOMOUS_RECORDER else None,
                 "export_unit": export_unit,
                 "measurement_type": "unassigned",
                 "device_id": device_id,
@@ -1880,6 +1924,8 @@ def control_esp_acquisition():
         return jsonify({
             "status": "success",
             "message": (
+                "Enregistrement autonome démarré sur le Raspberry Pi. Le PC peut se déconnecter ; le Pi et l'ESP32 doivent rester alimentés et reliés."
+                if AUTONOMOUS_RECORDER else
                 "Mesure numérique démarrée : réception directe des valeurs ESP32-C3 par Wi-Fi, sans CAN."
                 if acquisition_mode == "digital"
                 else (
@@ -1894,7 +1940,7 @@ def control_esp_acquisition():
             "collector": can_collector.state(),
             "next_url": (
                 url_for("dashboard_setup", session_id=session_id)
-                if acquisition_mode == "digital"
+                if capture_locally
                 else url_for("dashboard_import")
             ),
         })
@@ -1919,9 +1965,17 @@ def reconcile_active_measurement(status):
                 "elapsed", active_measurement.get("requested_duration_s", 0)
             )
             synchronize_digital_samples(active_measurement)
+            integrity = can_collector.state().get('integrity') or {}
+            active_measurement['integrity'] = integrity
+            if AUTONOMOUS_RECORDER and not ESP32_SIMULATOR and (
+                    not integrity.get('end_confirmed') or
+                    any((integrity.get('missing_samples') or {}).values()) or
+                    any(sensor.get('lost', 0) for sensor in (status.get('sensors') or {}).values())):
+                active_measurement['status'] = 'incomplete'
             save_measurement_session(dict(active_measurement))
         status["session"] = dict(active_measurement)
         status["collector"] = can_collector.state()
+        status['autonomous_recorder'] = AUTONOMOUS_RECORDER
     return status
 
 

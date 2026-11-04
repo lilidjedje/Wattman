@@ -8,7 +8,7 @@ DATA_DIR = Path(os.environ.get("ENGINEERING_APP_DATA", "")).resolve() / "can_dat
 DB_PATH = DATA_DIR / "mesures.db"
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -18,6 +18,7 @@ def init_db():
     
     conn = get_db_connection()
     cursor = conn.cursor()
+    cursor.execute('PRAGMA journal_mode=WAL')
     
     # Vos tables SQL
     cursor.execute('''

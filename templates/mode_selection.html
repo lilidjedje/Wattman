@@ -116,8 +116,15 @@
     <script src="{{ url_for('static', filename='project_storage.js') }}"></script>
     <script src="{{ url_for('static', filename='homologation_defaults.js') }}"></script>
     <script src="{{ url_for('static', filename='sleep_current.js') }}"></script>
+    <script src="{{ url_for('device_display_script') }}"></script>
     <script>
         const canServerUrl = {{ can_server_url|tojson }};
+        document.addEventListener('DOMContentLoaded', () => {
+            const project = ProjectStorage.getActiveProject() || {};
+            window.DeviceDisplay?.show(`${canServerUrl.replace(/\/+$/, '')}/api/esp_display`, {
+                state: 'project_welcome', pilot: project.pilotWattman || '', project: project.name || ''
+            }).catch(() => {});
+        });
         const readJson = (storage, key, fallback) => {
             try { return JSON.parse(storage.getItem(key) || JSON.stringify(fallback)); }
             catch { return fallback; }

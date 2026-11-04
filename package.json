@@ -33,6 +33,11 @@
       {
         "from": "can_server/esp32C3-multi-INA226",
         "to": "firmware/esp32C3-multi-INA226"
+      },
+      {
+        "from": "can_server/esp32C3-multi-INA226-copie",
+        "to": "firmware/esp32C3-multi-INA226-copie",
+        "filter": ["*.ino", "*.h", "*.md"]
       }
     ],
     "win": {

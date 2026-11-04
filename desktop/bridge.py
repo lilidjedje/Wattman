@@ -12,6 +12,8 @@ import os
 import sys
 import traceback
 from contextlib import ExitStack
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 
 def resource_root():
@@ -40,6 +42,7 @@ def main():
 
     engineering_app.app.config["CAN_SERVER_URL"] = "/analyse_logs"
     client = Client(engineering_app.app.wsgi_app, Response, use_cookies=True)
+    recorder_url = os.environ.get('WATTMAN_RECORDER_URL', '').strip().rstrip('/')
 
     for line in sys.stdin:
         request_id = None
@@ -52,7 +55,20 @@ def main():
                 if key.lower() not in {"host", "content-length", "connection"}
             }
             payload = base64.b64decode(command.get("body") or "")
-            if command.get('operation') == 'shutdown':
+            if recorder_url and (command.get('path') or '').startswith('/analyse_logs'):
+                # The remote Pi owns acquisition and storage, even after this
+                # bridge exits. Never forward a shutdown command to the Pi.
+                remote_request = Request(recorder_url + command['path'], data=
+                    payload if command.get('method', 'GET') not in ('GET', 'HEAD') else None,
+                    headers=headers, method=command.get('method', 'GET'))
+                try:
+                    remote = urlopen(remote_request, timeout=60)
+                except HTTPError as error:
+                    remote = error
+                with remote:
+                    response = Response(remote.read(), status=remote.code,
+                                        headers=list(remote.headers.items()))
+            elif command.get('operation') == 'shutdown':
                 module = engineering_app.can_server_module
                 try:
                     if module.active_measurement.get('status') == 'running':

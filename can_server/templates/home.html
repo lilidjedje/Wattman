@@ -84,6 +84,7 @@
             {% endif %}
         </section>
     </main>
+    <script src="{{ url_for('static', filename='js/device-display.js') }}"></script>
     <script>
         const measurementUrls = {
             digital: {{ url_for('measurement', mode='digital')|tojson }},
@@ -96,13 +97,7 @@
 
         async function sendOledState(state) {
             try {
-                const response = await fetch(oledDisplayUrl, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({state})
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.message || 'Écran OLED indisponible.');
+                await DeviceDisplay.show(oledDisplayUrl, {state});
             } catch (error) {
                 modeMessage.textContent = 'Écran OLED indisponible. Vous pouvez consulter les dashboards et les mesures enregistrées sans matériel connecté.';
                 modeMessage.className = 'message';
@@ -136,7 +131,7 @@
         });
         const savedMode = sessionStorage.getItem('measurementSourceMode');
         if (savedMode === 'digital' || savedMode === 'can') selectMeasurementMode(savedMode, false);
-        sendOledState('welcome');
+        sendOledState('method_selection');
     </script>
 </body>
 </html>

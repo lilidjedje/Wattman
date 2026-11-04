@@ -18,6 +18,20 @@ win-unpacked/
 .build-temp/
 .pyinstaller-cache/
 .test-temp/
+**/build/
+.venv-recorder/
+**/.venv-recorder/
+*.bin
+*.elf
+*.map
+*.o
+*.a
+*.log
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
 
 # Local data and test fixtures
 uploads/

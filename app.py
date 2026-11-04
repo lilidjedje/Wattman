@@ -27,7 +27,7 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['CAN_SERVER_URL'] = os.environ.get('CAN_SERVER_URL', 'http://10.42.0.1/').strip() or 'http://10.42.0.1/'
+app.config['CAN_SERVER_URL'] = os.environ.get('CAN_SERVER_URL', '/analyse_logs').strip() or '/analyse_logs'
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 app.config['MAX_FORM_MEMORY_SIZE'] = MAX_CONTENT_LENGTH
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -239,6 +239,11 @@ def edit_gmv():
 def mode_selection():
     """Page intermédiaire de sélection de l'outil d'analyse"""
     return render_template('mode_selection.html', can_server_url=app.config['CAN_SERVER_URL'])
+
+
+@app.route('/device-display.js')
+def device_display_script():
+    return send_from_directory(os.path.join(CAN_SERVER_DIR, 'static', 'js'), 'device-display.js')
 
 @app.route('/synthesis')
 def synthesis():
