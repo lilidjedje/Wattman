@@ -1,0 +1,41 @@
+/* Thème industriel autonome pour l'interface CAN. */
+:root { --ink:#f4f1e8; --steel:#2b2f33; --panel:#17191b; --line:#595e61; --yellow:#b7830b; --yellow-dark:#775300; --on-dark:#fffdf5; }
+html { background:#090a0b; }
+body {
+    font-family:"Times New Roman", Times, serif !important;
+    color:var(--ink) !important;
+    background-color:#0d0f10 !important;
+    background-image:none !important;
+    background-attachment:fixed !important;
+}
+body, button, input, select, textarea { font-family:"Times New Roman", Times, serif !important; }
+h1,h2,h3 { color:var(--ink) !important; letter-spacing:.025em; }
+h1 { border-left:7px solid var(--yellow); padding-left:.55em; }
+.panel { color:var(--ink) !important; border-radius:0 !important; border-color:var(--line) !important; background:var(--panel) !important; box-shadow:8px 8px 0 #050606,0 1px 0 rgba(255,255,255,.12) inset !important; }
+body>h1 { color:var(--on-dark) !important; text-shadow:0 2px 3px rgba(0,0,0,.55); }
+button,.btn-primary,.return-menu { border-radius:0 !important; border:1px solid #5b430a !important; color:var(--on-dark) !important; background:linear-gradient(180deg,#7a5705 0%,#684900 55%,#503800 100%) !important; box-shadow:3px 3px 0 rgba(20,20,18,.35) !important; font-weight:700 !important; transition:.16s ease !important; }
+button:hover,.btn-primary:hover,.return-menu:hover { background:linear-gradient(180deg,#8a650d,#624500) !important; transform:translate(-1px,-1px); box-shadow:5px 5px 0 rgba(20,20,18,.42) !important; }
+button:focus-visible,.btn-primary:focus-visible,.return-menu:focus-visible,a:focus-visible { outline:3px solid #e2b53d !important; outline-offset:3px !important; }
+input:not(table input),select:not(table select),textarea:not(table textarea) { border-radius:0 !important; border:1px solid var(--line) !important; color:#17191b !important; background:#f4f1e8 !important; box-shadow:3px 3px 0 rgba(35,38,40,.15) inset !important; }
+input:not(table input):focus,select:not(table select):focus,textarea:not(table textarea):focus { outline:2px solid var(--yellow) !important; outline-offset:1px; }
+.sensor-progress,.sensor-progress>div { border-radius:0 !important; }
+label,.sensor-state,.sensor-details,.placeholder { color:#d5d1c7 !important; }
+table { color:#f4f1e8 !important; background:#101213 !important; border-color:var(--line) !important; font-family:"Segoe UI",Tahoma,Geneva,Verdana,sans-serif; }
+table thead,table tfoot,table th { color:#fffdf5 !important; background:#090a0b !important; border-color:#686d70 !important; }
+table tbody,table tr,table td { color:#f4f1e8 !important; background-color:#1a1d1f !important; border-color:#555a5d !important; }
+table tr[class],table th[class],table td[class] { color:#f4f1e8 !important; background:#1a1d1f !important; }
+table tbody tr:nth-child(even),table tbody tr:nth-child(even) td { background-color:#222628 !important; }
+table tbody tr:hover,table tbody tr:hover td { background-color:#393019 !important; }
+table input,table select,table textarea { color:#17191b !important; background:#f4f1e8 !important; border:1px solid #8b8f91 !important; border-radius:0 !important; font-family:inherit !important; }
+.panel>div[style*="background"] { color:#f4f1e8 !important; background:#17191b !important; border-color:#595e61 !important; }
+@media (max-width:720px) { body { margin:12px !important; } h1 { font-size:1.65rem !important; } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none !important; } }
+
+/* Coque de poste de travail plein écran. */
+html,body { width:100%; min-height:100%; }
+body { display:block !important; margin:0 !important; padding:62px 20px 42px !important; overflow-x:hidden; }
+body::before { content:"ENGINEERING CONTROL SYSTEM  /  CAN WORKSTATION"; display:flex; align-items:center; position:fixed; inset:0 0 auto 0; z-index:10000; height:42px; padding:0 20px 0 34px; color:#fffdf5; background:#050606; border-bottom:2px solid var(--yellow); font-size:.82rem; font-weight:700; letter-spacing:.14em; pointer-events:none; }
+.grid-layout { width:100% !important; max-width:none !important; margin:0 !important; }
+.panel { box-shadow:none !important; border:1px solid #45494b !important; border-left:4px solid var(--yellow) !important; }
+body>h1 { margin:0 0 18px !important; padding:13px 16px !important; background:#111314 !important; border-left:5px solid var(--yellow) !important; border-bottom:1px solid #4a4e50 !important; text-align:left !important; }
+@media (max-width:720px) { body { padding:54px 10px 36px !important; } body::before { height:38px; padding-left:14px; font-size:.66rem; letter-spacing:.08em; } }

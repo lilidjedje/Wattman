@@ -1,0 +1,334 @@
+/* Shared screen-only interface. Existing table rules, chart canvases and data
+   palettes stay in their original stylesheets. Do not redefine their tokens. */
+@media screen {
+    html { background: #f3f6fb !important; color-scheme: light; }
+    body {
+        color: #1e293b !important;
+        background: #f3f6fb !important;
+        font-family: "Segoe UI", system-ui, sans-serif !important;
+        font-size: 15px;
+        line-height: 1.55;
+    }
+    /* Preserve the former inherited typeface inside tables. More specific
+       existing table rules retain their own font. */
+    body table { font-family: "Times New Roman", Times, serif; }
+    body::before {
+        color: #475569 !important;
+        background: #fff !important;
+        border-bottom: 1px solid #dce4ef !important;
+        font-family: "Segoe UI", system-ui, sans-serif !important;
+        letter-spacing: .07em !important;
+    }
+    body :is(h1, h2, h3, h4):not(table *, .chart-shell *, .chart-box *) {
+        color: #172b4d !important;
+        font-family: "Segoe UI", system-ui, sans-serif !important;
+        letter-spacing: -.025em;
+        line-height: 1.25;
+        text-shadow: none !important;
+    }
+    body h1:not(table *) { border-left: 0 !important; padding-left: 0 !important; }
+    body :is(p, label, small, span, strong, legend):not(table *, .chart-shell *, .chart-box *, .chart-container *) {
+        color: inherit !important;
+    }
+    body :is(.subtitle, .intro, .note, .description, .card-desc, .option-description,
+        .mode-desc, .analysis-note, .form-intro, .sensor-details, .placeholder,
+        .project-info span, .feeding-card-caption, .methodology p):not(table *) {
+        color: #52647b !important;
+        line-height: 1.65;
+    }
+    body :is(.container, .main-container, .content, .panel, .card, .modal-content,
+        .setup-box, .stepper, .tech-wake-panel, .option-card, .mode-card,
+        .dash-card, .summary-card, .section-card, .analysis, .creator,
+        .project-card, .selection-box, .profile, .profile-heading, .empty-state,
+        .upload, .type-option span, .synthesis-card, .action-card, .module-card,
+        .history-card, .device-report-card, details.data-choice):not(table *, .chart-shell *, .chart-box *) {
+        color: #1e293b !important;
+        background: #fff !important;
+        border: 1px solid #dce4ef !important;
+        border-radius: 14px !important;
+        box-shadow: 0 3px 16px rgba(30, 50, 80, .045) !important;
+    }
+    body > :is(main, .page, .container, .main-container):not(.table-shell):not(#analysis-list) {
+        color: #1e293b !important;
+        background: transparent !important;
+    }
+    body :is(.header, .topbar, .page-header, .toolbar, .results-header, .workstation-header),
+    body > header, body > h1 {
+        color: #172b4d !important;
+        background: #fff !important;
+        border: 1px solid #dce4ef !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
+    }
+    body .workstation-header { border-radius: 0 !important; padding: 20px 28px; }
+    body .workstation-header h1 { font-size: clamp(1.3rem, 2.4vw, 1.9rem); }
+    body :is(.eyebrow, .module-index) { color: #2563eb !important; letter-spacing: .08em; }
+    body :is(.module-card, .panel-title)::before { display: none; }
+    body .panel-title {
+        color: #172b4d !important;
+        background: #f8faff !important;
+        border-color: #dce4ef !important;
+        border-radius: 14px 14px 0 0;
+    }
+    body :is(.option-card, .mode-card, .project-card, .action-card, .history-card):hover {
+        background: #f8faff !important;
+        border-color: #93b4f5 !important;
+        box-shadow: 0 5px 18px rgba(30, 64, 175, .08) !important;
+        transform: none !important;
+    }
+    body a:not(table *, .button, .btn, [class*="btn-"], .action-card, .history-card) {
+        color: #1d4ed8 !important;
+        text-underline-offset: 3px;
+    }
+    body :is(button, .btn, .button, .action, [class*="btn-"], [class$="-button"],
+        .step, .card-tab, .return-menu):not(table *, .chart-shell *, .chart-box *) {
+        min-height: 42px;
+        padding: 10px 18px;
+        color: #fff !important;
+        background: #245cd6 !important;
+        border: 1px solid #245cd6 !important;
+        border-radius: 9px !important;
+        box-shadow: 0 2px 4px rgba(30, 64, 175, .08) !important;
+        font: 600 .94rem/1.4 "Segoe UI", system-ui, sans-serif !important;
+        letter-spacing: 0;
+        text-decoration: none;
+        cursor: pointer;
+        transition: background .15s ease, border-color .15s ease, box-shadow .15s ease !important;
+    }
+    body :is(button, .btn, .button, .action, [class*="btn-"], [class$="-button"], .step, .card-tab):not(table *):hover {
+        background: #1949b4 !important;
+        border-color: #1949b4 !important;
+        transform: none !important;
+        box-shadow: 0 3px 8px rgba(30, 64, 175, .14) !important;
+    }
+    body :is(.secondary, .btn-back, .btn-home, .menu-back, .menu-home, .close,
+        .action:not(.primary), .step:not(.active), .card-tab:not(.active)):not(table *) {
+        color: #334155 !important;
+        background: #f1f5f9 !important;
+        border-color: #cbd5e1 !important;
+    }
+    body :is(.success, .btn-save, .menu-save):not(table *) {
+        color: #fff !important; background: #147454 !important; border-color: #147454 !important;
+    }
+    body :is(.danger, .btn-delete, .btn-reset, .menu-reset, .device-delete-confirm):not(table *) {
+        color: #a4262c !important; background: #fff1f2 !important; border-color: #f0bfc4 !important;
+    }
+    body :is(.secondary, .btn-back, .btn-home, .menu-back, .menu-home, .close):not(table *):hover {
+        color: #172b4d !important; background: #e2e8f0 !important; border-color: #94a3b8 !important;
+    }
+    body :is(.success, .btn-save, .menu-save):not(table *):hover {
+        background: #0f5b42 !important; border-color: #0f5b42 !important;
+    }
+    body :is(.danger, .btn-delete, .btn-reset, .menu-reset, .device-delete-confirm):not(table *):hover {
+        color: #8f1d25 !important; background: #ffe4e6 !important; border-color: #e59aa3 !important;
+    }
+    body :is(button:disabled, .disabled-link, [aria-disabled="true"]):not(table *) {
+        opacity: .5 !important; cursor: not-allowed !important; box-shadow: none !important;
+    }
+    body :is(input, select, textarea):not(table *, [type="checkbox"], [type="radio"], [type="hidden"]) {
+        min-height: 44px;
+        padding: 10px 12px;
+        color: #1e293b !important;
+        background: #fff !important;
+        border: 1px solid #b9c7da !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        font: inherit !important;
+    }
+    body :is(input, textarea):not(table *)::placeholder { color: #64748b !important; }
+    body :is(input, select, textarea):disabled:not(table *) { background: #edf2f7 !important; color: #64748b !important; }
+    body input:is([type="checkbox"], [type="radio"]):not(table *) {
+        width: 18px; height: 18px; min-height: 18px; padding: 0;
+        accent-color: #245cd6;
+        box-shadow: none !important;
+        vertical-align: middle;
+    }
+    body :is(button, a, input, select, textarea, summary):focus-visible:not(table *) {
+        outline: 3px solid #82aaff !important;
+        outline-offset: 3px !important;
+    }
+    body :is(dialog, .industrial-confirm-dialog) {
+        color: #1e293b !important; background: #fff !important;
+        border: 1px solid #dce4ef !important; border-radius: 16px !important;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, .2) !important;
+    }
+    body dialog::backdrop { background: rgba(15, 23, 42, .38) !important; backdrop-filter: blur(3px); }
+    /* One summary component for every page, overriding legacy page variants. */
+    body .retractable-menu.app-summary {
+        position: relative !important;
+        display: inline-block;
+        flex: 0 0 auto;
+        width: auto !important;
+        text-align: left;
+        z-index: 250;
+    }
+    body .retractable-menu.app-summary details {
+        background: transparent !important;
+        border: 0 !important;
+        border-radius: 12px !important;
+        box-shadow: none !important;
+    }
+    body .retractable-menu.app-summary summary {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 46px !important;
+        padding: 11px 16px !important;
+        color: #172b4d !important;
+        background: #fff !important;
+        border: 1px solid #cbd8eb !important;
+        border-radius: 12px !important;
+        box-shadow: 0 2px 5px rgba(30, 50, 80, .04) !important;
+        font: 600 .94rem/1.4 "Segoe UI", system-ui, sans-serif !important;
+        white-space: nowrap;
+        list-style: none;
+        cursor: pointer;
+        user-select: none;
+    }
+    body .retractable-menu.app-summary summary::-webkit-details-marker { display: none; }
+    body .retractable-menu.app-summary summary::before {
+        content: "";
+        width: 16px;
+        height: 14px;
+        flex: 0 0 16px;
+        background: repeating-linear-gradient(to bottom, #245cd6 0 2px, transparent 2px 6px);
+    }
+    body .retractable-menu.app-summary summary::after {
+        content: "";
+        width: 7px;
+        height: 7px;
+        margin: -4px 2px 0 8px;
+        border-right: 2px solid #64748b;
+        border-bottom: 2px solid #64748b;
+        transform: rotate(45deg);
+    }
+    body .retractable-menu.app-summary summary:hover,
+    body .retractable-menu.app-summary details[open] > summary {
+        background: #edf3ff !important;
+        border-color: #82aaff !important;
+        box-shadow: 0 0 0 3px rgba(36, 92, 214, .07) !important;
+    }
+    body .retractable-menu.app-summary details[open] > summary::after {
+        margin-top: 4px;
+        transform: rotate(225deg);
+    }
+    body .retractable-menu.app-summary .menu-content {
+        position: absolute !important;
+        top: calc(100% + 10px) !important;
+        right: 0 !important;
+        left: auto !important;
+        display: flex;
+        flex-direction: column;
+        width: min(292px, calc(100vw - 32px)) !important;
+        min-width: 0 !important;
+        max-height: min(560px, calc(100dvh - 150px));
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        gap: 5px !important;
+        padding: 10px !important;
+        background: #fff !important;
+        color: #172b4d !important;
+        border: 1px solid #dce4ef !important;
+        border-radius: 16px !important;
+        box-shadow: 0 16px 48px rgba(23, 43, 77, .16), 0 3px 8px rgba(23, 43, 77, .04) !important;
+    }
+    body .retractable-menu.app-summary .menu-content::before {
+        content: "Navigation et actions";
+        padding: 8px 12px 10px;
+        color: #64748b;
+        font: 600 .72rem/1.4 "Segoe UI", system-ui, sans-serif;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    body .retractable-menu.app-summary .btn-menu {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 44px !important;
+        padding: 11px 12px !important;
+        color: #24364d !important;
+        background: transparent !important;
+        border: 1px solid transparent !important;
+        border-radius: 9px !important;
+        box-shadow: none !important;
+        font: 500 .92rem/1.4 "Segoe UI", system-ui, sans-serif !important;
+        text-align: left;
+        white-space: normal;
+        transform: none !important;
+    }
+    body .retractable-menu.app-summary .btn-menu:hover {
+        color: #1949b4 !important;
+        background: #edf3ff !important;
+        border-color: #dce7fb !important;
+    }
+    body .retractable-menu.app-summary .btn-save {
+        color: #126346 !important;
+        background: #edf8f2 !important;
+        font-weight: 600 !important;
+    }
+    body .retractable-menu.app-summary .btn-save:hover { background: #dbf1e5 !important; border-color: #a8d7bf !important; }
+    body .retractable-menu.app-summary .btn-reset { color: #a4262c !important; }
+    body .retractable-menu.app-summary .btn-reset:hover { background: #fff1f2 !important; border-color: #f0cbd0 !important; }
+    body .retractable-menu.app-summary hr {
+        width: 100%;
+        margin: 7px 0 !important;
+        border: 0 !important;
+        border-top: 1px solid #e5ebf3 !important;
+    }
+    body .retractable-menu.app-summary .saved-status:empty { display: none; }
+    body .retractable-menu.app-summary .saved-status:not(:empty) { padding: 4px 12px; text-align: left; }
+    body :is(.mode-selector-button, .analysis-mode) {
+        color: #1e293b !important; background: #f8fafc !important;
+        border-color: #cbd5e1 !important; box-shadow: none !important;
+    }
+    body :is(.mode-selector-button, .analysis-mode):hover,
+    body :is(.mode-selector-button, .analysis-mode).selected {
+        color: #172b4d !important; background: #eaf1ff !important;
+        border-color: #245cd6 !important; box-shadow: inset 4px 0 #245cd6 !important;
+    }
+    body :is(.channel-config, .channel-choice, .device-choice, .dashboard-channel-choices label,
+        .metric, .channel-box, .system-strip, .empty-notice, .sleep-current-summary > div) {
+        color: #334155 !important; background: #f8fafc !important;
+        border-color: #dce4ef !important; border-radius: 10px !important;
+    }
+    body :is(.metric strong, .countdown, .channel-box strong) { color: #1d4ed8 !important; font-variant-numeric: tabular-nums; }
+    body .metric span { color: #52647b !important; font-family: "Segoe UI", system-ui, sans-serif; line-height: 1.4; }
+    body .message { color: #475569 !important; background: #edf2f8 !important; border-color: #94a3b8 !important; border-radius: 8px; }
+    body .message.ok { color: #126346 !important; background: #eaf8f1 !important; border-color: #16835c !important; }
+    body .message.error { color: #a4262c !important; background: #fff1f2 !important; border-color: #c43c4b !important; }
+    body .progress-shell { background: #e2e8f0; border-color: #cbd5e1; border-radius: 20px; }
+    body .progress-fill { background: #245cd6; border-radius: 20px; }
+    body :is(.type-badge, .badge-h, .badge-s):not(table *) { color: #1d4ed8 !important; background: #eaf1ff !important; border-radius: 6px; }
+    body .saved-status { color: #147454 !important; }
+    /* Older page-specific rules still force white titles inside light cards.
+       Use explicit foregrounds here rather than inheriting those old colors. */
+    body :is(.card-title, .option-title, .mode-title, .modal-title,
+        .project-info strong, .action-card .card-title):not(table *, .chart-shell *, .chart-box *, .chart-container *) {
+        color: #111827 !important;
+        text-shadow: none !important;
+    }
+    body :is(.action-card, .option-card, .mode-card, .modal-content, dialog)
+        :is(.card-desc, .option-description, .mode-desc, .description, .intro, .note):not(table *, .chart-shell *, .chart-box *, .chart-container *) {
+        color: #334155 !important;
+    }
+    body .status-led::before { border-radius: 50%; background: #16835c; box-shadow: none; }
+    @media (max-width: 900px) {
+        body .workstation-header { grid-template-columns: 1fr; gap: 14px; }
+        body .workstation-header h1 { text-align: left; }
+        body .workstation-header .right { justify-self: start; }
+        body .status-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        body .system-strip { flex-wrap: wrap; }
+    }
+    @media (max-width: 600px) {
+        body .workstation-main { width: calc(100% - 24px); }
+        body :is(.module-grid, .mode-selector-buttons, .analysis-mode-grid, .layout) { grid-template-columns: 1fr; }
+        body .module-card { padding: 22px; min-height: 220px; }
+        body .module-card .button { min-width: 0; width: 100%; }
+        body .actions { gap: 10px; }
+        body .actions > :is(button, .button) { flex: 1 1 160px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        body :is(button, a, .progress-fill) { transition: none !important; }
+    }
+}

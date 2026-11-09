@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthèses du projet</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; padding: 28px 20px; color: #1f2937; background: #f3f6fb; font-family: "Segoe UI", Tahoma, sans-serif; }
+        .page { max-width: 1280px; margin: 0 auto; }
+        .header, .selection, .report { background: white; border: 1px solid #dbe2ea; border-radius: 12px; box-shadow: 0 4px 16px rgba(15,23,42,.07); }
+        .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; margin-bottom: 18px; }
+        h1, h2, h3, p { margin-top: 0; }
+        h1 { margin-bottom: 0; color: #1f4e78; font-size: 1.55rem; }
+        h2 { margin-bottom: 12px; color: #1f4e78; font-size: 1.2rem; }
+        h3 { margin: 15px 0 8px; color: #334155; font-size: 1rem; }
+        .back, button { display: inline-block; padding: 10px 15px; border: 1px solid #bac8dd; border-radius: 7px; color: #20304a; background: #e8eef7; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+        button.primary { color: white; background: #2563eb; border-color: #2563eb; }
+        button.primary:hover { background: #1d4ed8; }
+        .selection { padding: 22px; }
+        .selection.compact .group, .selection.compact .help,
+        .selection.compact h2, .selection.compact #show-reports,
+        .selection.compact #generate-pdf { display: none !important; }
+        .selection.compact .selection-actions { margin-top: 0; }
+        .help, .status { color: #64748b; }
+        .group { padding: 14px 0; border-top: 1px solid #e2e8f0; }
+        .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 9px 16px; }
+        .check { display: flex; align-items: flex-start; gap: 9px; line-height: 1.35; }
+        .check input { margin-top: 3px; }
+        .check small { display: block; color: #64748b; }
+        .choices { margin: 10px 0 0 26px; padding: 10px 12px; border-left: 3px solid #dbeafe; }
+        .hidden { display: none !important; }
+        .selection-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+        .status { min-height: 1.5em; margin: 14px 0 0; }
+        .reports { display: grid; gap: 18px; margin-top: 18px; }
+        .report-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .report-actions button:disabled { opacity: .65; cursor: wait; }
+        .print-report-copy { display: none; }
+        .cover { display: none; padding: 48px; color: #1f2937; background: white; border: 1px solid #dbe2ea; }
+        .cover-kicker { color: #2563eb; font-size: .9rem; font-weight: 800; letter-spacing: .18em; }
+        .cover h1 { margin: 55px 0 8px; overflow-wrap: anywhere; font-size: 2.4rem; }
+        .cover-subtitle { margin-bottom: 48px; color: #64748b; font-size: 1.25rem; }
+        .project-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 26px; }
+        .project-details div { padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+        .project-details dt { color: #64748b; font-size: .8rem; font-weight: 700; }
+        .project-details dd { margin: 4px 0 0; overflow-wrap: anywhere; font-weight: 650; }
+        .report { overflow: hidden; }
+        .report h2 { margin: 0; padding: 15px 18px; border-bottom: 1px solid #dbe2ea; background: #f8fafc; }
+        iframe { display: block; width: 100%; min-height: 120px; border: 0; background: white; overflow: hidden; }
+        @media (max-width: 650px) {
+            body { padding: 12px; }
+            .header { align-items: flex-start; flex-direction: column; }
+            .selection { padding: 16px; }
+            .selection-actions { justify-content: stretch; flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <header class="header">
+            <a class="back" href="/mode_selection">← Retour</a>
+            <h1>Synthèses du projet</h1>
+        </header>
+
+        <section class="selection" id="selection">
+            <h2>Choisir les éléments de la synthèse</h2>
+            <p class="help">Sélectionnez les résultats à afficher. Le bouton PDF apparaîtra une fois la synthèse chargée.</p>
+
+            <form id="selection-form">
+                <div class="group">
+                    <h3>Rapports</h3>
+                    <div class="checks">
+                        <label class="check"><input type="checkbox" name="module" value="dcdc"><span>DCDC Sizing</span></label>
+                        <label class="check"><input type="checkbox" name="module" value="wltc"><span>WLTC</span></label>
+                        <label class="check"><input type="checkbox" name="module" value="dm1"><span>DM1<small>Autonomie par capacité batterie</small></span></label>
+                        <label class="check"><input type="checkbox" name="module" value="dm2"><span>DM2<small>Autonomie par capacité batterie</small></span></label>
+                        <label class="check"><input type="checkbox" name="module" value="customer"><span>Customer Mode</span></label>
+                        <label class="check"><input type="checkbox" name="module" value="biberonnage"><span>Biberonnage</span></label>
+                    </div>
+                </div>
+
+                <div class="group hidden" data-options="dm1">
+                    <h3>Profils batterie DM1</h3>
+                    <div class="checks" data-profiles="dm1"></div>
+                    <div class="choices checks">
+                        <label class="check"><input type="checkbox" name="dm1-scenario" value="baseLab" checked><span>Logistique</span></label>
+                        <label class="check"><input type="checkbox" name="dm1-scenario" value="withoutAlarmTachy" checked><span>Sans Unplug</span></label>
+                    </div>
+                </div>
+                <div class="group hidden" data-options="dm2">
+                    <h3>Profils batterie DM2</h3>
+                    <div class="checks" data-profiles="dm2"></div>
+                    <div class="choices checks">
+                        <label class="check"><input type="checkbox" name="dm2-scenario" value="baseLab" checked><span>Logistique</span></label>
+                        <label class="check"><input type="checkbox" name="dm2-scenario" value="withoutAlarmTachy" checked><span>Sans Unplug</span></label>
+                    </div>
+                </div>
+                <div class="group hidden" data-options="customer">
+                    <h3>Profils Customer Mode</h3>
+                    <div class="checks">
+                        <label class="check"><input type="checkbox" name="customer-profile" value="Customer" checked><span>Standard</span></label>
+                        <label class="check"><input type="checkbox" name="customer-profile" value="CustomerWO" checked><span>Sans Unplug</span></label>
+                        <label class="check"><input type="checkbox" name="customer-profile" value="CustomerPIE" checked><span>Analyse PIE</span></label>
+                    </div>
+                    <div class="choices checks">
+                        <label class="check"><input type="checkbox" name="customer-scenario" value="baseLab" checked><span>Base LAB</span></label>
+                        <label class="check"><input type="checkbox" name="customer-scenario" value="withAlarm" checked><span>Avec alarme</span></label>
+                        <label class="check"><input type="checkbox" name="customer-scenario" value="withoutAlarmTachy" checked><span>Sans alarme avec TACHY</span></label>
+                        <label class="check"><input type="checkbox" name="customer-scenario" value="alarmTachy" checked><span>Avec alarme + TACHY</span></label>
+                        <label class="check"><input type="checkbox" name="customer-scenario" value="baseLib" checked><span>Base LIB (PIE)</span></label>
+                    </div>
+                </div>
+                <div class="group hidden" data-options="biberonnage">
+                    <h3>Biberonnage</h3>
+                    <div class="checks">
+                        <label class="check"><input type="checkbox" name="bib-days" value="30" checked><span>30 jours</span></label>
+                        <label class="check"><input type="checkbox" name="bib-days" value="90"><span>90 jours</span></label>
+                    </div>
+                    <h3>Profils — 30 jours</h3>
+                    <div class="checks" data-profiles="biberonnage-30"></div>
+                    <h3>Profils — 90 jours</h3>
+                    <div class="checks" data-profiles="biberonnage-90"></div>
+                </div>
+                <div class="selection-actions">
+                    <button type="button" id="back-to-selection" class="hidden">Modifier la sélection</button>
+                    <button type="submit" class="primary" id="show-reports">Afficher la synthèse</button>
+                </div>
+            </form>
+            <p class="status" id="selection-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <div class="reports hidden" id="reports" aria-live="polite">
+            <div class="report-actions hidden" id="report-actions">
+                <button type="button" class="primary" id="generate-pdf" disabled>Générer la synthèse en PDF</button>
+            </div>
+            <section class="cover" id="project-cover" aria-label="Informations du projet">
+                <p class="cover-kicker">WATTMAN</p>
+                <h1 id="cover-project-name"></h1>
+                <p class="cover-subtitle">Synthèse du projet</p>
+                <dl class="project-details">
+                    <div><dt>Date</dt><dd id="cover-date"></dd></div>
+                    <div><dt>Type de projet</dt><dd id="cover-type"></dd></div>
+                    <div><dt>Projet</dt><dd id="cover-subtype"></dd></div>
+                    <div><dt>Sous-projet</dt><dd id="cover-subproject"></dd></div>
+                    <div><dt>Pilote Wattman</dt><dd id="cover-pilot"></dd></div>
+                    <div><dt>Powertrain</dt><dd id="cover-powertrain"></dd></div>
+                    <div><dt>EE Architect</dt><dd id="cover-ee-architect"></dd></div>
+                    <div><dt>Application Zone</dt><dd id="cover-application-zone"></dd></div>
+                    <div><dt>Milestone</dt><dd id="cover-milestone"></dd></div>
+                </dl>
+            </section>
+            <div id="report-content"></div>
+        </div>
+    </main>
+    <script>
+        const form = document.getElementById('selection-form');
+        const reports = document.getElementById('reports');
+        const reportContent = document.getElementById('report-content');
+        const selection = document.getElementById('selection');
+        const status = document.getElementById('selection-status');
+        const modules = new Set(['dcdc', 'wltc', 'dm1', 'dm2', 'customer', 'biberonnage']);
+        let expectedReports = 0;
+        let loadedReports = 0;
+        const readJson = (key, fallback) => {
+            try {
+                const value = JSON.parse(sessionStorage.getItem(key));
+                return value === null ? fallback : value;
+            } catch (error) {
+                console.error(`Impossible de lire ${key} depuis la session.`, error);
+                return fallback;
+            }
+        };
+        const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+        const checkbox = (name, value, label, detail = '') => `<label class="check"><input type="checkbox" name="${name}" value="${escapeHtml(value)}" checked><span>${escapeHtml(label)}${detail ? `<small>${escapeHtml(detail)}</small>` : ''}</span></label>`;
+
+        function populateCover() {
+            let project = null;
+            try {
+                project = JSON.parse(localStorage.getItem('activeProject') || 'null');
+            } catch (error) {
+                console.error('Les informations du projet actif sont illisibles.', error);
+            }
+            const value = (key, fallback = 'Non renseigné') => String(project?.[key] || fallback);
+            const projectName = value('name', 'Projet Wattman');
+            const projectType = value('projectType', 'Non renseigné');
+            const architecture = projectType === 'EV' ? value('evArchitecture', 'Non renseigné') : value('iceProject', 'Non renseigné');
+            const subproject = projectType === 'EV' ? value('evSubproject') : value('iceSubproject');
+            const date = project?.date || project?.createdAt;
+            const parsedDate = date ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date) : null;
+            document.getElementById('cover-project-name').textContent = projectName;
+            document.getElementById('cover-date').textContent = parsedDate && !Number.isNaN(parsedDate.getTime())
+                ? new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' }).format(parsedDate)
+                : 'Non renseignée';
+            document.getElementById('cover-type').textContent = projectType;
+            document.getElementById('cover-subtype').textContent = architecture;
+            document.getElementById('cover-subproject').textContent = subproject;
+            document.getElementById('cover-pilot').textContent = value('pilotWattman');
+            document.getElementById('cover-powertrain').textContent = value('powertrain');
+            document.getElementById('cover-ee-architect').textContent = value('eeArchitect');
+            document.getElementById('cover-application-zone').textContent = value('applicationZone');
+            document.getElementById('cover-milestone').textContent = value('milestone');
+            return projectName;
+        }
+
+        function populateProfiles() {
+            ['dm1', 'dm2'].forEach(mode => {
+                const config = readJson('batteryConfiguration', {});
+                const capacity = Number(config.capacityAh) || 60;
+                const profiles = [{ id: 'main', name: 'Profil principal', capacity }, ...readJson('dmBatteryProfiles', [])];
+                document.querySelector(`[data-profiles="${mode}"]`).innerHTML = profiles.map(profile =>
+                    checkbox(`${mode}-profile`, profile.id, profile.name, `${profile.capacity} Ah`)
+                ).join('');
+            });
+            const defaultDays = sessionStorage.getItem('biberonnageDurationDays') === '90' ? 90 : 30;
+            form.querySelector(`[name="bib-days"][value="${defaultDays}"]`).checked = true;
+            populateBibProfiles(30);
+            populateBibProfiles(90);
+        }
+
+        function populateBibProfiles(days) {
+            const suffix = days === 90 ? '90Days' : '';
+            const custom = readJson(`biberonnageCustomAnalyses${suffix}`, []);
+            const profiles = [
+                { id: 'base', name: 'BASE' },
+                { id: 'tt-opt', name: 'TT Opt avec TACHY + Alarme' },
+                ...(Array.isArray(custom) ? custom : [])
+            ];
+            document.querySelector(`[data-profiles="biberonnage-${days}"]`).innerHTML = profiles.map(profile =>
+                checkbox(`bib-profile-${days}`, profile.id, profile.name)
+            ).join('');
+        }
+
+        function updateOptions() {
+            modules.clear();
+            form.querySelectorAll('input[name="module"]:checked').forEach(input => modules.add(input.value));
+            document.querySelectorAll('[data-options]').forEach(group => group.classList.toggle('hidden', !modules.has(group.dataset.options)));
+        }
+
+        form.addEventListener('change', event => {
+            if (event.target.name === 'module') updateOptions();
+        });
+
+        function selectedValues(name) {
+            return [...form.querySelectorAll(`input[name="${name}"]:checked`)].map(input => input.value);
+        }
+
+        function getBiberonnageReportSelections(days, getProfiles) {
+            return days.map(daysValue => ({ days: daysValue, profiles: getProfiles(daysValue) }));
+        }
+
+        function getChartPeakMetrics(datasets) {
+            return datasets.map(dataset => {
+                const values = (dataset.data || []).map(Number).filter(Number.isFinite);
+                return values.length
+                    ? { label: dataset.label, value: values.reduce((peak, value) => Math.max(peak, value), -Infinity) }
+                    : null;
+            }).filter(Boolean);
+        }
+
+        function getReportContentHeight(doc) {
+            const body = doc.body;
+            const root = doc.documentElement;
+            const bodyTop = body.getBoundingClientRect().top + doc.defaultView.scrollY;
+            const visibleContentBottom = [...body.querySelectorAll('*')].reduce((bottom, element) => {
+                const style = doc.defaultView.getComputedStyle(element);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.position === 'fixed') return bottom;
+                const rect = element.getBoundingClientRect();
+                return Math.max(bottom, rect.bottom + doc.defaultView.scrollY - bodyTop);
+            }, 0);
+            return Math.ceil(Math.max(
+                body.scrollHeight, body.offsetHeight, body.getBoundingClientRect().height,
+                root.scrollHeight, root.offsetHeight, root.getBoundingClientRect().height,
+                visibleContentBottom
+            ));
+        }
+
+        function getPrintStyleKey(element) {
+            return element.href || element.textContent;
+        }
+
+        async function createPrintReportCopies() {
+            document.querySelectorAll('.print-report-copy, [data-print-report-style]').forEach(element => element.remove());
+            const styleKeys = new Set();
+            const stylesheetLoads = [];
+            for (const frame of reportContent.querySelectorAll('iframe')) {
+                const source = frame.contentDocument;
+                if (!source) throw new Error(`Le rapport « ${frame.title} » n’est plus disponible.`);
+                source.querySelectorAll('link[rel="stylesheet"], style').forEach(element => {
+                    const key = getPrintStyleKey(element);
+                    if (styleKeys.has(key)) return;
+                    styleKeys.add(key);
+                    const copy = element.cloneNode(true);
+                    copy.dataset.printReportStyle = 'true';
+                    if (copy.tagName === 'LINK') {
+                        stylesheetLoads.push(new Promise((resolve, reject) => {
+                            copy.addEventListener('load', resolve, { once: true });
+                            copy.addEventListener('error', () => reject(new Error(`Impossible de charger la feuille de style ${copy.href}.`)), { once: true });
+                            document.head.appendChild(copy);
+                            if (copy.sheet) resolve();
+                        }));
+                        return;
+                    }
+                    document.head.appendChild(copy);
+                });
+                const copy = document.createElement('div');
+                copy.className = 'print-report-copy';
+                copy.dataset.reportTitle = frame.title;
+                [...source.body.children].forEach(child => {
+                    if (child.tagName === 'SCRIPT') return;
+                    const clone = document.importNode(child, true);
+                    const sourceCanvases = [child, ...child.querySelectorAll('canvas')].filter(node => node.tagName === 'CANVAS');
+                    const clonedCanvases = [clone, ...clone.querySelectorAll('canvas')].filter(node => node.tagName === 'CANVAS');
+                    sourceCanvases.forEach((canvas, index) => {
+                        const image = document.createElement('img');
+                        image.className = 'chart-print-image';
+                        image.alt = canvas.getAttribute('aria-label') || 'Graphique';
+                        image.src = canvas.toDataURL('image/png');
+                        image.width = canvas.width;
+                        image.height = canvas.height;
+                        clonedCanvases[index]?.replaceWith(image);
+                    });
+                    copy.appendChild(clone);
+                });
+                frame.parentElement.appendChild(copy);
+            }
+            const printStyle = document.createElement('style');
+            printStyle.dataset.printReportStyle = 'true';
+            printStyle.textContent = `
+                @media print {
+                    html, body, .page, .reports, .report, .print-report-copy {
+                        width:100% !important; max-width:none !important; height:auto !important;
+                        min-height:0 !important; overflow:visible !important;
+                        color:#1f2937 !important; background:#fff !important; background-image:none !important;
+                    }
+                    .report > iframe, .report > h2 { display:none !important; }
+                    .print-report-copy { display:block !important; padding:0 !important; margin:0 !important; }
+                    .print-report-copy * {
+                        color:#1f2937 !important; background-color:#fff !important;
+                        box-shadow:none !important; text-shadow:none !important;
+                        scrollbar-width:none !important;
+                    }
+                    .print-report-copy :is(h1,h2,h3,h4) { color:#1f4e78 !important; }
+                    .print-report-copy .customer-summary-title {
+                        margin:0 0 8mm !important; padding:0 0 3mm !important;
+                        border-bottom:2px solid #dbe2ea !important;
+                        color:#1f4e78 !important; font-size:24pt !important; font-weight:750 !important;
+                    }
+                    .print-report-copy .pdf-customer-report > h2 {
+                        margin:0 0 6mm !important; padding:3mm 0 !important;
+                        border-bottom:1px solid #dbe2ea !important;
+                        font-size:1.55rem !important; font-weight:700 !important;
+                    }
+                    .print-report-copy :is(.profile, .profile-heading, .summary-scenario-card,
+                        .customer-autonomy-card, .analysis, .dash-card, .table-card,
+                        .table-header-title, .chart-container, .chart-box, table, thead, tbody,
+                        tr, th, td) { background:#fff !important; }
+                    html body:not(.preserve-table-colors) .print-report-copy table,
+                    html body:not(.preserve-table-colors) .print-report-copy table thead,
+                    html body:not(.preserve-table-colors) .print-report-copy table tbody,
+                    html body:not(.preserve-table-colors) .print-report-copy table tr,
+                    html body:not(.preserve-table-colors) .print-report-copy table th,
+                    html body:not(.preserve-table-colors) .print-report-copy table td {
+                        color:#1f2937 !important; background:#fff !important; border-color:#dbe2ea !important;
+                    }
+                    .print-report-copy .synthesis-grid {
+                        display:grid !important; grid-template-columns:minmax(0,1fr) !important;
+                        width:100% !important; overflow:visible !important;
+                    }
+                    .print-report-copy .table-card {
+                        display:flex !important; width:100% !important; min-width:0 !important;
+                        break-inside:avoid !important; page-break-inside:avoid !important;
+                    }
+                    .print-report-copy .chart-container { display:block !important; width:100% !important; height:112mm !important; }
+                    .print-report-copy .chart-box { width:100% !important; height:75mm !important; }
+                    .print-report-copy .chart-print-image {
+                        display:block !important; width:100% !important; height:100% !important;
+                        object-fit:contain !important; break-inside:avoid !important;
+                    }
+                    .print-report-copy .analysis, .print-report-copy .dash-card {
+                        width:100% !important; max-width:none !important; overflow:visible !important;
+                        break-inside:auto !important; page-break-inside:auto !important;
+                    }
+                    .print-report-copy .dashboard { display:block !important; width:100% !important; }
+                    .print-report-copy .dashboard > .dash-card { margin:0 0 6mm !important; }
+                    .print-report-copy .table-container { overflow:visible !important; }
+                }
+            `;
+            document.head.appendChild(printStyle);
+            await Promise.all(stylesheetLoads);
+        }
+
+        function removePrintReportCopies() {
+            document.querySelectorAll('.print-report-copy, [data-print-report-style]').forEach(element => element.remove());
+        }
+
+        function setReportFramesVisible(visible) {
+            reportContent.querySelectorAll('iframe').forEach(frame => {
+                frame.style.display = visible ? '' : 'none';
+            });
+        }
+
+        function addReport(title, type, url) {
+            const section = document.createElement('section');
+            section.className = 'report';
+            const frame = document.createElement('iframe');
+            frame.title = title;
+            frame.scrolling = 'no';
+            frame.src = url;
+            frame.addEventListener('load', async () => {
+                try {
+                    await prepareFrame(frame, type);
+                } catch (error) {
+                    console.error(`Impossible de préparer le rapport « ${title} ».`, error);
+                    status.textContent = `Erreur de chargement du rapport « ${title} » : ${error.message}`;
+                    return;
+                }
+                loadedReports += 1;
+                if (loadedReports === expectedReports) {
+                    document.getElementById('generate-pdf').disabled = false;
+                    document.getElementById('report-actions').classList.remove('hidden');
+                    status.textContent = 'Tous les résultats sélectionnés sont affichés. Vous pouvez générer le PDF.';
+                }
+            }, { once: true });
+            section.append(frame);
+            reportContent.append(section);
+        }
+
+        async function prepareFrame(frame, type) {
+            const doc = frame.contentDocument;
+            if (!doc) {
+                throw new Error('Le contenu de la page intégrée est inaccessible.');
+            }
+            const style = doc.createElement('style');
+            style.textContent = `
+                body::before, body::after, .retractable-menu, .button-group, .bottom-nav, .header-actions,
+                .toolbar, .creator, dialog, .btn-back, .close-modal, .export-actions,
+                .analysis-heading .btn-delete, .data-choice, .config-cards { display:none !important; }
+                .hidden { display:none !important; }
+                html, body { min-height:0 !important; height:auto !important; overflow:visible !important; background:#fff !important; background-image:none !important; color:#1f2937 !important; color-scheme:light !important; }
+                body { display:block !important; padding:8px !important; }
+                body * { color:#1f2937 !important; background-color:#fff !important; box-shadow:none !important; text-shadow:none !important; }
+                body, body * { scrollbar-width:none !important; }
+                body::-webkit-scrollbar, body *::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+                .chart-container { display:block !important; height:460px !important; }
+                .chart-peak-values { display:flex; flex-wrap:wrap; gap:8px; padding:9px 12px; color:#1f2937; background:#f8fafc; border-bottom:1px solid #dbe2ea; }
+                .chart-peak { padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; font-size:13px; font-weight:700; }
+                .chart-peak strong { color:#1d4ed8; }
+                .customer-autonomy-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:9px; }
+                .customer-autonomy-card { min-width:0; padding:12px 14px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; }
+                .customer-autonomy-card h3 { margin:0 0 7px; color:#1f4e78; font-size:14px; }
+                .customer-autonomy-card strong { color:#0f172a; font-size:1.2rem; }
+                .pdf-customer-report { margin:0 0 10px; padding:10px; background:#fff; color:#111827; }
+                .pdf-customer-report h2 { margin:0 0 8px; color:#1f4e78 !important; font-size:1.05rem; }
+                body :is(.topbar, .profile, .profile-heading, .summary-scenario-card,
+                    .customer-autonomy-card, .analysis, .dash-card, .table-container,
+                    .table-card, .table-header-title, .config-cards, .page-header, .creator,
+                    .pdf-customer-report, .chart-box, canvas, table, thead, tbody, tr, th, td) {
+                    color:#1f2937 !important; background:#fff !important; border-color:#dbe2ea !important; box-shadow:none !important;
+                }
+                body .customer-summary-title {
+                    margin:0 0 16px !important; padding:0 0 10px !important;
+                    border-bottom:2px solid #dbe2ea !important;
+                    color:#1f4e78 !important; font-size:2rem !important; font-weight:750 !important;
+                }
+                body .analysis { margin:0 0 10px !important; padding:8px !important; }
+                body :is(h1,h2,h3,h4), body .analysis-heading h2,
+                body .profile-heading h2, body .customer-autonomy-card h3 { color:#1f4e78 !important; text-shadow:none !important; }
+                .table-container { display:none !important; }
+                .dashboard { margin-top:8px !important; }
+                .report, .container, main { max-width:none !important; }
+                .summary-scenarios-grid { grid-template-columns:repeat(auto-fit,minmax(190px,1fr)) !important; gap:8px !important; padding:10px !important; }
+                .profile { margin-bottom:10px !important; }
+                @media screen {
+                    .synthesis-grid { display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:12px !important; overflow:visible !important; }
+                    .table-card { display:flex !important; width:100% !important; min-width:0 !important; margin:0 !important; box-shadow:none !important; }
+                }
+                @media print {
+                    *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                    html, body { min-height:0 !important; height:auto !important; overflow:visible !important; color:#1f2937 !important; background:#fff !important; background-image:none !important; }
+                    body * { color:#1f2937 !important; background-color:#fff !important; box-shadow:none !important; text-shadow:none !important; }
+                    body, body * { scrollbar-width:none !important; }
+                    body::-webkit-scrollbar, body *::-webkit-scrollbar { display:none !important; width:0 !important; height:0 !important; }
+                    body :is(.topbar, .profile, .profile-heading, .summary-scenario-card,
+                        .customer-autonomy-card, .analysis, .dash-card, .table-container,
+                        .table-card, .table-header-title, .config-cards, .page-header, .creator,
+                        .pdf-customer-report, .chart-box, canvas, table, thead, tbody, tr, th, td) {
+                        color:#1f2937 !important; background:#fff !important; border-color:#dbe2ea !important; box-shadow:none !important;
+                    }
+                    body .customer-summary-title {
+                        margin:0 0 8mm !important; padding:0 0 3mm !important;
+                        border-bottom:2px solid #dbe2ea !important;
+                        color:#1f4e78 !important; font-size:24pt !important; font-weight:750 !important;
+                    }
+                    body :is(h1,h2,h3,h4), body .analysis-heading h2,
+                    body .profile-heading h2, body .customer-autonomy-card h3 { color:#1f4e78 !important; text-shadow:none !important; }
+                    .synthesis-grid { display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:10px !important; overflow:visible !important; }
+                    .table-card { display:flex !important; width:100% !important; min-width:0 !important; margin:0 !important; break-inside:avoid; box-shadow:none !important; }
+                    .chart-container { height:420px !important; }
+                    .chart-peak-values { break-inside:avoid; }
+                    .eng-table { width:100% !important; min-width:0 !important; font-size:7px !important; table-layout:fixed !important; }
+                    .eng-table th, .eng-table td { padding:2px !important; overflow-wrap:anywhere; }
+                    .analysis { break-inside:auto; box-shadow:none !important; }
+                    .summary-scenario-card, .customer-autonomy-card { break-inside:avoid; }
+                    .dash-card, .chart-box { break-inside:auto; }
+                }
+            `;
+            doc.head.append(style);
+            if (type === 'synthesis') {
+                const module = new URL(frame.src).searchParams.get('module');
+                const pageHeader = doc.querySelector('.header');
+                if (pageHeader) pageHeader.remove();
+                const headings = [...doc.querySelectorAll('.section-title')];
+                headings.forEach(heading => {
+                    const grid = heading.nextElementSibling;
+                    const isDcdc = heading.textContent.includes('DCDC');
+                    const visible = (module === 'dcdc') === isDcdc;
+                    heading.style.display = visible ? '' : 'none';
+                    if (grid) grid.style.display = visible ? '' : 'none';
+                });
+                const seenCards = new Set();
+                const seenCanvases = new Set();
+                doc.querySelectorAll('.table-card').forEach(card => {
+                    const cardId = card.id;
+                    if (cardId && seenCards.has(cardId)) {
+                        card.remove();
+                        return;
+                    }
+                    if (cardId) seenCards.add(cardId);
+                    card.querySelectorAll('.card-tabs, .data-tab').forEach(element => element.remove());
+                    const chartTab = card.querySelector('.chart-tab');
+                    if (chartTab) {
+                        chartTab.classList.add('active');
+                        chartTab.style.display = 'block';
+                        chartTab.style.visibility = 'visible';
+                    }
+                    const canvas = card.querySelector('canvas');
+                    if (!chartTab || !canvas) {
+                        throw new Error(`Le graphique du rapport « ${frame.title} » est absent dans « ${cardId || 'une carte'} ».`);
+                    }
+                    if (canvas.id && seenCanvases.has(canvas.id)) {
+                        card.remove();
+                        return;
+                    }
+                    if (canvas.id) seenCanvases.add(canvas.id);
+                    const chart = canvas && frame.contentWindow.Chart?.getChart(canvas);
+                    if (chart) {
+                        chart.options.animation = false;
+                        chart.update('none');
+                        chart.resize();
+                        const metrics = getChartPeakMetrics(chart.data.datasets);
+                        const peaks = doc.createElement('div');
+                        peaks.className = 'chart-peak-values';
+                        metrics.forEach(metric => {
+                            const badge = doc.createElement('span');
+                            badge.className = 'chart-peak';
+                            badge.append(`${metric.label} — pic : `);
+                            const value = doc.createElement('strong');
+                            value.textContent = `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(metric.value)} A`;
+                            badge.appendChild(value);
+                            peaks.appendChild(badge);
+                        });
+                        card.querySelector('.table-header-title')?.after(peaks);
+                    } else {
+                        console.warn(`Graphique indisponible pour le rapport « ${frame.title} » : Chart.js n’a pas créé de graphique pour ${canvas?.id || 'le canvas'}.`);
+                    }
+                });
+                doc.querySelectorAll('.chart-container').forEach(container => {
+                    container.style.display = 'block';
+                    container.style.height = '460px';
+                    container.style.width = '100%';
+                });
+            } else if (type === 'biberonnage') {
+                doc.querySelectorAll('canvas').forEach(canvas => {
+                    const chart = frame.contentWindow.Chart?.getChart(canvas);
+                    if (!chart) return;
+                    chart.options.animation = false;
+                    chart.update('none');
+                    chart.resize();
+                    chart.update('none');
+                });
+                doc.querySelectorAll('.analysis').forEach(section => {
+                    const id = section.dataset.analysisId;
+                    if (!frame.contentWindow.selectedBibProfiles.includes(id)) section.remove();
+                });
+            } else if (type === 'customer') {
+                const selectedReports = frame.contentWindow.selectedCustomerProfiles;
+                doc.querySelectorAll('.pdf-customer-report').forEach(report => {
+                    if (!selectedReports.includes(report.dataset.profile)) report.remove();
+                });
+            }
+            frame.contentWindow.dispatchEvent(new Event('resize'));
+            await doc.fonts?.ready;
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            const contentHeight = getReportContentHeight(doc);
+            frame.style.height = `${Math.max(140, Math.ceil(contentHeight + 24))}px`;
+        }
+
+        async function prepareReportsForPrint() {
+            for (const frame of reportContent.querySelectorAll('iframe')) {
+                const doc = frame.contentDocument;
+                if (!doc) throw new Error(`Le rapport « ${frame.title} » n’est plus disponible.`);
+                await doc.fonts?.ready;
+                frame.contentWindow.dispatchEvent(new Event('resize'));
+            }
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            for (const frame of reportContent.querySelectorAll('iframe')) {
+                const contentHeight = getReportContentHeight(frame.contentDocument);
+                frame.style.height = `${Math.max(140, Math.ceil(contentHeight + 24))}px`;
+            }
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await createPrintReportCopies();
+            await Promise.all([...document.querySelectorAll('.print-report-copy img')].map(image => image.decode()));
+            setReportFramesVisible(false);
+        }
+
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const selectedModules = selectedValues('module');
+            const selectedBibDays = selectedModules.includes('biberonnage')
+                ? selectedValues('bib-days')
+                : [];
+            const selectedBibReports = getBiberonnageReportSelections(
+                selectedBibDays,
+                days => selectedValues(`bib-profile-${days}`)
+            );
+            if (!selectedModules.length) {
+                status.textContent = 'Sélectionnez au moins un rapport.';
+                return;
+            }
+            const invalidSelection = ['dm1', 'dm2'].some(mode => selectedModules.includes(mode)
+                && (!selectedValues(`${mode}-profile`).length || !selectedValues(`${mode}-scenario`).length))
+                || (selectedModules.includes('customer') && (!selectedValues('customer-profile').length || !selectedValues('customer-scenario').length))
+                || (selectedModules.includes('biberonnage') && (!selectedBibDays.length || selectedBibReports.some(report => !report.profiles.length)));
+            if (invalidSelection) {
+                status.textContent = 'Chaque rapport sélectionné doit contenir au moins un profil et un scénario.';
+                return;
+            }
+            reportContent.replaceChildren();
+            document.getElementById('generate-pdf').disabled = true;
+            document.getElementById('report-actions').classList.add('hidden');
+            expectedReports = selectedModules.length - (selectedModules.includes('biberonnage') ? 1 : 0) + selectedBibReports.length;
+            loadedReports = 0;
+            reports.classList.remove('hidden');
+            populateCover();
+            document.getElementById('project-cover').style.display = '';
+            if (selectedModules.includes('dcdc')) addReport('DCDC Sizing — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=dcdc');
+            if (selectedModules.includes('wltc')) addReport('WLTC — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=wltc');
+            ['dm1', 'dm2'].forEach(mode => {
+                if (!selectedModules.includes(mode)) return;
+                const profiles = selectedValues(`${mode}-profile`);
+                const scenarios = selectedValues(`${mode}-scenario`);
+                const query = new URLSearchParams({ mode: mode.toUpperCase(), summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
+                addReport(`Autonomie ${mode.toUpperCase()} — Jours selon la capacité batterie`, 'dm', `/dm_results?${query}`);
+            });
+            if (selectedModules.includes('customer')) {
+                const profiles = selectedValues('customer-profile');
+                const scenarios = selectedValues('customer-scenario');
+                const query = new URLSearchParams({ mode: 'Customer Mode', summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
+                addReport('Autonomie Customer Mode', 'customer', `/battery_results_menu?${query}`);
+            }
+            if (selectedModules.includes('biberonnage')) {
+                selectedBibReports.forEach(({ days, profiles }) => {
+                    const query = new URLSearchParams({ summary: '1', days, profiles: profiles.join(',') });
+                    addReport(`Biberonnage — ${days} jours`, 'biberonnage', `/biberonnage/resultats?${query}`);
+                });
+            }
+            selection.querySelector('#back-to-selection').classList.remove('hidden');
+            selection.querySelector('#show-reports').classList.add('hidden');
+            selection.classList.add('compact');
+            status.textContent = 'Chargement des rapports sélectionnés…';
+            reports.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        document.getElementById('generate-pdf').addEventListener('click', async event => {
+            const button = event.currentTarget;
+            const projectName = document.getElementById('cover-project-name').textContent || 'synthese';
+            button.disabled = true;
+            status.textContent = 'Génération du PDF A4…';
+            try {
+                removePrintReportCopies();
+                await prepareReportsForPrint();
+                if (window.desktopEnvironment?.generateSynthesisPdf) {
+                    const result = await window.desktopEnvironment.generateSynthesisPdf(projectName);
+                    status.textContent = result.canceled ? 'Enregistrement du PDF annulé.' : `PDF enregistré : ${result.filePath}`;
+                } else {
+                    window.print();
+                    status.textContent = 'Dans la fenêtre d’impression, choisissez « Enregistrer au format PDF ».';
+                }
+            } catch (error) {
+                console.error('La génération du PDF a échoué.', error);
+                status.textContent = `Erreur de génération du PDF : ${error.message}`;
+            } finally {
+                removePrintReportCopies();
+                setReportFramesVisible(true);
+                button.disabled = false;
+            }
+        });
+
+        window.addEventListener('afterprint', removePrintReportCopies);
+
+        document.getElementById('back-to-selection').addEventListener('click', () => {
+            reports.classList.add('hidden');
+            document.getElementById('project-cover').style.display = '';
+            document.getElementById('report-actions').classList.add('hidden');
+            selection.classList.remove('compact');
+            selection.querySelector('#back-to-selection').classList.add('hidden');
+            selection.querySelector('#show-reports').classList.remove('hidden');
+            status.textContent = '';
+            selection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        populateProfiles();
+        updateOptions();
+    </script>
+    <style>
+        @page { size: A4 portrait; margin: 12mm; }
+        @media print {
+            body { min-height: 0; padding: 0; background: #fff; }
+            .page { max-width: none; margin: 0; }
+            .header, #selection, .report-actions { display: none !important; }
+            .reports { display: block !important; margin: 0; }
+            .cover {
+                display: block !important; min-height: 270mm; padding: 26mm 18mm;
+                border: 0; border-radius: 0; box-shadow: none; break-after: page;
+            }
+            .report { margin: 0; overflow: visible; border: 0; border-radius: 0; box-shadow: none; break-before: auto; break-inside: auto; }
+            .report h2 { padding: 0 0 5mm; color: #1f2937; background: #fff; border-bottom: 1px solid #cbd5e1; }
+            iframe { display: block; width: 100%; border: 0; overflow: hidden; break-inside: auto; }
+            *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+    </style>
+</body>
+</html>

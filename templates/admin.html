@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administration — Wattman</title>
+    <style>
+        body.admin-page { margin:0; padding:72px 24px 24px; overflow-x:hidden; font-family:"Segoe UI",Tahoma,sans-serif; color:#152c4a; background:#f3f6fb; }
+        html body.admin-page > main:not(.table-shell):not(#analysis-list) { box-sizing:border-box !important; width:min(1100px,100%) !important; max-width:1100px !important; min-height:0 !important; margin:0 auto !important; padding:24px !important; }
+        header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px; }
+        header h1 { flex:1 1 auto; min-width:0; margin:0; font-size:1.7rem; }
+        header button { flex:0 0 auto; width:auto !important; min-width:0 !important; white-space:nowrap; }
+        section { margin:18px 0; padding:20px; border:1px solid #dce3ee; border-radius:10px; background:#fff; }
+        h2 { margin:0 0 15px; font-size:1.2rem; }
+        .row { display:flex; flex-direction:column; align-items:stretch; gap:12px; padding:14px 0; border-top:1px solid #edf1f6; }
+        .details { min-width:0; width:100%; }
+        .details strong,.details span { display:block; overflow-wrap:anywhere; }
+        .details span { margin-top:4px; color:#64748b; font-size:.9rem; }
+        .actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; width:100%; }
+        button { max-width:100%; min-width:0; white-space:normal; overflow-wrap:anywhere; border:0; border-radius:6px; padding:8px 11px; color:white; background:#4f46e5; font:inherit; font-weight:650; cursor:pointer; }
+        .actions button { flex:0 1 auto; width:auto !important; min-width:150px; }
+        .reset-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr)); gap:10px; width:100%; }
+        .reset-form[hidden] { display:none; }
+        .reset-form input { box-sizing:border-box; width:100%; min-width:0; min-height:40px; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font:inherit; }
+        .reset-form button { min-width:0; }
+        #projects > .row > button { flex:0 1 auto; width:auto !important; min-width:120px; align-self:flex-start; }
+        button.secondary { color:#3e4e67; background:#e9edf4; }
+        #status { min-height:24px; color:#9b1c1c; }
+        @media(max-width:600px) {
+            body.admin-page { padding:64px 14px 18px; }
+            html body.admin-page > main:not(.table-shell):not(#analysis-list) { width:100% !important; padding:16px !important; }
+            header { align-items:stretch; flex-direction:column; }
+            header button { align-self:flex-start; }
+            section { padding:15px; }
+            .actions { align-items:stretch; flex-direction:column; }
+            .actions button,#projects > .row > button { width:100% !important; align-self:stretch; }
+        }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+</head>
+<body class="admin-page">
+    <main>
+        <header>
+            <h1>Administration des comptes</h1>
+            <button class="secondary" type="button" onclick="window.location.href='/'">Retour aux projets</button>
+        </header>
+        <div id="status" role="status" aria-live="polite"></div>
+        <section>
+            <h2>Comptes</h2>
+            <div id="accounts">Chargement…</div>
+        </section>
+        <section>
+            <h2>Projets locaux</h2>
+            <div id="projects">Chargement…</div>
+        </section>
+    </main>
+    <script src="/static/project_storage.js"></script>
+    <script>
+        const status = document.getElementById('status');
+        function errorMessage(error) { status.textContent = error.message; }
+        async function request(url, options) {
+            const response = await fetch(url, options);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'La demande a échoué.');
+            return data;
+        }
+        async function loadAccounts() {
+            const [{ accounts }, { user: currentUser }] = await Promise.all([
+                request('/api/admin/accounts'),
+                request('/api/auth/me')
+            ]);
+            const container = document.getElementById('accounts');
+            container.replaceChildren();
+            accounts.forEach(account => {
+                const row = document.createElement('div');
+                row.className = 'row';
+                const details = document.createElement('div');
+                details.className = 'details';
+                const name = document.createElement('strong');
+                name.textContent = `${account.firstName} ${account.lastName}`;
+                const email = document.createElement('span');
+                email.textContent = `${account.email} — ${account.role === 'admin' ? 'Administrateur' : 'Utilisateur'}`;
+                details.append(name, email);
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+                const role = document.createElement('button');
+                role.className = 'secondary';
+                role.textContent = account.role === 'admin' ? 'Retirer admin' : 'Rendre admin';
+                role.addEventListener('click', async () => {
+                    const removingOwnAdminRole = account.id === currentUser.id && account.role === 'admin';
+                    if (removingOwnAdminRole && !window.confirm(
+                        'Voulez-vous vraiment retirer votre propre compte de l’administration ? Vous serez ensuite redirigé vers les projets en tant qu’utilisateur.'
+                    )) return;
+                    try {
+                        await request(`/api/admin/accounts/${encodeURIComponent(account.id)}/role`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ role: account.role === 'admin' ? 'user' : 'admin' })
+                        });
+                        if (removingOwnAdminRole) {
+                            window.location.href = '/';
+                            return;
+                        }
+                        status.textContent = '';
+                        await loadAccounts();
+                    } catch (error) { errorMessage(error); }
+                });
+                const reset = document.createElement('button');
+                reset.textContent = 'Réinitialiser le mot de passe';
+                reset.type = 'button';
+                const resetForm = document.createElement('form');
+                resetForm.className = 'reset-form';
+                resetForm.hidden = true;
+                const password = document.createElement('input');
+                password.type = 'password';
+                password.name = 'password';
+                password.minLength = 8;
+                password.maxLength = 128;
+                password.required = true;
+                password.autocomplete = 'new-password';
+                password.placeholder = 'Nouveau mot de passe (8 caractères minimum)';
+                password.setAttribute('aria-label', `Nouveau mot de passe pour ${account.email}`);
+                const confirmation = document.createElement('input');
+                confirmation.type = 'password';
+                confirmation.name = 'confirmation';
+                confirmation.minLength = 8;
+                confirmation.maxLength = 128;
+                confirmation.required = true;
+                confirmation.autocomplete = 'new-password';
+                confirmation.placeholder = 'Confirmer le mot de passe';
+                confirmation.setAttribute('aria-label', `Confirmer le mot de passe pour ${account.email}`);
+                const save = document.createElement('button');
+                save.type = 'submit';
+                save.textContent = 'Enregistrer';
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.className = 'secondary';
+                cancel.textContent = 'Annuler';
+                cancel.addEventListener('click', () => {
+                    resetForm.reset();
+                    resetForm.hidden = true;
+                    reset.hidden = false;
+                });
+                resetForm.append(password, confirmation, save, cancel);
+                reset.addEventListener('click', () => {
+                    reset.hidden = true;
+                    resetForm.hidden = false;
+                    password.focus();
+                });
+                resetForm.addEventListener('submit', async event => {
+                    event.preventDefault();
+                    if (password.value !== confirmation.value) {
+                        status.textContent = 'Les deux mots de passe ne correspondent pas.';
+                        confirmation.focus();
+                        return;
+                    }
+                    try {
+                        await request(`/api/admin/accounts/${encodeURIComponent(account.id)}/reset`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: password.value, confirmation: confirmation.value })
+                        });
+                        status.textContent = `Mot de passe réinitialisé pour ${account.email}.`;
+                        resetForm.reset();
+                        resetForm.hidden = true;
+                        reset.hidden = false;
+                    } catch (error) { errorMessage(error); }
+                });
+                actions.append(role, reset);
+                row.append(details, actions, resetForm);
+                container.append(row);
+            });
+        }
+        function loadProjects() {
+            const projects = ProjectStorage.getProjects();
+            const users = new Map();
+            request('/api/admin/accounts').then(({ accounts }) => {
+                accounts.forEach(account => users.set(account.id, `${account.firstName} ${account.lastName}`));
+                const container = document.getElementById('projects');
+                container.replaceChildren();
+                if (!projects.length) {
+                    container.textContent = 'Aucun projet enregistré.';
+                    return;
+                }
+                projects.forEach(project => {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    const details = document.createElement('div');
+                    details.className = 'details';
+                    const name = document.createElement('strong');
+                    name.textContent = project.name || 'Projet sans nom';
+                    const owner = document.createElement('span');
+                    owner.textContent = `Responsable : ${users.get(project.ownerId) || (project.ownerId ? 'Compte inconnu' : 'Projet existant sans propriétaire')}`;
+                    details.append(name, owner);
+                    const open = document.createElement('button');
+                    open.textContent = 'Ouvrir';
+                    open.addEventListener('click', async () => {
+                        try {
+                            const restored = await ProjectStorage.restoreProject(project);
+                            window.location.href = restored.sourceRecovered ? '/select_components' : '/mode_selection';
+                        } catch (error) { errorMessage(error); }
+                    });
+                    row.append(details, open);
+                    container.append(row);
+                });
+            }).catch(errorMessage);
+        }
+        Promise.all([loadAccounts(), loadProjects()]).catch(errorMessage);
+    </script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion — Wattman</title>
+    <style>
+        :root { --ink:#152c4a; --muted:#64748b; --primary:#4f46e5; --line:#dce3ee; }
+        * { box-sizing:border-box; }
+        body { min-height:100vh; margin:0; display:grid; place-items:center; padding:24px; font-family:"Segoe UI",Tahoma,sans-serif; color:var(--ink); background:#f3f6fb; }
+        main { width:min(480px,100%); padding:32px; border:1px solid #e7edf5; border-radius:14px; background:#fff; box-shadow:0 18px 50px #152c4a18; }
+        h1 { margin:0 0 8px; font-size:1.7rem; }
+        p { color:var(--muted); line-height:1.5; }
+        form { display:grid; gap:14px; margin-top:20px; }
+        label { display:grid; gap:6px; font-size:.9rem; font-weight:650; }
+        input { min-height:44px; padding:10px 12px; border:1px solid var(--line); border-radius:7px; font:inherit; }
+        .remember-option { display:flex; align-items:center; gap:9px; font-weight:500; }
+        .remember-option input { width:18px; min-height:18px; margin:0; accent-color:var(--primary); }
+        button { min-height:44px; padding:10px 14px; border:0; border-radius:7px; color:#fff; background:var(--primary); font:inherit; font-weight:700; cursor:pointer; }
+        button.secondary { color:var(--primary); background:#eef0ff; }
+        button:disabled { opacity:.65; cursor:wait; }
+        .tabs,.actions { display:flex; gap:8px; margin-top:18px; }
+        .tabs button,.actions button { flex:1; }
+        .panel[hidden] { display:none; }
+        .message { min-height:24px; margin-top:14px; color:#9b1c1c; }
+        .message.success { color:#17663a; }
+        @media(max-width:480px) { main { padding:24px; } }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+</head>
+<body>
+    <main>
+        <h1 id="page-title">{% if setup_required %}Configuration initiale{% else %}Bienvenue sur Wattman{% endif %}</h1>
+        <p id="page-description">
+            {% if setup_required %}
+                Créez le compte administrateur local pour commencer. Seul un hash de votre mot de passe sera conservé.
+            {% else %}
+                Connectez-vous ou créez un compte pour accéder à vos projets.
+            {% endif %}
+        </p>
+
+        {% if setup_required %}
+        <form id="setup-form" class="panel">
+            <label>Prénom<input name="firstName" required autocomplete="given-name"></label>
+            <label>Nom<input name="lastName" required autocomplete="family-name"></label>
+            <label>Adresse e-mail admin<input name="email" type="email" value="{{ admin_email }}" readonly></label>
+            <label>Mot de passe<input name="password" type="password" required minlength="4" autocomplete="new-password"></label>
+            <button type="submit">Créer le compte admin</button>
+        </form>
+        {% else %}
+        <div class="tabs" id="tabs">
+            <button type="button" data-panel="login-panel">Connexion</button>
+            <button type="button" class="secondary" data-panel="register-panel">Inscription</button>
+        </div>
+        <form id="login-panel" class="panel">
+            <label>Adresse e-mail<input name="email" type="email" required autocomplete="email"></label>
+            <label>Mot de passe<input name="password" type="password" required autocomplete="current-password"></label>
+            <label class="remember-option"><input name="rememberMe" type="checkbox" value="true"> Se souvenir de moi sur cet ordinateur pendant 30 jours</label>
+            <button type="submit">Se connecter</button>
+        </form>
+        <form id="register-panel" class="panel" hidden>
+            <label>Prénom<input name="firstName" required autocomplete="given-name"></label>
+            <label>Nom<input name="lastName" required autocomplete="family-name"></label>
+            <label>Adresse e-mail<input name="email" type="email" required autocomplete="email"></label>
+            <label>Mot de passe (8 caractères minimum)<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+            <button type="submit">Créer mon compte</button>
+        </form>
+        {% endif %}
+        <div id="message" class="message" role="status" aria-live="polite"></div>
+    </main>
+    <script>
+        const message = document.getElementById('message');
+        const panels = [...document.querySelectorAll('.panel')];
+        function showMessage(text, success = false) {
+            message.textContent = text;
+            message.classList.toggle('success', success);
+        }
+        function showPanel(id) {
+            panels.forEach(panel => { panel.hidden = panel.id !== id; });
+            document.querySelectorAll('.tabs [data-panel]').forEach(button => {
+                button.classList.toggle('secondary', button.dataset.panel !== id);
+            });
+            showMessage('');
+        }
+        function clearPreviousProject() {
+            sessionStorage.clear();
+            localStorage.removeItem('activeProject');
+        }
+        async function submitForm(form, path, onSuccess) {
+            form.addEventListener('submit', async event => {
+                event.preventDefault();
+                showMessage('');
+                const button = form.querySelector('button[type="submit"]');
+                button.disabled = true;
+                try {
+                    const payload = Object.fromEntries(new FormData(form).entries());
+                    if (form.id === 'login-panel') {
+                        payload.rememberMe = form.elements.namedItem('rememberMe').checked;
+                    }
+                    const response = await fetch(path, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || 'Une erreur est survenue.');
+                    await onSuccess(data);
+                } catch (error) {
+                    showMessage(error.message);
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        }
+
+        document.querySelectorAll('[data-panel]').forEach(button => button.addEventListener('click', () => showPanel(button.dataset.panel)));
+
+        const setupForm = document.getElementById('setup-form');
+        if (setupForm) {
+            submitForm(setupForm, '/api/auth/setup', ({ user }) => {
+                clearPreviousProject();
+                localStorage.setItem('engineeringAuthUser', JSON.stringify(user));
+                window.location.href = '/';
+            });
+        } else {
+            showPanel('login-panel');
+            submitForm(document.getElementById('login-panel'), '/api/auth/login', ({ user }) => {
+                clearPreviousProject();
+                localStorage.setItem('engineeringAuthUser', JSON.stringify(user));
+                window.location.href = '/';
+            });
+            submitForm(document.getElementById('register-panel'), '/api/auth/register', ({ user }) => {
+                clearPreviousProject();
+                localStorage.setItem('engineeringAuthUser', JSON.stringify(user));
+                window.location.href = '/';
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<section class="panel setup-panel log-explorer" id="logExplorer">
+    <div class="panel-title"><h2>3. Explorer les mesures</h2><span class="explorer-badge">A et B · branches indépendantes</span></div>
+    <p class="form-intro">Choisissez un jour, une période ou un seuil, puis lancez la recherche. Tous les filtres sont facultatifs. Les courants des deux branches ne sont jamais additionnés.</p>
+    <form id="logFilterForm">
+        <div class="explorer-filters">
+            <label>Canaux à afficher<select name="channel"><option value="AB">A et B</option><option value="A">Canal A uniquement</option><option value="B">Canal B uniquement</option></select></label>
+            <label>Fichier source<select name="source" id="logSource"><option value="">Tous les fichiers</option></select></label>
+            <label>Jour à explorer<select name="day" id="logDay"><option value="">Tous les jours</option></select></label>
+            <label>Unité d’affichage<select name="unit"><option value="A">Ampères (A)</option><option value="mA">Milliampères (mA)</option><option value="uA">Microampères (µA)</option></select></label>
+        </div>
+        <details class="filter-details" open><summary>Période et seuil de courant <small>facultatifs</small></summary>
+            <div class="explorer-filters">
+                <label>À partir du<input name="start" type="datetime-local" step="0.000001"></label>
+                <label>Jusqu’au (inclus)<input name="end" type="datetime-local" step="0.000001"></label>
+                <label>Condition sur le courant<select name="operator"><option value="gt">Supérieur à &gt;</option><option value="gte">Supérieur ou égal à ≥</option><option value="lt">Inférieur à &lt;</option><option value="lte">Inférieur ou égal à ≤</option></select></label>
+                <label>Seuil dans l’unité choisie<input name="threshold" type="number" step="any" placeholder="Aucun seuil"></label>
+            </div>
+            <label class="explorer-check"><input type="checkbox" name="absolute" value="1"> Appliquer le seuil à la valeur absolue du courant (|I|)</label>
+            <small class="filter-hint">Le jour et la période se combinent. Dates et heures dans le fuseau local de ce PC. Les décimales du courant et les microsecondes de l’horodatage sont conservées dans le tableau.</small>
+        </details>
+        <div class="explorer-actions">
+            <button type="submit" id="logSearch">Rechercher les mesures</button>
+            <button type="button" class="secondary" id="logReset">Réinitialiser les filtres</button>
+            <label class="explorer-check"><input type="checkbox" name="graph" value="1"> Afficher les graphes</label>
+            <label>Lignes par page<select name="limit"><option>100</option><option>250</option><option>500</option></select></label>
+        </div>
+    </form>
+    <p id="logSearchStatus" role="status" aria-live="polite">Lancez une recherche pour afficher les mesures de la base.</p>
+    <div id="logGraphArea" hidden>
+        <p class="filter-hint">Chaque graphe couvre toutes les mesures correspondant aux filtres : moyenne et enveloppe min/max par intervalle. Les pointes sont conservées ; resserrez la période pour examiner les détails.</p>
+        <div id="logCharts" class="explorer-charts"></div>
+    </div>
+    {% for channel in ['A', 'B'] %}
+    <article id="logChannel{{ channel }}" class="log-channel-results">
+        <h3><span class="channel-tag channel-{{ channel }}">Canal {{ channel }}</span></h3>
+        <p id="logPeriod{{ channel }}" class="filter-hint"></p>
+        <div class="table-scroll explorer-table-wrap">
+            <table class="report-table explorer-table">
+                <thead><tr><th>Date</th><th>Heure &middot; &micro;s</th><th id="logCurrentHeading{{ channel }}">Courant (A)</th></tr></thead>
+                <tbody id="logRows{{ channel }}"><tr><td colspan="3" class="empty-results">Aucune recherche lancée.</td></tr></tbody>
+            </table>
+        </div>
+        <div class="explorer-pagination">
+            <button type="button" class="secondary" id="logFirst{{ channel }}" disabled>Première</button>
+            <button type="button" class="secondary" id="logPrevious{{ channel }}" disabled>Précédent</button>
+            <span id="logPage{{ channel }}" aria-live="polite">Page 0 sur 0</span>
+            <form id="logPageForm{{ channel }}" class="explorer-page-jump">
+                <label for="logPageInput{{ channel }}">Aller à la page</label>
+                <input id="logPageInput{{ channel }}" type="number" min="1" max="1" step="1" value="1" aria-label="Page du canal {{ channel }}" required disabled>
+                <button id="logGo{{ channel }}" type="submit" class="secondary" disabled>Aller</button>
+            </form>
+            <button type="button" class="secondary" id="logNext{{ channel }}" disabled>Suivant</button>
+            <button type="button" class="secondary" id="logLast{{ channel }}" disabled>Dernière</button>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+<script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+<script>window.logExplorerEndpoints = {catalog: {{ url_for('log_catalog')|tojson }}, search: {{ url_for('log_explore')|tojson }}};</script>
+<script src="{{ url_for('static', filename='js/log-explorer.js') }}" defer></script>

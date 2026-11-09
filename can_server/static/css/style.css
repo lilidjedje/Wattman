@@ -1,0 +1,100 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f0f2f5;
+    margin: 0;
+    color: #333;
+}
+
+header {
+    background: #1e293b;
+    color: white;
+    padding: 15px 30px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+header h1 { margin: 0; font-size: 1.5rem; font-weight: 500; }
+
+.container {
+    max-width: 1400px;
+    margin: 20px auto;
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+}
+
+.panel {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.panel h2 { margin-top: 0; font-size: 1.2rem; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px; }
+
+.filters {
+    display: flex;
+    align-items: flex-end;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+label { font-weight: 600; font-size: 0.9rem; color: #475569; }
+
+input {
+    padding: 8px 12px;
+    font-size: 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    outline: none;
+    width: 220px;
+}
+
+input:focus { border-color: #3b82f6; }
+
+.btn-primary {
+    background: #2563eb;
+    color: white;
+    padding: 9px 18px;
+    font-size: 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.btn-primary:hover { background: #1d4ed8; }
+
+.btn-sm {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.btn-sm:hover { background: #2563eb; }
+
+.subtitle { color: #64748b; font-size: 0.9rem; margin-top: -5px; }
+
+.chart-container { position: relative; height: 300px; width: 100%; }
+
+.table-wrapper { max-height: 400px; overflow-y: auto; margin-top: 15px; border: 1px solid #e2e8f0; border-radius: 6px; }
+
+table { width: 100%; border-collapse: collapse; text-align: left; }
+
+th { background: #f8fafc; color: #64748b; font-weight: 600; padding: 12px; font-size: 0.85rem; border-bottom: 2px solid #e2e8f0; }
+
+td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; }
+
+tr:hover { background: #f8fafc; }
+
+.placeholder { text-align: center; color: #94a3b8; padding: 30px; font-style: italic; }
+.selected-row { background: #eff6ff !important; font-weight: 600; }

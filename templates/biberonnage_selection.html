@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biberonnage — Choix de la durée</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <style>
+        body { margin:0; padding:32px; background:#edf3f7; color:#1f2937; font-family:"Segoe UI",sans-serif; }
+        main { max-width:900px; margin:60px auto; }
+        h1 { color:#1f4e78; }
+        .choices { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:24px; margin:28px 0; }
+        .choice { display:block; padding:32px; border:1px solid #b7c9d6; border-radius:12px; background:white; color:#1f4e78; text-decoration:none; box-shadow:0 5px 18px #0f172a12; }
+        .choice:hover,.choice:focus-visible { outline:2px solid #2563eb; }
+        .choice strong { display:block; font-size:1.6rem; margin-bottom:12px; }
+        .choice span { color:#475569; }
+    </style>
+</head>
+<body>
+    <main>
+        <a href="/battery_menu">← Menu Autonomie</a>
+        <h1>Bilan de biberonnage</h1>
+        <p>Sélectionnez la durée des deux tableaux BASE et TT Opt avec TACHY + Alarme.</p>
+        <div class="choices">
+            <a class="choice" href="/biberonnage?days=30"><strong>30 jours</strong><span>Saisie des consommations et deux bilans sur 30 jours.</span></a>
+            <a class="choice" href="/biberonnage?days=90"><strong>90 jours</strong><span>Saisie des consommations et deux bilans sur 90 jours.</span></a>
+        </div>
+    </main>
+    <script src="/static/project_storage.js"></script>
+</body>
+</html>
