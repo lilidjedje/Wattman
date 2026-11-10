@@ -132,6 +132,7 @@
         <div class="reports hidden" id="reports" aria-live="polite">
             <div class="report-actions hidden" id="report-actions">
                 <button type="button" class="primary" id="generate-pdf" disabled>Générer la synthèse en PDF</button>
+                <button type="button" class="primary" id="generate-excel" disabled>Générer le fichier Excel</button>
             </div>
             <section class="cover" id="project-cover" aria-label="Informations du projet">
                 <p class="cover-kicker">WATTMAN</p>
@@ -159,6 +160,7 @@
         const selection = document.getElementById('selection');
         const status = document.getElementById('selection-status');
         const modules = new Set(['dcdc', 'wltc', 'dm1', 'dm2', 'customer', 'biberonnage']);
+        let selectedSynthesisModules = [];
         let expectedReports = 0;
         let loadedReports = 0;
         const readJson = (key, fallback) => {
@@ -278,34 +280,61 @@
             return element.href || element.textContent;
         }
 
+        // Each embedded report owns its CSS. Never let its body, heading or grid
+        // rules change the cover or another report when flattening the iframes.
+        function splitReportSelectors(selectorText) {
+            const selectors = [];
+            let depth = 0, start = 0;
+            for (let index = 0; index < selectorText.length; index++) {
+                const char = selectorText[index];
+                if (char === '(' || char === '[') depth++;
+                if (char === ')' || char === ']') depth--;
+                if (char === ',' && depth === 0) {
+                    selectors.push(selectorText.slice(start, index));
+                    start = index + 1;
+                }
+            }
+            selectors.push(selectorText.slice(start));
+            return selectors;
+        }
+
+        function scopeReportRules(rules, scope) {
+            return [...rules].map(rule => {
+                if (rule.type === 1) {
+                    const selectors = splitReportSelectors(rule.selectorText).map(selector => {
+                        const rooted = selector.trim().replace(/^(?:html\s+)?body\b|^html\b|^:root\b/, scope);
+                        return rooted.startsWith(scope) ? rooted : `${scope} ${rooted}`;
+                    }).join(',');
+                    return `${selectors} { ${rule.style.cssText} }`;
+                }
+                if (rule.type === 4 || rule.type === 12) {
+                    const prefix = rule.cssText.slice(0, rule.cssText.indexOf('{'));
+                    return `${prefix} { ${scopeReportRules(rule.cssRules, scope)} }`;
+                }
+                return rule.type === 5 ? rule.cssText : '';
+            }).join('\n');
+        }
+
         async function createPrintReportCopies() {
             document.querySelectorAll('.print-report-copy, [data-print-report-style]').forEach(element => element.remove());
-            const styleKeys = new Set();
-            const stylesheetLoads = [];
+            let reportIndex = 0;
             for (const frame of reportContent.querySelectorAll('iframe')) {
                 const source = frame.contentDocument;
-                if (!source) throw new Error(`Le rapport « ${frame.title} » n’est plus disponible.`);
-                source.querySelectorAll('link[rel="stylesheet"], style').forEach(element => {
-                    const key = getPrintStyleKey(element);
-                    if (styleKeys.has(key)) return;
-                    styleKeys.add(key);
-                    const copy = element.cloneNode(true);
-                    copy.dataset.printReportStyle = 'true';
-                    if (copy.tagName === 'LINK') {
-                        stylesheetLoads.push(new Promise((resolve, reject) => {
-                            copy.addEventListener('load', resolve, { once: true });
-                            copy.addEventListener('error', () => reject(new Error(`Impossible de charger la feuille de style ${copy.href}.`)), { once: true });
-                            document.head.appendChild(copy);
-                            if (copy.sheet) resolve();
-                        }));
-                        return;
-                    }
-                    document.head.appendChild(copy);
-                });
+                if (!source) throw new Error(`Rapport indisponible : ${frame.title}`);
                 const copy = document.createElement('div');
                 copy.className = 'print-report-copy';
+                copy.dataset.printReportId = String(reportIndex++);
                 copy.dataset.reportTitle = frame.title;
-                [...source.body.children].forEach(child => {
+                const scope = `.print-report-copy[data-print-report-id="${copy.dataset.printReportId}"]`;
+                const stylesheet = document.createElement('style');
+                stylesheet.dataset.printReportStyle = 'true';
+                stylesheet.textContent = [...source.styleSheets].map(sheet =>
+                    scopeReportRules(sheet.cssRules, scope)
+                ).join('\n');
+                document.head.appendChild(stylesheet);
+                const contentRoot = source.querySelector('#customer-export-reports');
+                const children = contentRoot ? [contentRoot] : [...source.body.children];
+                children.forEach(child => {
                     if (child.tagName === 'SCRIPT') return;
                     const clone = document.importNode(child, true);
                     const sourceCanvases = [child, ...child.querySelectorAll('canvas')].filter(node => node.tagName === 'CANVAS');
@@ -383,10 +412,49 @@
                     .print-report-copy .dashboard { display:block !important; width:100% !important; }
                     .print-report-copy .dashboard > .dash-card { margin:0 0 6mm !important; }
                     .print-report-copy .table-container { overflow:visible !important; }
+                    /* Override the embedded themes, including their ID selectors. */
+                    #report-content#report-content .print-report-copy, #report-content#report-content .print-report-copy * { box-sizing:border-box !important; color:#1f2937 !important; background:#fff !important; background-image:none !important; font-family:"Segoe UI",Tahoma,sans-serif !important; }
+                    #report-content#report-content .print-report-copy { font-size:10pt !important; line-height:1.4 !important; }
+                    #report-content#report-content .print-report-copy :is(h1,.customer-summary-title,.section-title) {
+                        color:#1f4e78 !important; font-size:20pt !important; font-weight:700 !important;
+                        margin:0 0 6mm !important; padding:0 0 3mm !important;
+                        border-bottom:1px solid #cbd5e1 !important;
+                    }
+                    #report-content#report-content .print-report-copy :is(h2,.pdf-customer-report > h2,.table-header-title) {
+                        color:#1f4e78 !important; font-size:14pt !important; font-weight:700 !important;
+                        margin:0 0 3mm !important; padding:2mm 0 !important;
+                    }
+                    #report-content#report-content .print-report-copy :is(h3,h4,.profile-heading) {
+                        color:#1f4e78 !important; font-size:11pt !important; font-weight:700 !important;
+                        margin:0 0 2mm !important;
+                    }
+                    #report-content#report-content .print-report-copy :is(h1,h2,h3,h4,.section-title,.table-header-title,.profile-heading) {
+                        break-after:avoid !important; page-break-after:avoid !important;
+                    }
+                    #report-content#report-content .print-report-copy :is(.container,main,.report,.profile,.pdf-customer-report,.analysis,.dashboard,.synthesis-grid) {
+                        display:block !important; width:100% !important; min-width:0 !important;
+                        max-width:100% !important; height:auto !important; min-height:0 !important;
+                        margin:0 0 5mm !important; padding:0 !important;
+                        break-before:auto !important; break-after:auto !important;
+                        break-inside:auto !important;
+                    }
+                    #report-content#report-content .print-report-copy :is(.profile,.dash-card,.pdf-customer-report,.topbar) { break-inside:avoid !important; page-break-inside:avoid !important; }
+                    #report-content#report-content .print-report-copy .table-card { display:block !important; margin:0 0 6mm !important; }
+                    #report-content#report-content .print-report-copy :is(table,.table-container) { width:100% !important; min-width:0 !important; max-width:100% !important; }
+                    #report-content#report-content .print-report-copy table { table-layout:fixed !important; border-collapse:collapse !important; font-size:8pt !important; }
+                    #report-content#report-content .print-report-copy :is(th,td) { padding:2mm !important; overflow-wrap:anywhere !important; }
+                    #report-content#report-content .print-report-copy thead { display:table-header-group !important; }
+                    #report-content#report-content .print-report-copy tr { break-inside:avoid !important; }
+                    #report-content#report-content .print-report-copy :is(img,svg) { max-width:100% !important; }
+                    #report-content#report-content .print-report-copy p { orphans:3; widows:3; }
+                    #report-content#report-content .print-report-copy *::before, #report-content#report-content .print-report-copy *::after {
+                        background-image:none !important; box-shadow:none !important;
+                    }
+
                 }
             `;
             document.head.appendChild(printStyle);
-            await Promise.all(stylesheetLoads);
+            await document.fonts?.ready;
         }
 
         function removePrintReportCopies() {
@@ -399,9 +467,10 @@
             });
         }
 
-        function addReport(title, type, url) {
+        function addReport(title, type, url, module) {
             const section = document.createElement('section');
             section.className = 'report';
+            section.dataset.module = module;
             const frame = document.createElement('iframe');
             frame.title = title;
             frame.scrolling = 'no';
@@ -417,8 +486,9 @@
                 loadedReports += 1;
                 if (loadedReports === expectedReports) {
                     document.getElementById('generate-pdf').disabled = false;
+                    document.getElementById('generate-excel').disabled = false;
                     document.getElementById('report-actions').classList.remove('hidden');
-                    status.textContent = 'Tous les résultats sélectionnés sont affichés. Vous pouvez générer le PDF.';
+                    status.textContent = 'Tous les résultats sélectionnés sont affichés. Vous pouvez générer le PDF ou le fichier Excel.';
                 }
             }, { once: true });
             section.append(frame);
@@ -514,8 +584,10 @@
                     const grid = heading.nextElementSibling;
                     const isDcdc = heading.textContent.includes('DCDC');
                     const visible = (module === 'dcdc') === isDcdc;
-                    heading.style.display = visible ? '' : 'none';
-                    if (grid) grid.style.display = visible ? '' : 'none';
+                    if (!visible) {
+                        heading.remove();
+                        grid?.remove();
+                    }
                 });
                 const seenCards = new Set();
                 const seenCanvases = new Set();
@@ -616,6 +688,7 @@
         form.addEventListener('submit', event => {
             event.preventDefault();
             const selectedModules = selectedValues('module');
+            selectedSynthesisModules = selectedModules;
             const selectedBibDays = selectedModules.includes('biberonnage')
                 ? selectedValues('bib-days')
                 : [];
@@ -635,6 +708,12 @@
                 status.textContent = 'Chaque rapport sélectionné doit contenir au moins un profil et un scénario.';
                 return;
             }
+            if (selectedModules.includes('customer')
+                && selectedValues('customer-profile').some(profile => profile !== 'CustomerPIE')
+                && selectedValues('customer-scenario').every(scenario => scenario === 'baseLib')) {
+                status.textContent = 'Le scénario Base LIB est disponible uniquement pour le profil Analyse PIE.';
+                return;
+            }
             reportContent.replaceChildren();
             document.getElementById('generate-pdf').disabled = true;
             document.getElementById('report-actions').classList.add('hidden');
@@ -643,25 +722,25 @@
             reports.classList.remove('hidden');
             populateCover();
             document.getElementById('project-cover').style.display = '';
-            if (selectedModules.includes('dcdc')) addReport('DCDC Sizing — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=dcdc');
-            if (selectedModules.includes('wltc')) addReport('WLTC — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=wltc');
+            if (selectedModules.includes('dcdc')) addReport('DCDC Sizing — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=dcdc', 'dcdc');
+            if (selectedModules.includes('wltc')) addReport('WLTC — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=wltc', 'wltc');
             ['dm1', 'dm2'].forEach(mode => {
                 if (!selectedModules.includes(mode)) return;
                 const profiles = selectedValues(`${mode}-profile`);
                 const scenarios = selectedValues(`${mode}-scenario`);
                 const query = new URLSearchParams({ mode: mode.toUpperCase(), summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
-                addReport(`Autonomie ${mode.toUpperCase()} — Jours selon la capacité batterie`, 'dm', `/dm_results?${query}`);
+                addReport(`Autonomie ${mode.toUpperCase()} — Jours selon la capacité batterie`, 'dm', `/dm_results?${query}`, mode);
             });
             if (selectedModules.includes('customer')) {
                 const profiles = selectedValues('customer-profile');
                 const scenarios = selectedValues('customer-scenario');
                 const query = new URLSearchParams({ mode: 'Customer Mode', summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
-                addReport('Autonomie Customer Mode', 'customer', `/battery_results_menu?${query}`);
+                addReport('Autonomie Customer Mode', 'customer', `/battery_results_menu?${query}`, 'customer');
             }
             if (selectedModules.includes('biberonnage')) {
                 selectedBibReports.forEach(({ days, profiles }) => {
                     const query = new URLSearchParams({ summary: '1', days, profiles: profiles.join(',') });
-                    addReport(`Biberonnage — ${days} jours`, 'biberonnage', `/biberonnage/resultats?${query}`);
+                    addReport(`Biberonnage — ${days} jours`, 'biberonnage', `/biberonnage/resultats?${query}`, 'biberonnage');
                 });
             }
             selection.querySelector('#back-to-selection').classList.remove('hidden');
@@ -696,6 +775,118 @@
             }
         });
 
+        function getExcelMatrixRows(frame, mode) {
+            const storage = frame.contentWindow.sessionStorage;
+            const read = (key, fallback) => JSON.parse(storage.getItem(key) || JSON.stringify(fallback));
+            const excel = read('excelData', {});
+            const sheet = excel['Device List'] || excel['ECU List'] || Object.values(excel)[0];
+            const selected = new Set(read('selectedEcuKeys', []));
+            const deleted = new Set(read('deletedDarkDeviceKeys', []));
+            const currents = read(mode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${mode}Currents`, {});
+            const matrix = read(mode === 'Customer Mode' ? 'customerModeMatrix' : `${mode.toLowerCase()}ModeMatrix`, {});
+            const devices = (sheet?.data || []).map((row, index) => ({
+                key: `${index}_${row['Device Name'] || row['ECU Name'] || `Item ${index+1}`}`,
+                matrixKey: String(index), name: row['Device Name'] || row['ECU Name'] || `Item ${index+1}`,
+                currentUa: frame.contentWindow.SleepCurrent.sourceCurrentMicroamps(row, mode)
+            })).filter(device => !deleted.has(device.key) && (storage.getItem('selectedEcuKeys') === null || selected.has(device.key)));
+            read('customDarkDevices', []).forEach(device => {
+                const key = `custom:${device.id}`;
+                if (!deleted.has(key)) devices.push({key, matrixKey:key, name:device.name, currentUa:Number(device.current)||0});
+            });
+            return devices.map(device => ({
+                name: device.name, currentUa: Number(String(currents[device.key] ?? device.currentUa).replace(',','.')) || 0,
+                coefficients: Array.from({length:90}, (_, index) => {
+                    const prefix = `${device.matrixKey}_`;
+                    const value = Object.entries(matrix).find(([key]) => key.startsWith(prefix)
+                        && Number(key.slice(prefix.length).replace(/\s*jours?$/i,'')) === index+1);
+                    const coefficient = value ? Number(String(value[1]).replace(',','.')) : 1;
+                    return Number.isFinite(coefficient) ? coefficient : 1;
+                })
+            }));
+        }
+
+        function getExcelReportData(section) {
+            const frame = section.querySelector('iframe');
+            const doc = frame?.contentDocument;
+            if (!doc) throw new Error(`Le rapport « ${frame?.title || section.dataset.module} » n’est plus disponible.`);
+            const root = doc.querySelector('#profiles, #customer-export-reports, #analysis-list') || doc.body;
+            const tables = [...root.querySelectorAll('table')].map(table =>
+                [...table.rows].map(row => [...row.cells].map(cell => cell.innerText.trim()))
+            );
+            const fields = [...root.querySelectorAll('input, select, textarea')].map(input => {
+                const label = input.labels?.[0]?.innerText?.trim() || input.name || input.id || 'Paramètre';
+                return [label, input.value || ''];
+            });
+            if (fields.length) tables.push([['Paramètre', 'Valeur'], ...fields]);
+            return {
+                module: section.dataset.module,
+                title: frame.title,
+                selection: {
+                    profiles: (new URL(frame.src).searchParams.get('profiles') || '').split(',').filter(Boolean),
+                    scenarios: (new URL(frame.src).searchParams.get('scenarios') || '').split(',').filter(Boolean),
+                    days: Number(new URL(frame.src).searchParams.get('days')) || null
+                },
+                data: frame.contentWindow.getSynthesisExcelData ? {
+                    ...frame.contentWindow.getSynthesisExcelData(),
+                    matrixRows: ['dm1','dm2','customer'].includes(section.dataset.module)
+                        ? getExcelMatrixRows(frame, section.dataset.module === 'customer' ? 'Customer Mode' : section.dataset.module.toUpperCase()) : []
+                } : null,
+                text: root.innerText.trim(),
+                tables
+            };
+        }
+
+        document.getElementById('generate-excel').addEventListener('click', async event => {
+            const button = event.currentTarget;
+            const pdfButton = document.getElementById('generate-pdf');
+            button.disabled = true;
+            pdfButton.disabled = true;
+            status.textContent = 'Génération du fichier Excel…';
+            try {
+                const reportSections = [...reportContent.querySelectorAll('.report')];
+                const reportsData = reportSections.map(getExcelReportData);
+                const homologationFrame = reportContent.querySelector('[data-module="dcdc"] iframe')
+                    || reportContent.querySelector('[data-module="wltc"] iframe');
+                const homologationData = homologationFrame
+                    ? homologationFrame.contentWindow.getSynthesisExcelData()
+                    : { synthesis: {}, devices: [] };
+                const project = JSON.parse(localStorage.getItem('activeProject') || 'null') || {};
+                const response = await fetch('/export_synthesis_excel_bundle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        modules: selectedSynthesisModules,
+                        reports: reportsData,
+                        project: {
+                            name: project.name || '',
+                            date: project.date || '',
+                            pilotWattman: project.pilotWattman || ''
+                        },
+                        synthesis: homologationData.synthesis,
+                        devices: homologationData.devices
+                    })
+                });
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error || 'Impossible de générer le fichier Excel.');
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Synthese_Wattman_${project.name || 'projet'}.zip`;
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                status.textContent = 'Fichier Excel généré.';
+            } catch (error) {
+                console.error('La génération du fichier Excel a échoué.', error);
+                status.textContent = `Erreur de génération Excel : ${error.message}`;
+            } finally {
+                button.disabled = false;
+                pdfButton.disabled = false;
+            }
+        });
+
         window.addEventListener('afterprint', removePrintReportCopies);
 
         document.getElementById('back-to-selection').addEventListener('click', () => {
@@ -720,7 +911,7 @@
             .header, #selection, .report-actions { display: none !important; }
             .reports { display: block !important; margin: 0; }
             .cover {
-                display: block !important; min-height: 270mm; padding: 26mm 18mm;
+                display: block !important; min-height: 0; height: 265mm; padding: 26mm 18mm;
                 border: 0; border-radius: 0; box-shadow: none; break-after: page;
             }
             .report { margin: 0; overflow: visible; border: 0; border-radius: 0; box-shadow: none; break-before: auto; break-inside: auto; }

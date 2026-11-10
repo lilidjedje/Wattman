@@ -671,6 +671,11 @@
             return result;
         }
 
+        window.getSynthesisExcelData = () => ({
+            synthesis: synthesisExportData,
+            devices: buildExcelExportDevices()
+        });
+
         document.getElementById('export-excel').addEventListener('click', async () => {
             const activeProject = ProjectStorage.getActiveProject() || {};
             const response = await fetch('/export_dcdc_template_excel', {

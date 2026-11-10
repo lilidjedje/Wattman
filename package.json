@@ -12,8 +12,8 @@
     "dist": "powershell -ExecutionPolicy Bypass -File desktop/build-installer.ps1"
   },
   "devDependencies": {
-    "electron": "43.2.0",
-    "electron-builder": "26.15.3"
+    "electron": "43.8.7",
+    "electron-builder": "26.18.0"
   },
   "build": {
     "appId": "com.engineering.calculator",
@@ -52,5 +52,11 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "overrides": {
+    "minimatch@>=7 <11.0.1": "11.0.5"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true
   }
 }

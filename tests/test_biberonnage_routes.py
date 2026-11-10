@@ -2,11 +2,13 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import zipfile
+from io import BytesIO
 
 _test_data = tempfile.TemporaryDirectory()
 os.environ["ENGINEERING_APP_DATA"] = _test_data.name
 from app import app, read_excel_file
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
 
@@ -101,6 +103,87 @@ class BiberonnageRoutesTest(unittest.TestCase):
         self.assertIn(".pdf-customer-report > h2", page)
         self.assertNotIn("html2canvas", page)
         self.assertNotIn("jspdf", page)
+
+    def test_synthesis_excel_bundle_preserves_reference_sheets_and_selected_results(self):
+        client = app.test_client()
+        connection = sqlite3.connect(app.extensions["account_database_path"])
+        connection.execute("DELETE FROM accounts")
+        connection.commit()
+        connection.close()
+        client.post(
+            "/api/auth/setup",
+            json={
+                "email": "lilicontact07@gmail.com",
+                "firstName": "Test",
+                "lastName": "Admin",
+                "password": "test-admin-password",
+            },
+        )
+
+        response = client.post(
+            "/export_synthesis_excel_bundle",
+            json={
+                "modules": ["dcdc", "wltc", "customer"],
+                "project": {"name": "Projet test"},
+                "synthesis": {
+                    "dcdc": {"winter": [{"time": 0, "base": 2, "upper": 3, "dcdcOutput": 250}]},
+                    "wltc": {"cycle1": [{"time": 0, "base": 4, "upper": 5, "dcdcOutput": 250}]},
+                },
+                "devices": [{
+                    "name": "Équipement de test",
+                    "current": 9,
+                    "lower": 1,
+                    "upper": 0,
+                    "dcdcProfiles": {"winter": [0.5], "midseason": [], "summer": []},
+                    "wltcProfiles": {"cycle1": [], "cycle2": [], "cycle3": []},
+                }],
+                "reports": [
+                    {"module": "dcdc", "title": "DCDC Sizing", "text": "DCDC"},
+                    {"module": "wltc", "title": "WLTC -7 °C", "text": "WLTC"},
+                    {
+                        "module": "customer", "title": "Customer Mode",
+                        "selection": {"profiles": ["Customer"], "scenarios": ["baseLab"]},
+                        "data": {"profiles": [{"id": "Customer", "columns": [{
+                            "key": "baseLab", "label": "Base LAB", "autonomy": 10,
+                            "rows": {str(row): 72 if row == 8 else 0 for row in range(1, 122)},
+                        }]}]},
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        with zipfile.ZipFile(BytesIO(response.data)) as archive:
+            self.assertEqual(
+                set(archive.namelist()),
+                {"DCDC_Sizing_WLTC.xlsx", "Consoveille_Synthese.xlsx"},
+            )
+            dcdc = load_workbook(BytesIO(archive.read("DCDC_Sizing_WLTC.xlsx")))
+            consoveille = load_workbook(BytesIO(archive.read("Consoveille_Synthese.xlsx")))
+
+        self.assertTrue(all(worksheet.sheet_state == "visible" for worksheet in dcdc.worksheets))
+        self.assertEqual(dcdc["Bilan DCDC"].sheet_state, "visible")
+        self.assertEqual(dcdc["Bilan -7°C"].sheet_state, "visible")
+        self.assertEqual(len(dcdc["Graph"]._charts), 3)
+        self.assertEqual(dcdc["Bilan DCDC"]["C2"].value, "Projet test")
+        equipment_row = next(
+            row for row in range(1, dcdc["Bilan DCDC"].max_row + 1)
+            if dcdc["Bilan DCDC"].cell(row, 2).value == "Équipement de test"
+        )
+        self.assertEqual(dcdc["Bilan DCDC"].cell(equipment_row, 7).value, 9)
+        self.assertEqual(dcdc["Bilan DCDC"].cell(equipment_row, 8).value, 0.5)
+        self.assertEqual(dcdc["Bilan DCDC"]["H92"].value, 3)
+        self.assertEqual(dcdc["Bilan -7°C"]["J94"].value, 5)
+        self.assertEqual(consoveille["Logistic Mode"].sheet_state, "veryHidden")
+        self.assertEqual(consoveille["Customer PIE"].sheet_state, "veryHidden")
+        self.assertEqual(consoveille["Customer Mode"].sheet_state, "visible")
+        self.assertEqual(consoveille["Mounting Mode"].sheet_state, "visible")
+        self.assertEqual(consoveille["Customer"]["E6"].value, 10)
+        self.assertEqual(consoveille["Customer"]["E8"].value, 72)
+        self.assertTrue(consoveille["Customer"].column_dimensions['F'].hidden)
+        self.assertFalse(any(name.startswith('Wattman ') for name in consoveille.sheetnames))
+        dcdc.close()
+        consoveille.close()
 
 
 if __name__ == '__main__':

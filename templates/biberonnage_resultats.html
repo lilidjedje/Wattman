@@ -365,6 +365,15 @@
             updateCharts(analysis, section, result);
         }
 
+        window.getSynthesisExcelData = () => ({
+            days: DURATION_DAYS,
+            profiles: analyses.map(analysis => ({
+                id: analysis.id, name: analysis.name, config: analysis.config,
+                result: calculateAnalysis(analysis),
+                timeline: timeColumns.map(column => ({label: column.label, days: column.daysElapsed}))
+            }))
+        });
+
         function persist() {
             const builtins = Object.fromEntries(analyses.filter(a => !a.custom).map(a => [a.id, a.config]));
             sessionStorage.setItem(BUILTIN_KEY, JSON.stringify(builtins));

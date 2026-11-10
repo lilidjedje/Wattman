@@ -9,6 +9,7 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.utils import secure_filename
 import json
 import shutil
+import zipfile
 from account_auth import (
     ADMIN_EMAIL,
     account_count,
@@ -984,6 +985,79 @@ def export_dcdc_template_excel():
     finally:
         if workbook is not None:
             workbook.close()
+
+@app.route('/export_synthesis_excel_bundle', methods=['POST'])
+def export_synthesis_excel_bundle():
+    payload = request.get_json(silent=True) or {}
+    modules = payload.get('modules') or []
+    allowed_modules = {'dcdc', 'wltc', 'dm1', 'dm2', 'customer', 'biberonnage'}
+    if (
+        not isinstance(modules, list)
+        or not modules
+        or any(not isinstance(module, str) or module not in allowed_modules for module in modules)
+    ):
+        return jsonify({'error': 'La sélection des rapports Excel est invalide.'}), 400
+
+    reports = payload.get('reports') or []
+    if not isinstance(reports, list) or any(
+        not isinstance(report, dict) or report.get('module') not in modules for report in reports
+    ):
+        return jsonify({'error': 'Les résultats sélectionnés sont invalides.'}), 400
+    if not reports or set(report['module'] for report in reports) != set(modules):
+        return jsonify({'error': 'Aucun résultat sélectionné à exporter.'}), 400
+
+    archive = BytesIO()
+    try:
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
+            if any(module in modules for module in ('dcdc', 'wltc')):
+                dcdc_response = export_dcdc_template_excel()
+                if dcdc_response.status_code >= 400:
+                    return dcdc_response
+                dcdc_response.direct_passthrough = False
+                workbook = load_workbook(BytesIO(dcdc_response.get_data()), keep_links=True)
+                try:
+                    dcdc_sheet, dcdc_graph, wltc_sheet, wltc_graph = workbook.worksheets[2:6]
+                    dcdc_selected = 'dcdc' in modules
+                    wltc_selected = 'wltc' in modules
+                    for worksheet in workbook.worksheets:
+                        worksheet.sheet_state = 'visible'
+                    workbook.active = workbook.index(dcdc_sheet if dcdc_selected else wltc_sheet)
+                    output = BytesIO()
+                    workbook.save(output)
+                    bundle.writestr('DCDC_Sizing_WLTC.xlsx', output.getvalue())
+                finally:
+                    workbook.close()
+
+            consoveille_modules = set(modules) - {'dcdc', 'wltc'}
+            if consoveille_modules:
+                template_path = os.path.join(os.path.dirname(__file__), 'Consoveille.xlsx')
+                if not os.path.isfile(template_path):
+                    return jsonify({'error': 'Le classeur source Consoveille.xlsx est introuvable.'}), 404
+
+                workbook = load_workbook(template_path, data_only=False, keep_links=True)
+                try:
+                    from synthesis_excel import populate_consoveille
+                    populate_consoveille(workbook, reports, payload.get('project') or {})
+                    output = BytesIO()
+                    workbook.save(output)
+                    bundle.writestr('Consoveille_Synthese.xlsx', output.getvalue())
+                finally:
+                    workbook.close()
+
+        archive.seek(0)
+        project = payload.get('project') if isinstance(payload.get('project'), dict) else {}
+        project_name = secure_filename(str(project.get('name') or 'projet')) or 'projet'
+        return send_file(
+            archive,
+            as_attachment=True,
+            download_name=f'Synthese_Wattman_{project_name}.zip',
+            mimetype='application/zip'
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
 
 @app.route('/export_synthesis_pdf')
 def export_synthesis_pdf():

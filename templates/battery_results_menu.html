@@ -880,6 +880,8 @@
                 customSleep: read('customSleepFunctions_Customer Mode', []),
                 dailyAh: Object.keys(excel).length ? SleepCurrent.calculate('Customer Mode').dailyAh : undefined
             });
+            window.customerExcelColumns ||= {};
+            window.customerExcelColumns[mode] = columns;
             activeScenarioKeys = columns.map(column => column.key);
             const rowMap = {
                 capa: [8, 'Ah'], soc_dep: [10, '%', 100], soc_min: [11, '%', 100], energy_brute: [13, 'Ah'],
@@ -1161,6 +1163,16 @@ function navigateHome() {
 document.addEventListener('click', function(e) {
     const details = document.getElementById('actions-details');
     if (details && !details.contains(e.target)) details.removeAttribute('open');
+});
+
+window.getSynthesisExcelData = () => ({
+    profiles: (window.selectedCustomerProfiles || []).map(id => ({
+        id,
+        columns: (window.customerExcelColumns?.[id] || [])
+            .filter((_column, index) => (window.selectedCustomerScenarios || []).includes(index))
+            .map(column => ({ key: column.key, label: column.label, autonomy: column.autonomy,
+                rows: Object.fromEntries(Array.from({length: 121}, (_, index) => [index + 1, column.value(index + 1)])) }))
+    }))
 });
 
 const summaryParams = new URLSearchParams(window.location.search);

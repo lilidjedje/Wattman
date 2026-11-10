@@ -262,14 +262,14 @@ Ce projet est fourni à titre d'exemple.
 
 
 
-Fait en sorte dans les mesures numériques que les excels de mesure numérique respecte bien le nombre de mesures par secondes en fonction de la fréquence d'acuquositon et que pour chaque canal A et B respecte date et heure de chaque mesure (d'ailleurs dans l'excel mets date et heure de chaque mesure et mesure en mA ou en A ou en micro A et la fréquence d'acquisiton réelle à ce moment la (pas d'autres lignes)). et je veux que le chemin des excel soit dans le projet wattman main 
+Fait en sorte que le pdf soit bien généné : aucune page vide, rien d'achuré, tout rentre dans un format A4, tout a les meme styles de titres et sous-titres, et gérer le pdf homogène a chzque ajout ou suppression de profils. 
+Pour les courbes de dcdc et wltc elles sont affichées 2 fois dans la synthèse (quand wltc faire afficher cycle 1 2 3 et pour dcdc faire afficher celles de winter mid season summer): Corrige cela pour les afficher une seule fois. 
 
-Pour la partie excel, j'ai lancé un test de 1000 Hz et pourtant je n'ai que 3000 lignes alors que je suis censé avoir 1000 mesures par seconde (une ligne par mesure), rectifie ca 
+les tableaux de dcdc sizing et wltc en excel ne sont pas bien générés dans les excel. Vérifie que tout est bien importé dans les excel et que les paramètres et résultats sont bien synchronisés. 
+Pour le DCDC ne génère pas de WLTC et inversmenent dans les excel. 
+Dans les DM1 DM2 Customer Mode et Biberonnage génère en fonction de ce qui est sélectionné et inclus toutes les pages nécessaires aux paramètres et calculs 
 
-enlève en haut de import dashboard nombre de mesures totales
 
-Je veux que mon analyse puisse prendre en compte tout mes fichiers .asc sans limite de 3, meme s'il y en a des centaines. 
 
-dans les tableaux canal A et canal B enlève les colonne noms du fichiers sour ce, et en bas des tableaux la ou on peut changer de pages, je veux pouvoir changer de page recevin à la précédente, mais aussi pouvoir choisir vers quelle page aller sur (nombre de pages totals apparent )
+Sharepoint pour profils .json et InfluxDB ou PostgreSQL + TimescaleDB pour les mesures hautes fréquences d'acquisition 
 
-je n'ai aucun bouton ou je peux enregistrer mes dashboards, ajoute le et fait en sorte que les enregistrements de dashboard fonctionnent (meme quand on eteint et se reconnecte au projet)

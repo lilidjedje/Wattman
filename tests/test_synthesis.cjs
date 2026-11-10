@@ -124,3 +124,22 @@ console.log('Six tableaux verifies : sommes, profils, virgules, modifications et
 }
 
 console.log('Synthesis summary: chart peaks, chart-only report styling and local Chart.js loading verified.');
+
+{
+    const page = fs.readFileSync(path.join(root, 'templates/export_synthesis_pdf.html'), 'utf8');
+    const storage = {
+        excelData: JSON.stringify({ 'Device List': { data: [{ 'Device Name': 'ECU' }] } }),
+        modifiedDM1Currents: JSON.stringify({ '0_ECU': '1,5' }),
+        dm1ModeMatrix: JSON.stringify({ '0_1 jours': '0,25' })
+    };
+    const context = vm.createContext({ frame: { contentWindow: {
+        sessionStorage: { getItem: key => storage[key] ?? null },
+        SleepCurrent: { sourceCurrentMicroamps: () => 3 }
+    } } });
+    vm.runInContext(page.slice(page.indexOf('        function getExcelMatrixRows'), page.indexOf('        function getExcelReportData')), context);
+    const rows = vm.runInContext("getExcelMatrixRows(frame, 'DM1')", context);
+    assert.equal(rows[0].currentUa, 1.5);
+    assert.equal(rows[0].coefficients[0], 0.25);
+    assert.equal(rows[0].coefficients[1], 1);
+}
+console.log('Excel matrices: French decimals and selected daily coefficients verified.');

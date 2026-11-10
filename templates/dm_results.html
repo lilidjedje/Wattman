@@ -535,6 +535,27 @@
 
         document.getElementById('addProfileButton').addEventListener('click', openDialog);
         document.getElementById('bottomAddProfile').addEventListener('click', openDialog);
+        window.getSynthesisExcelData = () => ({
+            profiles: getProfiles().map(profile => ({
+                id: String(profile.id), name: profile.name, capacity: n(profile.capacity),
+                columns: SCENARIOS.filter(scenario => !selectedScenarioKeys.size || selectedScenarioKeys.has(scenario.key))
+                    .map(scenario => {
+                        const result = computeColumn(activeSubMode, scenario, n(profile.capacity));
+                        result.deletedFixed = readJson(`deletedFixedFunctionIds_${activeSubMode}`, []);
+                        result.deletedSleep = readJson(`deletedSleepFunctionIds_${activeSubMode}`, []);
+                        result.customSleep = readJson(`customSleepFunctions_${activeSubMode}`, []).map(item => ({name:item.name,current:n(item?.values?.[scenario.key] ?? item.current)}));
+                        result.fixedEnergies = Object.fromEntries(Object.entries(result.fixed.entries).map(([key, entry]) => [key, entryEnergy(entry)]));
+                        const numericEntry = entry => ({
+                            ...entry, current:n(entry.current), duration:n(entry.duration),
+                            extra:{...entry.extra, periodMin:n(entry.extra?.periodMin,480), balancingDays:n(entry.extra?.balancingDays,90)}
+                        });
+                        result.fixed.entries = Object.fromEntries(Object.entries(result.fixed.entries).map(([key, entry]) => [key, numericEntry(entry)]));
+                        result.fixed.custom = result.fixed.custom.map(numericEntry);
+                        return result;
+                    })
+            }))
+        });
+
         document.getElementById('export-dm-excel').addEventListener('click', async (event) => {
             const button = event.currentTarget;
             const config = readJson('batteryConfiguration', {});
