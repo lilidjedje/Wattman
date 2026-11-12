@@ -7,6 +7,9 @@
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
+    "test:profiles": "electron tests/electron_homologation_profiles.cjs && electron tests/electron_auxiliary_profiles.cjs",
+    "test:calculations": "python tests/run_calculation_audit.py",
+    "test:all": "python tests/run_calculation_audit.py --all",
     "start": "electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File desktop/build-backend.ps1",
     "dist": "powershell -ExecutionPolicy Bypass -File desktop/build-installer.ps1"

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, abort
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, abort, send_file
 import sqlite3
 import os
 import time
@@ -33,6 +33,12 @@ app = Flask(
     template_folder=os.path.join(PROJECT_DIR, "templates"),
     static_folder=os.path.join(PROJECT_DIR, "static")
 )
+
+@app.route('/shared-current-units.js')
+def shared_current_units():
+    return send_file(os.path.join(os.path.dirname(PROJECT_DIR), 'static', 'current_units.js'),
+                     mimetype='text/javascript')
+
 THEORY_IMPORT_LIMIT = 50 * 1024 * 1024
 app.config["MAX_CONTENT_LENGTH"] = THEORY_IMPORT_LIMIT
 app.config["MAX_FORM_MEMORY_SIZE"] = THEORY_IMPORT_LIMIT
@@ -642,12 +648,17 @@ def scenario_for_analysis(device, analysis_type, temperature_c):
 
 def analysis_interval_definitions(analysis_type):
     if analysis_type == "wltc":
+        # Union of the three source profiles' boundaries, in seconds. Every
+        # measurement belongs to a period, including 8.16--12.25 minutes.
         return [
-            {"label": "0 - 1,67 min", "start_s": 0, "end_s": 100},
-            {"label": "1,68 - 4 min", "start_s": 100.8, "end_s": 240},
-            {"label": "4 - 7 min", "start_s": 240, "end_s": 420},
+            {"label": "0 - 1,67 min", "start_s": 0, "end_s": 100.2},
+            {"label": "1,67 - 4 min", "start_s": 100.2, "end_s": 240},
+            {"label": "4 - 5 min", "start_s": 240, "end_s": 300},
+            {"label": "5 - 7 min", "start_s": 300, "end_s": 420},
             {"label": "7 - 8,16 min", "start_s": 420, "end_s": 489.6},
-            {"label": "12,25 - 25 min", "start_s": 735, "end_s": 1500},
+            {"label": "8,16 - 12,25 min", "start_s": 489.6, "end_s": 735},
+            {"label": "12,25 - 15 min", "start_s": 735, "end_s": 900},
+            {"label": "15 - 25 min", "start_s": 900, "end_s": 1500},
             {"label": "25 - 30 min", "start_s": 1500, "end_s": 1800},
         ]
     if analysis_type == "dcdc":
@@ -661,6 +672,11 @@ def analysis_interval_definitions(analysis_type):
     return []
 
 
+def interval_expected_current(interval, device):
+    value = interval.get("expected_A")
+    return float((device.get("nominal_A") or 0) if value is None else value)
+
+
 def expected_current_for_interval(device, analysis_type, temperature_c, interval):
     profile = scenario_for_analysis(device, analysis_type, temperature_c)
     candidates = []
@@ -669,7 +685,7 @@ def expected_current_for_interval(device, analysis_type, temperature_c, interval
         end_s = float(profile_interval.get("end_s") or interval["end_s"])
         overlap = min(end_s, interval["end_s"]) - max(start_s, interval["start_s"])
         if overlap > 0:
-            candidates.append(float(profile_interval.get("expected_A") or device.get("nominal_A") or 0))
+            candidates.append(interval_expected_current(profile_interval, device))
     # Les trois variantes WLTC sont présentes dans le référentiel. La valeur
     # la plus haute par intervalle constitue la limite d'homologation prudente.
     return max(candidates, default=float(device.get("nominal_A") or 0))
@@ -2085,7 +2101,7 @@ def dashboard_report(session):
             requested_end = interval.get("end_s")
             interval_end = end_ts if requested_end is None else min(end_ts, start_ts + float(requested_end))
             interval_points = [row for row in points if interval_start <= row["timestamp"] <= interval_end]
-            expected = float(interval.get("expected_A") or device.get("nominal_A") or 0)
+            expected = interval_expected_current(interval, device)
             margin = max(abs(expected) * tolerance / 100, 0.001)
             compliant = [row for row in interval_points if abs(float(row["current_A"]) - expected) <= margin]
             compliance = (len(compliant) / len(interval_points) * 100) if interval_points else 0
@@ -2299,7 +2315,7 @@ def dashboard_report(session):
     for selected_device in selected_devices:
         profile = scenario_for_analysis(selected_device, analysis_type, temperature_c)
         expected_values = [
-            float(interval.get("expected_A") or selected_device.get("nominal_A") or 0)
+            interval_expected_current(interval, selected_device)
             for interval in profile
         ]
         peak = max(expected_values, default=float(selected_device.get("nominal_A") or 0))

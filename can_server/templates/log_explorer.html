@@ -6,14 +6,14 @@
             <label>Canaux à afficher<select name="channel"><option value="AB">A et B</option><option value="A">Canal A uniquement</option><option value="B">Canal B uniquement</option></select></label>
             <label>Fichier source<select name="source" id="logSource"><option value="">Tous les fichiers</option></select></label>
             <label>Jour à explorer<select name="day" id="logDay"><option value="">Tous les jours</option></select></label>
-            <label>Unité d’affichage<select name="unit"><option value="A">Ampères (A)</option><option value="mA">Milliampères (mA)</option><option value="uA">Microampères (µA)</option></select></label>
+            <label>Affichage automatique : A / mA / &micro;A<select name="unit" hidden><option value="A">Automatique</option></select></label>
         </div>
         <details class="filter-details" open><summary>Période et seuil de courant <small>facultatifs</small></summary>
             <div class="explorer-filters">
                 <label>À partir du<input name="start" type="datetime-local" step="0.000001"></label>
                 <label>Jusqu’au (inclus)<input name="end" type="datetime-local" step="0.000001"></label>
                 <label>Condition sur le courant<select name="operator"><option value="gt">Supérieur à &gt;</option><option value="gte">Supérieur ou égal à ≥</option><option value="lt">Inférieur à &lt;</option><option value="lte">Inférieur ou égal à ≤</option></select></label>
-                <label>Seuil dans l’unité choisie<input name="threshold" type="number" step="any" placeholder="Aucun seuil"></label>
+                <label>Seuil de courant<input data-current-base-unit="A" name="threshold" type="number" step="any" placeholder="Aucun seuil"></label>
             </div>
             <label class="explorer-check"><input type="checkbox" name="absolute" value="1"> Appliquer le seuil à la valeur absolue du courant (|I|)</label>
             <small class="filter-hint">Le jour et la période se combinent. Dates et heures dans le fuseau local de ce PC. Les décimales du courant et les microsecondes de l’horodatage sont conservées dans le tableau.</small>

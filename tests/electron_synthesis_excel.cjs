@@ -45,7 +45,7 @@ app.whenReady().then(async () => {
             cellBalancing:{current:'200',duration:'15',extra:{periodMin:'480',balancingDays:'90'}},
             pcuRam:{current:'1,5',duration:'192'},
             transport:{current:'0,72',duration:'10'}
-        }};
+        },custom:[{name:'Fonction ajoutee',current:'125',duration:'30',unit:'min'}]};
         ['DM1','DM2'].forEach(mode=>sessionStorage.setItem('fixedConsumption'+mode,JSON.stringify({baseLab:fixed,withoutAlarmTachy:fixed})));
         const customer={entries:{fota:{current:'1511',duration:'10',unit:'min'}}};
         sessionStorage.setItem('fixedConsumption',JSON.stringify({baseLab:customer,withAlarm:customer,withoutAlarmTachy:customer,alarmTachy:customer,baseLib:customer}));
@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
                     :name==='customer-profile'?!!choice.customer?.includes(input.value)
                     :name==='customer-scenario'?!!choice.scenarios?.includes(input.value)
                     :name==='bib-days'?choice.days.includes(input.value)
-                    :name.startsWith('bib-profile')?input.value===(name.endsWith('90')?'tt-opt':'base')
+                    :name==='bib-config'?true:name.startsWith('bib-profile')?['base','tt-opt'].includes(input.value)
                     :name==='dm1-profile'?true:name==='dm2-profile'?input.value==='custom':false;
             });
             form.requestSubmit();
@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
             await new Promise(resolve=>setTimeout(resolve,100));
         }
         console.log('Extracting calculated Excel data '+index);
-        const payload=await win.webContents.executeJavaScript(`JSON.parse(JSON.stringify({modules:selectedSynthesisModules,project:{name:'Test s?lection'},reports:[...reportContent.querySelectorAll('.report')].map(getExcelReportData)}))`);
+        const payload=await win.webContents.executeJavaScript(`JSON.parse(JSON.stringify({modules:selectedSynthesisModules,project:{name:'Test selection'},applicationData:Object.fromEntries(Object.keys(sessionStorage).map(key=>{const raw=sessionStorage.getItem(key);try{return [key,JSON.parse(raw)]}catch{return [key,raw]}})),reports:[...reportContent.querySelectorAll('.report')].map(getExcelReportData)}))`);
         fs.mkdirSync(path.join(root,'tmp/excel-tests'),{recursive:true});
         fs.writeFileSync(path.join(root,`tmp/excel-tests/case-${index}.json`),JSON.stringify(payload));
         console.log('Checking exported workbook '+index);

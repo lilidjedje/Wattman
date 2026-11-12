@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('fs');
+const context={window:{}};vm.runInNewContext(fs.readFileSync('static/wattman_current.js','utf8'),context);
+const read=context.window.WattmanCurrent.read;
+assert.equal(read({current_category:'H','Current (A)':2},'Current (A)').amperes,2);
+assert.equal(read({current_category:'S','Current (A)':45},'Current (A)').microamps,45);
+assert.equal(read({current_category:'S','Current (A)':'0,5 mA'},'Current (A)').microamps,500);
+assert.equal(read({current_category:'H','Current (A)':'450 µA'},'Current (A)').microamps,450);
+assert.equal(read({current_category:'H','Current (A)':200,'Current Unit':'mA'},'Current (A)').amperes,.2);
+assert.equal(read({current_category:'S','Current (A)':25000},'Current (A)').suspicious,true);
+assert.equal(read({current_category:'S','Current (A)':45},'Current (A)').suspicious,false);
+assert.equal(read({current_category:'H','Current (A)':1500},'Current (A)').suspicious,true);
+assert.equal(read({'Current (A)':'abc'},'Current (A)').suspicious,true);
+assert.equal(read({'Current (A)':-1},'Current (A)').suspicious,true);
+console.log('Wattman: category defaults, explicit units, French decimals, µA conversions and abnormal-range detection verified.');

@@ -129,17 +129,18 @@ def fill_delivery(sheet, profile, mode, columns):
     text(sheet.cell(97,2),'Consommations fixes totales (Ah)')
     text(sheet.cell(98,2),'Fonctions de veille personnalisées (Ah/j)')
     end_row = 98
+    row = 100
     for column in columns:
         col = 5 if column['scenario']['key'] == 'baseLab' else 7
         sheet.cell(97,col,number(column['fixedTotal']))
         sheet.cell(98,col,number(column['customSleepEnergy']))
-        row = 100
         for entry in column['fixed']['custom']:
-            text(sheet.cell(row,2),entry.get('name') or 'Fonction fixe personnalisée')
+            text(sheet.cell(row,2),column['scenario']['label'] + ' - ' + (entry.get('name') or 'Fonction fixe personnalisée'))
             text(sheet.cell(row,3),f"{entry.get('current',0)} mA - {entry.get('duration',0)} {entry.get('unit','h')}")
+            sheet.cell(row,col,number(entry.get('energy',0)))
             row += 1
         for entry in column.get('customSleep') or []:
-            text(sheet.cell(row,2),entry.get('name') or 'Fonction de veille personnalisée')
+            text(sheet.cell(row,2),column['scenario']['label'] + ' - ' + (entry.get('name') or 'Fonction de veille personnalisée'))
             sheet.cell(row,col,number(entry['current'])/1000*24)
             row += 1
         end_row=max(end_row,row)
@@ -152,12 +153,13 @@ def fill_logistic(sheet, rows, profile, mode):
     for merged in list(sheet.merged_cells.ranges):
         sheet.unmerge_cells(str(merged))
     sheet.delete_rows(1, sheet.max_row)
-    text(sheet.cell(1,1),f'{mode} - {profile["name"]} - {profile["capacity"]} Ah')
+    text(sheet.cell(1,1),f'{mode} - {profile["name"]}' + (f' - {profile["capacity"]} Ah' if profile.get('capacity') is not None else ''))
     sheet.merge_cells('A1:H1')
     sheet['A1'].font=Font(size=14,bold=True,color='1F4E78')
     sheet['A1'].alignment=Alignment(vertical='center',wrap_text=True)
     sheet.row_dimensions[1].height=36
-    headers=['ECU','Courant (µA)']+[f'Jour {day} (µA)' for day in range(1,91)]
+    headers=['ECU','Current (µA)','Load Technical Wakeup 8h (A)','SmartMOS Dark Current (µA)',
+             'Total Dark Current (µA)']+[f'Jour {day} (µA)' for day in range(1,91)]
     for column,label in enumerate(headers,1):
         text(sheet.cell(3,column),label)
         sheet.cell(3,column).font=Font(bold=True,color='FFFFFF')
@@ -168,26 +170,72 @@ def fill_logistic(sheet, rows, profile, mode):
         sheet.row_dimensions[index].height=max(24,math.ceil(len(device['name'])/42)*15)
         current=number(device['currentUa'])
         sheet.cell(index,2,current)
-        for column,coefficient in enumerate(device['coefficients'],3):
-            sheet.cell(index,column,current*number(coefficient))
+        technical=number(device.get('technicalWakeupA',0))
+        smartmos=number(device.get('smartmosUa',0))
+        total=current+technical*1000000+smartmos
+        if not math.isclose(total,number(device.get('totalDarkCurrentUa',total)),rel_tol=1e-12,abs_tol=1e-9):
+            raise ValueError('Le Total Dark Current ne correspond pas aux courants de cet ECU.')
+        sheet.cell(index,3,technical)
+        sheet.cell(index,4,smartmos)
+        sheet.cell(index,5,total)
+        for column,coefficient in enumerate(device['coefficients'],6):
+            sheet.cell(index,column,total*number(coefficient))
     total_row=4+len(rows)
     text(sheet.cell(total_row,1),'Total courant de veille (µA)')
-    for column in range(2,93):
+    for column in range(2,96):
         sheet.cell(total_row,column,sum(number(sheet.cell(row,column).value) or 0 for row in range(4,total_row)))
     sheet.column_dimensions['A'].width=48
-    for column in range(2,93):sheet.column_dimensions[get_column_letter(column)].width=20
-    sheet.freeze_panes='C4'
+    for column in range(2,96):sheet.column_dimensions[get_column_letter(column)].width=24
+    sheet.freeze_panes='F4'
     sheet.sheet_view.showGridLines=False
-    sheet.print_area=f'A1:CN{total_row}'
+    sheet.print_area=f'A1:CQ{total_row}'
     sheet.page_setup.orientation='landscape'
     sheet.page_setup.fitToWidth=1
     sheet.page_setup.fitToHeight=0
     sheet.print_title_rows='1:3'
 
 
-def populate_consoveille(workbook, reports, project):
+def write_details(sheet, row, data, label):
+    text(sheet.cell(row,1),label)
+    sheet.cell(row,1).font=Font(bold=True,color='1F4E78')
+    row += 1
+    def leaves(value, path=''):
+        if isinstance(value,dict):
+            for key,item in value.items(): yield from leaves(item,f'{path}.{key}' if path else str(key))
+        elif isinstance(value,list):
+            for index,item in enumerate(value): yield from leaves(item,f'{path}[{index}]')
+        else: yield path,value
+    for path,value in leaves(data):
+        text(sheet.cell(row,1),path)
+        if isinstance(value,(float,int,bool)): sheet.cell(row,2,value)
+        else: text(sheet.cell(row,2),value)
+        row+=1
+    return row+2
+
+
+def write_biberonnage_inputs(sheet, row, profile):
+    inputs=profile.get('inputRows') or []
+    if not inputs:return row
+    text(sheet.cell(row,1),'Donnees de consommation selectionnees')
+    sheet.cell(row,1).font=Font(bold=True,color='1F4E78')
+    row+=1
+    labels=[point['label'] for point in profile['timeline']]
+    for col,label in enumerate(['Fonction','Unite',*labels],1):
+        text(sheet.cell(row,col),label)
+        sheet.cell(row,col).font=Font(bold=True,color='FFFFFF')
+        sheet.cell(row,col).fill=PatternFill('solid',fgColor='1F4E78')
+        if col>2:sheet.column_dimensions[get_column_letter(col)].width=18
+    row+=1
+    for source in inputs:
+        text(sheet.cell(row,1),source['name']);text(sheet.cell(row,2),source['unit'])
+        for col,label in enumerate(labels,3):sheet.cell(row,col,number(source['values'][label]))
+        row+=1
+    return row+3
+
+
+def populate_consoveille(workbook, reports, project, application_data=None):
     bib_source = next((s.title for s in workbook if s.title.casefold().startswith('biberonnage_23')), None)
-    related = {'Logistic Mode','Logistic Wo unplug','Delivery','Customer Mode',*CUSTOMER_SHEETS.values()}
+    related = {'Mounting Mode','Logistic Mode','Logistic Wo unplug','Delivery','Customer Mode',*CUSTOMER_SHEETS.values()}
     if bib_source:
         related.add(bib_source)
     # Unrelated reference pages always remain visible, including originally hidden pages.
@@ -205,10 +253,12 @@ def populate_consoveille(workbook, reports, project):
             mode = module.upper()
             for profile in profiles:
                 columns = selected_columns(profile, selection)
-                for column in columns:
-                    source = 'Logistic Mode' if column['scenario']['key'] == 'baseLab' else 'Logistic Wo unplug'
+                sources = ['Mounting Mode'] + [
+                    'Logistic Mode' if column['scenario']['key'] == 'baseLab' else 'Logistic Wo unplug'
+                    for column in columns]
+                for source in dict.fromkeys(sources):
                     sheet = workbook.copy_worksheet(workbook[source])
-                    sheet.title = unique_title(workbook, f'{source} {mode} {profile["name"]}')
+                    sheet.title = unique_title(workbook, f'{"Mountain Mode" if source == "Mounting Mode" else source} {mode} {profile["name"]}')
                     sheet.sheet_state = 'visible'
                     fill_logistic(sheet, (report.get('data') or {}).get('matrixRows') or [], profile, mode)
                     generated.append(sheet)
@@ -218,13 +268,25 @@ def populate_consoveille(workbook, reports, project):
                 fill_delivery(sheet,profile,mode,columns)
                 generated.append(sheet)
         elif module == 'customer':
-            workbook['Customer Mode'].sheet_state = 'visible'
-            generated.append(workbook['Customer Mode'])
+            configuration = ((report.get('data') or {}).get('configuration') or {})
+            configuration_name = str(configuration.get('name') or 'Profil')
+            # Keep the template matrix intact for dependent formulas and expose
+            # the actual selected ECU currents in a populated project copy.
+            matrix_sheet = workbook.copy_worksheet(workbook['Customer Mode'])
+            matrix_sheet.title = unique_title(workbook, f'Customer Mode {configuration_name}' if configuration else 'Customer Mode projet')
+            matrix_sheet.sheet_state = 'visible'
+            fill_logistic(matrix_sheet, (report.get('data') or {}).get('matrixRows') or [],
+                          {'name': configuration_name if configuration else 'Profils selectionnes'},
+                          'Customer Mode')
+            generated.append(matrix_sheet)
             for profile in profiles:
                 if profile['id'] not in CUSTOMER_SHEETS:
                     raise ValueError('Profil Customer inconnu.')
                 columns = selected_columns(profile, selection)
                 sheet = workbook[CUSTOMER_SHEETS[profile['id']]]
+                if configuration:
+                    sheet = workbook.copy_worksheet(sheet)
+                    sheet.title = unique_title(workbook, f'{CUSTOMER_SHEETS[profile["id"]]} {configuration_name}')
                 sheet.sheet_state = 'visible'
                 selected = {c['key']:c for c in columns}
                 for index,key in enumerate(SCENARIOS,5):
@@ -245,53 +307,64 @@ def populate_consoveille(workbook, reports, project):
             days = (report.get('data') or {}).get('days')
             if days not in (30,90) or days != selection.get('days'):
                 raise ValueError('Durée de biberonnage invalide.')
-            bib_reports.append((days, profiles))
-    if bib_reports:
-        sheet = workbook.create_sheet(unique_title(workbook,'Biberonnage 23°'))
+            configuration = (report.get('data') or {}).get('configuration') or {}
+            bib_reports.append((days, profiles, str(configuration.get('id') or ''), str(configuration.get('name') or '')))
+    bib_groups = {}
+    for days, profiles, configuration_id, configuration_name in sorted(bib_reports, key=lambda item:item[0]):
+        for profile in profiles:
+            # Un onglet par analyse et par profil biberonnage (30 et 90 jours regroupés).
+            bib_groups.setdefault((configuration_id, str(profile['id'])), []).append((days, {**profile, 'configurationName': configuration_name}))
+    for entries in bib_groups.values():
+        configuration_name = entries[0][1].get('configurationName') or ''
+        sheet = workbook.create_sheet(unique_title(workbook, f'Bib {configuration_name} {entries[0][1]["name"]}' if configuration_name else f'Biberonnage 23\u00b0 {entries[0][1]["name"]}'))
         generated.append(sheet)
         row = 1
-        for days,profiles in sorted(bib_reports,key=lambda item:item[0]):
-            for profile in profiles:
-                text(sheet.cell(row,1),f'Biberonnage {days} jours - {profile["name"]}')
-                sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=14)
-                sheet.cell(row,1).font = Font(bold=True,size=14,color='FFFFFF')
-                for column in range(1,15):
-                    sheet.cell(row,column).fill = PatternFill('solid',fgColor='1F4E78')
-                sheet.row_dimensions[row].height = 36
-                row += 2
-                result = profile['result']
-                for label,key in [('Capacité batterie (Ah)','capacityAh'),('SOC de départ (%)','startSoc'),('Conso de veille (Ah)','sumVeilleAh'),('Pertes EF périodiques (Ah)','totalLossL1'),('Pertes EF sur seuil SOC (Ah)','totalLossL2'),('Charge nominale restituée (Ah)','totalRechargeAh'),('Coût EF (Wh)','totalCost'),('Nombre de biberonnages','bibCount')]:
-                    text(sheet.cell(row,1),label); sheet.cell(row,2,number(result[key])); row+=1
+        aux_x=4+max(len(profile['timeline']) for _days,profile in entries)
+        aux_y=aux_x+1
+        for days, profile in entries:
+            text(sheet.cell(row,1),f'Biberonnage {days} jours - ' + (f'Profil : {profile["configurationName"]} - ' if profile.get('configurationName') else '') + profile["name"])
+            sheet.merge_cells(start_row=row,start_column=1,end_row=row,end_column=14)
+            sheet.cell(row,1).font = Font(bold=True,size=14,color='FFFFFF')
+            for column in range(1,15):
+                sheet.cell(row,column).fill = PatternFill('solid',fgColor='1F4E78')
+            sheet.row_dimensions[row].height = 36
+            row += 2
+            result = profile['result']
+            for label,key in [('Capacité batterie (Ah)','capacityAh'),('SOC de départ (%)','startSoc'),('Conso de veille (Ah)','sumVeilleAh'),('Pertes EF périodiques (Ah)','totalLossL1'),('Pertes EF sur seuil SOC (Ah)','totalLossL2'),('Charge nominale restituée (Ah)','totalRechargeAh'),('Coût EF (Wh)','totalCost'),('Nombre de biberonnages','bibCount')]:
+                text(sheet.cell(row,1),label); sheet.cell(row,2,number(result[key])); row+=1
+            row+=1
+            headers=['Temps (jours)','SOC batterie (%)','Conso intervalle (Ah)','Pertes EF (Ah)','Charge nominale (Ah)']
+            for col,label in enumerate(headers,1):
+                text(sheet.cell(row,col),label);sheet.cell(row,col).font=Font(bold=True,color='1F4E78')
+            header_row=row;row+=1
+            for index,point in enumerate(profile['timeline']):
+                values=[point['days'], result['socCurrent'][index],result['intervalAh'][index],result['losses'][index],result['recharges'][index]]
+                for col,value in enumerate(values,1):
+                    sheet.cell(row,col,number(value))
                 row+=1
-                headers=['Temps (jours)','SOC batterie (%)','Conso intervalle (Ah)','Pertes EF (Ah)','Charge nominale (Ah)']
-                for col,label in enumerate(headers,1):
-                    text(sheet.cell(row,col),label);sheet.cell(row,col).font=Font(bold=True,color='1F4E78')
-                header_row=row;row+=1
-                for index,point in enumerate(profile['timeline']):
-                    values=[point['days'], result['socCurrent'][index],result['intervalAh'][index],result['losses'][index],result['recharges'][index]]
-                    for col,value in enumerate(values,1):
-                        sheet.cell(row,col,number(value))
-                    row+=1
-                # Keep both points at recharge time, so the sawtooth matches the app.
-                points = result['socPoints']
-                for index,point in enumerate(points,header_row+1):
-                    sheet.cell(index,15,number(point['x']))
-                    sheet.cell(index,16,number(point['y']))
-                chart=ScatterChart();chart.title=f'SOC batterie - {days} jours';chart.y_axis.title='SOC (%)';chart.x_axis.title='Jours'
-                chart.scatterStyle='line'
-                chart.x_axis.scaling.min=0
-                chart.x_axis.scaling.max=days
-                chart.y_axis.scaling.min=0
-                chart.y_axis.scaling.max=100
-                chart.series.append(Series(
-                    Reference(sheet,min_col=16,min_row=header_row+1,max_row=header_row+len(points)),
-                    Reference(sheet,min_col=15,min_row=header_row+1,max_row=header_row+len(points)),title='SOC batterie (%)'))
-                chart.legend=None
-                chart.visible_cells_only=False
-                sheet.add_chart(chart,f'G{header_row}')
-                row=max(row,header_row+len(points)+1,header_row+16)+3
+            # Keep both points at recharge time, so the sawtooth matches the app.
+            points = result['socPoints']
+            for index,point in enumerate(points,header_row+1):
+                sheet.cell(index,aux_x,number(point['x']))
+                sheet.cell(index,aux_y,number(point['y']))
+            chart=ScatterChart();chart.title=f'SOC batterie - {days} jours';chart.y_axis.title='SOC (%)';chart.x_axis.title='Jours'
+            chart.scatterStyle='line'
+            chart.x_axis.scaling.min=0
+            chart.x_axis.scaling.max=days
+            chart.y_axis.scaling.min=0
+            chart.y_axis.scaling.max=100
+            chart.series.append(Series(
+                Reference(sheet,min_col=aux_y,min_row=header_row+1,max_row=header_row+len(points)),
+                Reference(sheet,min_col=aux_x,min_row=header_row+1,max_row=header_row+len(points)),title='SOC batterie (%)'))
+            chart.legend=None
+            chart.visible_cells_only=False
+            sheet.add_chart(chart,f'G{header_row}')
+            row=max(row,header_row+len(points)+1,header_row+16)+3
+            row = write_details(sheet, row, profile.get('config') or {}, 'Parametres du profil')
+            row = write_biberonnage_inputs(sheet, row, profile)
         for col,width in {'A':42,'B':24,'C':26,'D':23,'E':26}.items():sheet.column_dimensions[col].width=width
-        sheet.column_dimensions['O'].hidden=True;sheet.column_dimensions['P'].hidden=True
+        sheet.column_dimensions[get_column_letter(aux_x)].hidden=True
+        sheet.column_dimensions[get_column_letter(aux_y)].hidden=True
         sheet.freeze_panes='B4';sheet.sheet_view.showGridLines=False
         sheet.print_options.horizontalCentered=True
         sheet.page_setup.orientation='landscape'
@@ -303,8 +376,39 @@ def populate_consoveille(workbook, reports, project):
             for cell in line:
                 cell.alignment=Alignment(vertical='top',wrap_text=True)
                 if isinstance(cell.value,(int,float)):cell.number_format='0.0000'
+    if application_data:
+        write_application_inputs(workbook, application_data, project)
     if generated:
         workbook.active=workbook.index(generated[0])
     workbook.calculation.fullCalcOnLoad=True
     workbook.calculation.forceFullCalc=True
     workbook.calculation.calcMode='auto'
+
+
+def write_application_inputs(workbook, application_data, project):
+    excel = application_data.get('excelData') or {}
+    for name, source in excel.items():
+        if not isinstance(source,dict) or not isinstance(source.get('data'),list): continue
+        sheet=workbook.create_sheet(unique_title(workbook,f'Wattman {name}'))
+        rows=source['data']
+        headers=list(dict.fromkeys(key for record in rows for key in record))
+        for col,key in enumerate(headers,1):
+            text(sheet.cell(1,col),key)
+            sheet.cell(1,col).font=Font(bold=True,color='FFFFFF')
+            sheet.cell(1,col).fill=PatternFill('solid',fgColor='1F4E78')
+            sheet.cell(1,col).alignment=Alignment(wrap_text=True,vertical='top')
+        sheet.row_dimensions[1].height=42
+        for index,record in enumerate(rows,2):
+            for col,key in enumerate(headers,1):
+                value=record.get(key)
+                if isinstance(value,(int,float,bool)):sheet.cell(index,col,value)
+                else:text(sheet.cell(index,col),value)
+        sheet.freeze_panes='A2';sheet.auto_filter.ref=sheet.dimensions
+        for col in range(1,len(headers)+1):sheet.column_dimensions[get_column_letter(col)].width=28
+    sheet=workbook.create_sheet(unique_title(workbook,'Parametres application'))
+    row=write_details(sheet,1,project,'Projet')
+    write_details(sheet,row,{key:value for key,value in application_data.items() if key!='excelData'},'Parametres et modifications enregistres')
+    sheet.column_dimensions['A'].width=78;sheet.column_dimensions['B'].width=48
+    sheet.freeze_panes='B3'
+    for line in sheet:
+        for cell in line:cell.alignment=Alignment(vertical='top',wrap_text=True)

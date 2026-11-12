@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/homologation_profiles.js"></script>
+    <link rel="stylesheet" href="/static/homologation_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configuration Homologation</title>
@@ -13,7 +15,7 @@
         label { display: grid; gap: 10px; color: #f4f0e6; font-size: 1rem; font-weight: 700; }
         input { width: 100%; min-height: 48px; padding: 10px 12px; color: #17191b; background: #fffdf5; border: 1px solid #83898c; font: inherit; font-weight: 700; }
         .unit-field { display: block; position: relative; }
-        .unit-field::after { content: "A"; position: absolute; top: 50%; right: 16px; color: #6b7280; font-size: 1rem; font-weight: 800; transform: translateY(-50%); pointer-events: none; }
+        .unit-field::after { content: attr(data-unit); position: absolute; top: 50%; right: 16px; color: #6b7280; font-size: 1rem; font-weight: 800; transform: translateY(-50%); pointer-events: none; }
         .unit-field input { padding-right: 42px; }
         .actions { display: flex; justify-content: flex-end; }
         .button { min-height: 48px; padding: 0 24px; border: 1px solid #9a7009; color: #fff8df; background: #775300; font: inherit; font-weight: 800; cursor: pointer; }
@@ -22,6 +24,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
 <body class="homologation-step-page homologation-config-page">
     <main class="page">
@@ -31,7 +35,6 @@
             <div class="header-actions">
                 <div class="retractable-menu app-summary"><details id="actions-details"><summary>Sommaire</summary><div class="menu-content">
                     <span class="saved-status" id="saved-status" aria-live="polite"></span>
-                    <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
                     <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
                     <hr>
                     <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'">Sélection du mode</button>
@@ -44,7 +47,7 @@
             <section class="panel">
                 <h2>Paramètre de sortie DCDC</h2>
                 <label for="dcdc-output-current">DCDC Output Current
-                    <span class="unit-field">
+                    <span class="unit-field" data-unit="A">
                         <input id="dcdc-output-current" name="dcdcOutputCurrentA" type="number" min="0" step="0.01" required value="250">
                     </span>
                 </label>
@@ -71,7 +74,7 @@
         form.addEventListener('submit', function (event) {
             event.preventDefault();
             saveConfiguration();
-            window.location.href = '/edit_current';
+            window.location.href = window.HomologationProfiles?.mode === 'wltc' ? '/edit_alternator' : '/edit_current';
         });
     </script>
 </body>

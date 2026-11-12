@@ -9,8 +9,11 @@ contextBridge.exposeInMainWorld('desktopEnvironment', Object.freeze({
   openMeasurementExports(sessionId) {
     return ipcRenderer.invoke('open-measurement-exports', sessionId);
   },
-  generateSynthesisPdf(projectName) {
-    return ipcRenderer.invoke('generate-synthesis-pdf', projectName);
+  generateSynthesisPdf(projectName, bytes) {
+    return ipcRenderer.invoke('generate-synthesis-pdf', projectName, bytes);
+  },
+  saveSynthesisExcel(fileName, bytes) {
+    return ipcRenderer.invoke('save-synthesis-excel', fileName, bytes);
   },
   projectStore(operation, payload) {
     const result = ipcRenderer.sendSync('project-store', operation, payload);

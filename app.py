@@ -736,7 +736,7 @@ def export_dcdc_template_excel():
 
         def number(value, fallback=0):
             try:
-                return float(value)
+                return float(re.sub(r'\s+', '', str(value)).replace(',', '.'))
             except (TypeError, ValueError):
                 return fallback
 
@@ -771,6 +771,11 @@ def export_dcdc_template_excel():
             if str(device.get('name') or '').strip()
         ]
 
+        if not any(normalized(device.get('name')) in {'ADAPTATION', 'ADAPTATIONS'} for device in valid_devices):
+            valid_devices.append({'name':'ADAPTATIONS', 'current':0, 'lower':1, 'upper':0,
+                                  'dcdcProfiles':{key:[0]*len(cols) for key,cols in dcdc_profile_columns.items()},
+                                  'wltcProfiles':{key:[0]*len(cols) for key,cols in wltc_profile_columns.items()}})
+
         def synchronize_equipment_rows(
             worksheet, start_row, end_row, profile_columns, clear_columns, write_device
         ):
@@ -791,7 +796,7 @@ def export_dcdc_template_excel():
                     worksheet.cell(row_index, column).value is not None
                     for column in all_profile_columns
                 )
-                if name and has_profile:
+                if name and (has_profile or normalized(name) in {'ADAPTATION', 'ADAPTATIONS'}):
                     existing_device_rows.append(row_index)
                 elif not name and name_cell.__class__.__name__ != 'MergedCell':
                     empty_rows.append(row_index)
@@ -986,6 +991,21 @@ def export_dcdc_template_excel():
         if workbook is not None:
             workbook.close()
 
+@app.route('/generate_synthesis_pdf', methods=['POST'])
+def generate_synthesis_pdf():
+    from synthesis_pdf import build_synthesis_pdf
+    payload = request.get_json(silent=True) or {}
+    try:
+        document = build_synthesis_pdf(payload)
+        project_name = secure_filename(str((payload.get('project') or {}).get('name') or 'projet')) or 'projet'
+        return send_file(BytesIO(document), as_attachment=True,
+                         download_name=f'{project_name}-synthese.pdf', mimetype='application/pdf')
+    except (ValueError, KeyError, TypeError) as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': f'La génération du rapport PDF a échoué : {exc}'}), 500
+
+
 @app.route('/export_synthesis_excel_bundle', methods=['POST'])
 def export_synthesis_excel_bundle():
     payload = request.get_json(silent=True) or {}
@@ -1009,22 +1029,27 @@ def export_synthesis_excel_bundle():
     archive = BytesIO()
     try:
         with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
-            if any(module in modules for module in ('dcdc', 'wltc')):
-                dcdc_response = export_dcdc_template_excel()
+            sizing_reports = [report for report in reports if report['module'] in ('dcdc', 'wltc')]
+            for report_index, report in enumerate(sizing_reports, 1):
+                report_data = report.get('data') or {}
+                report_payload = {**payload, 'synthesis': report_data.get('synthesis') or payload.get('synthesis'),
+                                  'devices': report_data.get('devices') or payload.get('devices')}
+                with app.test_request_context('/export_dcdc_template_excel', method='POST', json=report_payload):
+                    dcdc_response = export_dcdc_template_excel()
                 if dcdc_response.status_code >= 400:
                     return dcdc_response
                 dcdc_response.direct_passthrough = False
                 workbook = load_workbook(BytesIO(dcdc_response.get_data()), keep_links=True)
                 try:
-                    dcdc_sheet, dcdc_graph, wltc_sheet, wltc_graph = workbook.worksheets[2:6]
-                    dcdc_selected = 'dcdc' in modules
-                    wltc_selected = 'wltc' in modules
                     for worksheet in workbook.worksheets:
                         worksheet.sheet_state = 'visible'
-                    workbook.active = workbook.index(dcdc_sheet if dcdc_selected else wltc_sheet)
+                    workbook.active = 2 if report['module'] == 'dcdc' else 4
                     output = BytesIO()
                     workbook.save(output)
-                    bundle.writestr('DCDC_Sizing_WLTC.xlsx', output.getvalue())
+                    configuration = report_data.get('configuration') or {}
+                    name = secure_filename(str(configuration.get('name') or 'principal')) or 'profil'
+                    filename = 'DCDC_Sizing_WLTC.xlsx' if len(sizing_reports) == 1 and not configuration else f"{report['module'].upper()}_{report_index}_{name}.xlsx"
+                    bundle.writestr(filename, output.getvalue())
                 finally:
                     workbook.close()
 
@@ -1037,7 +1062,7 @@ def export_synthesis_excel_bundle():
                 workbook = load_workbook(template_path, data_only=False, keep_links=True)
                 try:
                     from synthesis_excel import populate_consoveille
-                    populate_consoveille(workbook, reports, payload.get('project') or {})
+                    populate_consoveille(workbook, reports, payload.get('project') or {}, payload.get('applicationData') or {})
                     output = BytesIO()
                     workbook.save(output)
                     bundle.writestr('Consoveille_Synthese.xlsx', output.getvalue())
@@ -1073,6 +1098,14 @@ def battery_menu():
 def edit_customer_mode():
     """Page de configuration des profils exclusivement pour le Customer Mode"""
     return render_template('edit_customer_mode.html')
+
+@app.route('/configure_dm_currents')
+def configure_dm_currents():
+    return render_template('autonomy_current_setup.html', current_group='dm')
+
+@app.route('/configure_customer_currents')
+def configure_customer_currents():
+    return render_template('autonomy_current_setup.html', current_group='customer')
 
 @app.route('/edit_dm_mode')
 def edit_dm_mode():

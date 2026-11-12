@@ -1,6 +1,7 @@
 """The Pi service must finish a test without an open PC page or polling."""
 import json
 import base64
+from http.cookiejar import CookieJar
 import os
 from pathlib import Path
 import queue
@@ -11,7 +12,7 @@ import threading
 import time
 import unittest
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, HTTPCookieProcessor
 from urllib.error import HTTPError
 
 
@@ -35,12 +36,22 @@ class RecorderServiceTest(unittest.TestCase):
                     self.assertIn('Wattman recorder port', line)
                     base = f"http://127.0.0.1:{int(line.split()[-1])}/analyse_logs"
                     self.assertEqual(json.loads(sessions.read_text())[0]['status'], 'incomplete')
+                    # Acquisition now requires the same authenticated session as Electron.
+                    cookies = CookieJar()
+                    opener = build_opener(HTTPCookieProcessor(cookies))
+                    setup = Request(base.removesuffix('/analyse_logs') + '/api/auth/setup',
+                                    data=json.dumps({'email': 'lilicontact07@gmail.com', 'firstName': 'Test',
+                                                     'lastName': 'Admin', 'password': 'test-recorder-password'}).encode(),
+                                    headers={'Content-Type': 'application/json'})
+                    with opener.open(setup, timeout=10) as response:
+                        self.assertEqual(response.status, 200)
+                    authentication = {'Cookie': '; '.join(f'{c.name}={c.value}' for c in cookies)}
                     form = urlencode({'acquisition_mode': 'digital', 'freq': 1,
                                       'dureeValeur': 3, 'dureeUnite': 's'}).encode()
                     # Start through the same bridge as Electron, then close it.
                     commands = [dict(id=1, path='/analyse_logs/api/control_esp_acquisition',
                                      method='POST', body=base64.b64encode(form).decode(),
-                                     headers={'Content-Type': 'application/x-www-form-urlencoded'}),
+                                     headers={**authentication, 'Content-Type': 'application/x-www-form-urlencoded'}),
                                 dict(id=2, operation='shutdown')]
                     bridge = subprocess.run([sys.executable, 'desktop/bridge.py', '--source-root', str(root)],
                         cwd=root, env={**env, 'WATTMAN_RECORDER_URL': base.removesuffix('/analyse_logs')},
@@ -50,7 +61,7 @@ class RecorderServiceTest(unittest.TestCase):
                     self.assertEqual([r['status'] for r in replies], [200, 200])
                     session_id = json.loads(base64.b64decode(replies[0]['body']))['session']['id']
                     with self.assertRaises(HTTPError) as busy:
-                        urlopen(Request(base + '/api/control_esp_acquisition', data=form), timeout=10)
+                        urlopen(Request(base + '/api/control_esp_acquisition', data=form, headers=authentication), timeout=10)
                     self.assertEqual(busy.exception.code, 409)
                     busy.exception.close()
                     # No status requests: only the permanent service watches completion.

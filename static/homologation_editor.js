@@ -78,7 +78,16 @@
         select.className = 'bound-select';
         select.innerHTML = '<option value="0">0</option><option value="1">1</option>';
         select.value = String(value);
-        select.addEventListener('change', () => onChange(select.value));
+        // Code couleur Excel (Bilan DCDC) : 0 -> vert 00B050, 1 -> orange FFC000.
+        const paint = () => {
+            const cell = select.closest('td');
+            if (!cell || !window.ExcelColors) return;
+            cell.classList.remove('xl-dcdc-over', 'xl-dcdc-under');
+            const cls = window.ExcelColors.activationClass(select.value);
+            if (cls) cell.classList.add(cls);
+        };
+        select.addEventListener('change', () => { onChange(select.value); paint(); });
+        queueMicrotask(paint);
         return select;
     }
 
@@ -105,7 +114,7 @@
                     rowIndex,
                     occurrence,
                     custom: false,
-                    originalCurrent: row['Current (A)'] ?? row['Homologation Current (A)'] ?? '',
+                    originalCurrent: window.WattmanCurrent ? WattmanCurrent.read(row,row['Current (A)']!=null?'Current (A)':'Homologation Current (A)','H').amperes : row['Current (A)'] ?? row['Homologation Current (A)'] ?? '',
                     lower: row['Lower'] ?? 1,
                     upper: row['Upper'] ?? 0
                 });
@@ -176,8 +185,8 @@
         currentInput.type = 'number';
         currentInput.step = '0.01';
         currentInput.className = 'homologation-input';
-        currentInput.value = currents[device.key] ?? device.originalCurrent;
-        currentInput.addEventListener('change', () => {
+        currentInput.value = window.CurrentUnits?.normalize(currents[device.key] ?? device.originalCurrent) ?? (currents[device.key] ?? device.originalCurrent);
+        currentInput.addEventListener('input', () => {
             const value = currentInput.value.trim();
             if (device.custom) {
                 const target = customDevices.find((item) => `custom_${item.id}` === device.key);
@@ -236,10 +245,13 @@
         deleteButton.className = 'delete-device';
         deleteButton.textContent = '×';
         deleteButton.title = `Supprimer ${device.name}`;
-        deleteButton.addEventListener('click', () => {
-            pendingDeletion = device;
-            document.getElementById('delete-device-name').textContent = device.name;
-            dialog.showModal();
+        deleteButton.addEventListener('click', async () => {
+            save();
+            const available=['dcdc','wltc'].filter(group=>HomologationTargets.hasDevice(group,device));
+            const targets=await HomologationTargets.choose(`Supprimer ${device.name}`,available);
+            if(!targets.length)return;
+            HomologationTargets.mutateDevice(targets,device,false);
+            location.reload();
         });
         deleteCell.appendChild(deleteButton);
         tr.appendChild(deleteCell);
@@ -283,21 +295,18 @@
         dialog.close();
     });
 
-    document.getElementById('add-device-form').addEventListener('submit', (event) => {
+    document.getElementById('add-device-form').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
-        customDevices.push({
-            id: globalThis.crypto?.randomUUID?.() || `device-${Date.now()}`,
-            name: String(form.get('name') || '').trim(),
-            current: Number(form.get('current') || 0),
-            lower: String(form.get('lower') || '1'),
-            upper: String(form.get('upper') || '0')
-        });
-        event.currentTarget.reset();
-        event.currentTarget.querySelector('[name="lower"]').value = '1';
-        event.currentTarget.querySelector('[name="upper"]').value = '0';
+        const id=globalThis.crypto?.randomUUID?.() || `device-${Date.now()}`;
+        const device={id,key:`custom_${id}`,rowIndex:`custom_${id}`,custom:true,
+            name:String(form.get('name')||'').trim(),current:Number(form.get('current')||0),
+            lower:String(form.get('lower')??'1'),upper:String(form.get('upper')??'0')};
         save();
-        render();
+        const targets=await HomologationTargets.choose(`Ajouter ${device.name}`);
+        if(!targets.length)return;
+        HomologationTargets.mutateDevice(targets,device,true);
+        location.reload();
     });
 
     window.navigateTo = function (path) {

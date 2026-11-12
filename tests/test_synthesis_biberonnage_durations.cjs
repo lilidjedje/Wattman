@@ -23,6 +23,7 @@ assert.match(html, /type="checkbox" name="bib-days" value="30"/);
 assert.match(html, /type="checkbox" name="bib-days" value="90"/);
 assert.match(html, /data-profiles="biberonnage-30"/);
 assert.match(html, /data-profiles="biberonnage-90"/);
-assert.match(html, /selectedBibReports\.forEach\(\(\{ days, profiles \}\)/);
+assert.match(html, /selectedBibReports\.forEach\(\(\{ days, profiles, configuration, configurationName \}\)/);
+assert.match(html, /data-profiles=\"biberonnage-config\"/);
 
 console.log('Biberonnage summaries independently include 30-day and/or 90-day reports with their own profiles.');

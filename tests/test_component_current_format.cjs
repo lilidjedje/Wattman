@@ -1,10 +1,13 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const vm = require('node:vm');
+const unitsContext=vm.createContext({window:{}});
+vm.runInContext(fs.readFileSync('static/current_units.js','utf8'),unitsContext);
 
 const html = fs.readFileSync('templates/select_components.html', 'utf8');
 const match = html.match(/function formatCurrent\(value, sourceUnit\) \{([\s\S]*?)\n        \}/);
 assert.ok(match, 'component current formatter exists');
-const formatCurrent = new Function('value', 'sourceUnit', match[1]);
+const formatCurrent = new Function('window', 'value', 'sourceUnit', match[1]).bind(null,unitsContext.window);
 const darkMatch = html.match(/function formatDarkCurrent\(milliampValue, ampValue\) \{([\s\S]*?)\n        \}/);
 assert.ok(darkMatch, 'Dark Current formatter exists');
 const formatDarkCurrent = new Function('formatCurrent', 'milliampValue', 'ampValue', darkMatch[1]);
@@ -17,11 +20,11 @@ const restoreDefaultSelections = new Function('checkboxes', restoreMatch[1]);
 
 assert.equal(formatCurrent(1.23456, 'A'), '1,23 A');
 assert.equal(formatCurrent(0.54, 'A'), '540 mA');
-assert.equal(formatCurrent(0.000456, 'A'), '456 µA');
+assert.equal(formatCurrent(0.000456, 'A'), '456,00 µA');
 assert.equal(formatCurrent(245.678, 'mA'), '245,68 mA');
-assert.equal(formatCurrent(0.35, 'mA'), '350 µA');
+assert.equal(formatCurrent(0.35, 'mA'), '350,00 µA');
 assert.equal(formatCurrent(1200, 'mA'), '1,2 A');
-assert.equal(formatCurrent(0, 'mA'), '0 mA');
+assert.equal(formatCurrent(0, 'mA'), '0,00 µA');
 assert.equal(formatCurrent('-', 'A'), '-');
 assert.equal(formatDarkCurrent(formatCurrent, '245.678', '53'), '245,68 mA');
 assert.equal(formatDarkCurrent(formatCurrent, '', '53'), '53 A');

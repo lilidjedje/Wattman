@@ -3,7 +3,7 @@
     const number = (value, digits = 3) => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('fr-FR', {maximumFractionDigits: digits});
     const html = value => {const node = document.createElement('span'); node.textContent = value ?? ''; return node.innerHTML;};
     const instant = value => value == null ? '—' : new Date(value * 1000).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
-    const current = value => value == null ? '—' : `${number(Math.abs(value) * 1000, 6)} mA`;
+    const current = value => value == null ? '\u2014' : CurrentUnits.format(value,'A');
     const days = value => value == null ? 'Non calculable' : `${number(value, 2)} jours`;
     function difference(item) {
         if (item.difference_days == null) {
@@ -71,12 +71,12 @@
                 animation: false,
                 scales: {
                     x: {title: {display: true, text: 'Jour et plage de profil'}},
-                    y: {beginAtZero: true, title: {display: true, text: `Courant (${unit})`},
-                        ticks: {callback: value => `${number(value, 3)} ${unit}`}}
+                    y: {beginAtZero: true, title: {display: true, text: 'Courant'},
+                        ticks: {callback: value => CurrentUnits.format(value,unit)}}
                 },
                 plugins: {
                     legend: {position: 'bottom'},
-                    tooltip: {callbacks: {label: context => `${context.dataset.label} : ${number(context.parsed.y, 6)} ${unit}`}}
+                    tooltip: {callbacks: {label: context => `${context.dataset.label} : ${CurrentUnits.format(context.parsed.y,unit)}`}}
                 }
             }
         });

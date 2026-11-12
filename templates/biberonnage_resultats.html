@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biberonnage - Analyses et résultats</title>
+    <script src="/static/biberonnage_profiles.js"></script>
+    <link rel="stylesheet" href="/static/autonomy_profiles.css">
     <script src="/static/vendor/chart.umd.js"></script>
     <style>
         :root {
@@ -26,6 +28,13 @@
 
         .creator { display: none; margin-bottom: 22px; padding: 18px; background: white; border: 2px solid #087f5b; border-radius: 10px; box-shadow: 0 5px 18px rgba(15,23,42,.12); }
         .creator.open { display: block; }
+        .view-toolbar { display: flex; flex-wrap: wrap; gap: 18px 32px; align-items: flex-start; }
+        .view-group { display: grid; gap: 8px; }
+        .view-title { font-weight: 800; color: var(--navy); }
+        #view-days, #view-analyses { display: flex; flex-wrap: wrap; gap: 8px; }
+        .view-day { padding: 8px 14px; border: 1px solid #94a3b8; border-radius: 7px; color: var(--navy); background: white; font-weight: 750; text-decoration: none; }
+        .view-day[aria-current="page"] { color: white; background: #2563eb; border-color: #2563eb; }
+        .view-check { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: white; font-weight: 650; }
         .creator h2 { margin: 0 0 14px; font-size: 1.25rem; }
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
         .form-field { display: flex; flex-direction: column; gap: 5px; font-size: .85rem; font-weight: 700; }
@@ -71,6 +80,7 @@
         .label-col { min-width: 250px; text-align: left !important; padding-left: 10px !important; font-weight: 650; }
         .day-header { min-width: 54px; background: #f1f5f9; color: #334155; }
         .pink-cell { background: var(--pink); font-weight: 800; }
+        .pink-cell.loss-cell { background: #FF99CC; } /* Excel : pertes = FF99CC, charge nominale = FF99FF */
         .soc-reset { background: var(--peach); color: var(--red); font-weight: 800; }
         .total-cell { min-width: 80px; color: var(--red); font-weight: 850; }
 
@@ -98,6 +108,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
+    <script src="/static/excel_colors.js"></script>
+    <link rel="stylesheet" href="/static/excel-colors.css">
 </head>
 <body class="preserve-table-colors">
     <header class="page-header">
@@ -109,10 +123,10 @@
                 <summary>Sommaire</summary>
                 <div class="menu-content">
                     <span class="save-status" id="project-save-status" aria-live="polite"></span>
-                    <button class="menu-save" id="project-save" type="button"> Enregistrer</button>
                     <button class="menu-reset" id="reset-results" type="button"> Valeurs initiales</button>
                     <hr style="border:0;border-top:1px solid #e2e8f0;margin:4px 0;">
                     <button class="menu-autonomy" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
+                    <button class="menu-autonomy" type="button" onclick="window.location.href='/biberonnage'"> Profils biberonnage</button>
                     <button class="menu-mode" type="button" onclick="window.location.href='/mode_selection'"> Sélection du mode</button>
                     <button class="menu-home" type="button" onclick="window.location.href='/'"> Accueil</button>
                 </div>
@@ -120,11 +134,14 @@
         </div>
     </header>
 
-    <div class="toolbar">
-        <button class="btn-add" id="show-creator" type="button">＋ Ajouter une analyse de biberonnage</button>
+    <div class="toolbar view-toolbar" id="view-toolbar">
+        <div class="view-group"><span class="view-title">Biberonnage affiché</span><div id="view-days"></div></div>
+        <div class="view-group"><span class="view-title">Analyses affichées</span><div id="view-analyses"></div></div>
+        <button class="btn-create" id="export-bib-selection" type="button">Télécharger la synthèse (PDF / Excel)</button>
+        <button class="btn-add" id="show-creator" type="button" hidden>＋ Ajouter une analyse de biberonnage</button>
     </div>
 
-    <section class="creator" id="analysis-creator">
+    <section class="creator" id="analysis-creator" hidden>
         <h2>Nouvelle analyse de biberonnage</h2>
         <div class="form-grid">
             <label class="form-field">Nom de l’analyse<input id="new-name" type="text" placeholder="Ex. TT Opt sans connectivité"></label>
@@ -149,7 +166,7 @@
     </section>
 
     <main id="analysis-list"></main>
-    <div class="bottom-nav"><button class="previous-step" id="previous-step" type="button">← Étape précédente</button></div>
+    <div class="bottom-nav"><button class="btn-back previous-step" id="previous-step" type="button">← Étape précédente</button></div>
 
     <script src="/static/project_storage.js"></script>
     <script src="/static/sleep_current.js"></script>
@@ -234,10 +251,13 @@
         const summaryParams = new URLSearchParams(window.location?.search || '');
         const summaryProfiles = new Set((summaryParams.get('profiles') || '').split(',').filter(Boolean));
         if (summaryParams.get('summary') === '1') {
-            window.selectedBibProfiles = [...summaryProfiles];
-            for (let index = analyses.length - 1; index >= 0; index -= 1) {
-                if (!summaryProfiles.has(String(analyses[index].id))) analyses.splice(index, 1);
+            // Sans liste d'analyses, le rapport d'un profil affiche toutes ses analyses.
+            if (summaryProfiles.size) {
+                for (let index = analyses.length - 1; index >= 0; index -= 1) {
+                    if (!summaryProfiles.has(String(analyses[index].id))) analyses.splice(index, 1);
+                }
             }
+            window.selectedBibProfiles = analyses.map(analysis => String(analysis.id));
         } else {
             window.selectedBibProfiles = [];
         }
@@ -276,8 +296,8 @@
                             <tr><td class="threshold-label">%SOC de demande d’EF</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="efDemandSoc" value="${config.efDemandSoc}"></td></tr>
                             <tr><td class="threshold-label">%SOC cible après EF</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" max="100" step="0.1" data-field="targetSoc" value="${config.targetSoc}"></td></tr>
                             <tr><td class="threshold-label">Période EF (jours, 0 = désactivée)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="1" data-field="frequencyDays" value="${config.frequencyDays}"></td></tr>
-                            <tr><td class="threshold-label">Acceptance charge périodique (A)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="0.1" data-field="acceptanceL1" value="${config.acceptanceL1}"></td></tr>
-                            <tr><td class="threshold-label">Acceptance charge sur seuil (A)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="0.1" data-field="acceptanceL2" value="${config.acceptanceL2}"></td></tr>
+                            <tr><td class="threshold-label">Acceptance charge périodique (A)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="0.1" data-current-base-unit="A" data-field="acceptanceL1" value="${config.acceptanceL1}"></td></tr>
+                            <tr><td class="threshold-label">Acceptance charge sur seuil (A)</td><td class="threshold-yellow"><input class="small-input" type="number" min="0" step="0.1" data-current-base-unit="A" data-field="acceptanceL2" value="${config.acceptanceL2}"></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -309,10 +329,10 @@
         function tableBodyHtml(analysis, result) {
             let html = '<tr><td colspan="3" class="label-col">Temps / jours</td>' + timeColumns.map(col => `<th class="day-header">${col.label}</th>`).join('') + '<th>Total</th></tr>';
             html += `<tr><td rowspan="6" class="cell-duration">${DURATION_DAYS} j</td><td rowspan="6" class="cell-ef">EF sur ${DURATION_DAYS} jrs</td><td class="label-col">Ah dépensés par jour</td>${result.ahSpent.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : '0,00'}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
-            html += `<tr><td class="label-col">Pertes système pendant EF (Ah)</td>${result.losses.map(value => `<td class="${value ? 'pink-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalLossL1 + result.totalLossL2)}</td></tr>`;
+            html += `<tr><td class="label-col">Pertes système pendant EF (Ah)</td>${result.losses.map(value => `<td class="${value ? 'pink-cell loss-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalLossL1 + result.totalLossL2)}</td></tr>`;
             html += `<tr><td class="label-col">Charge nominale EF (Ah)</td>${result.recharges.map(value => `<td class="${value ? 'pink-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalRechargeAh)}</td></tr>`;
             html += `<tr><td class="label-col">%SOC batterie perdus avant EF</td>${result.socLost.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : ''}</td>`).join('')}<td class="total-cell"></td></tr>`;
-            html += `<tr><td class="label-col">%SOC batterie</td>${result.socCurrent.map((value, index) => { if (value === null) return '<td></td>'; const reset = index > 7 && Math.abs(value - result.targetSoc) < 1e-9; return `<td class="${reset ? 'soc-reset' : ''}">${fmt(value)}</td>`; }).join('')}<td class="total-cell"></td></tr>`;
+            html += `<tr><td class="label-col">%SOC batterie</td>${result.socCurrent.map((value, index) => { if (value === null) return '<td></td>'; const reset = index > 7 && Math.abs(value - result.targetSoc) < 1e-9; const excelClass = window.ExcelColors ? ExcelColors.socClass(value) : ''; return `<td class="${excelClass || (reset ? 'soc-reset' : '')}">${fmt(value)}</td>`; }).join('')}<td class="total-cell"></td></tr>`;
             html += `<tr><td class="label-col">Énergie cumulée depuis le départ (Ah)</td>${result.cumulativeAh.map(value => `<td>${fmt(value, 4)}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
             return html;
         }
@@ -367,8 +387,16 @@
 
         window.getSynthesisExcelData = () => ({
             days: DURATION_DAYS,
+            configuration: window.BiberonnageProfiles ? { id: BiberonnageProfiles.selected.id, name: BiberonnageProfiles.selected.name } : null,
             profiles: analyses.map(analysis => ({
-                id: analysis.id, name: analysis.name, config: analysis.config,
+                id: analysis.id,
+                name: analysis.name,
+                config: analysis.config,
+                inputRows: analysis.selectedRows.map(rowIndex => ({
+                    name: rowsByIndex.get(rowIndex)?.label || String(rowIndex),
+                    unit: rowsByIndex.get(rowIndex)?.unit || '',
+                    values: Object.fromEntries(timeColumns.map(column=>[column.label,currentFor(rowIndex,column)]))
+                })),
                 result: calculateAnalysis(analysis),
                 timeline: timeColumns.map(column => ({label: column.label, days: column.daysElapsed}))
             }))
@@ -382,11 +410,43 @@
             sessionStorage.setItem(CALCULATED_KEY, JSON.stringify(calculated));
         }
 
+        document.getElementById('export-bib-selection').addEventListener('click', () => {
+            const query = new URLSearchParams({ preset: 'biberonnage', days: String(DURATION_DAYS) });
+            if (window.BiberonnageProfiles) query.set('configuration', BiberonnageProfiles.selected.id);
+            window.location.href = `/export_synthesis_pdf?${query}`;
+        });
+
+        // Choix de l'affichage : durée (selon le profil) et analyses visibles.
+        const isSummary = summaryParams.get('summary') === '1';
+        const HIDDEN_KEY = `biberonnageHiddenAnalyses${DURATION_DAYS}`;
+        const hiddenAnalyses = new Set(isSummary ? [] : JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]'));
+        const visibleAnalyses = () => analyses.filter(analysis => !hiddenAnalyses.has(String(analysis.id)));
+
+        function renderViewToolbar() {
+            const toolbar = document.getElementById('view-toolbar');
+            if (isSummary) { toolbar.hidden = true; return; }
+            const profileDays = window.BiberonnageProfiles?.days || [30, 90];
+            document.getElementById('view-days').innerHTML = profileDays.map(days =>
+                `<a class="view-day" href="/biberonnage/resultats?days=${days}" ${days === DURATION_DAYS ? 'aria-current="page"' : ''}>${days} jours</a>`).join('');
+            document.getElementById('view-analyses').innerHTML = analyses.map(analysis =>
+                `<label class="view-check"><input type="checkbox" data-view-analysis="${esc(analysis.id)}" ${hiddenAnalyses.has(String(analysis.id)) ? '' : 'checked'}> ${esc(analysis.name)}</label>`).join('');
+        }
+
+        document.getElementById('view-analyses').addEventListener('change', event => {
+            const id = event.target.dataset.viewAnalysis;
+            if (!id) return;
+            if (event.target.checked) hiddenAnalyses.delete(id); else hiddenAnalyses.add(id);
+            try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hiddenAnalyses])); } catch {}
+            renderAll();
+        });
+
         function renderAll() {
             chartInstances.forEach(chart => chart.destroy());
             chartInstances.clear();
-            listEl.innerHTML = analyses.map(analysisMarkup).join('');
-            analyses.forEach(renderAnalysis);
+            const visible = visibleAnalyses();
+            listEl.innerHTML = visible.map(analysisMarkup).join('');
+            visible.forEach(renderAnalysis);
+            renderViewToolbar();
         }
 
         listEl.addEventListener('input', event => {
@@ -470,6 +530,10 @@
         });
 
         renderAll();
+        // Ouverture directe d'un profil depuis la page de gestion des profils (#analysis-<id>).
+        if (location.hash.startsWith('#analysis-')) {
+            requestAnimationFrame(() => document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: 'start' }));
+        }
         persist();
     </script>
 </body>

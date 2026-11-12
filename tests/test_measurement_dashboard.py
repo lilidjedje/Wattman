@@ -1634,8 +1634,35 @@ assert 'Frozen complete database' in page.get_data(as_text=True)
         intervals = self.module.analysis_interval_definitions("wltc")
         self.assertEqual(
             [(item["start_s"], item["end_s"]) for item in intervals],
-            [(0, 100), (100.8, 240), (240, 420), (420, 489.6), (735, 1500), (1500, 1800)],
+            [(0, 100.2), (100.2, 240), (240, 300), (300, 420), (420, 489.6),
+             (489.6, 735), (735, 900), (900, 1500), (1500, 1800)],
         )
+        self.assertAlmostEqual(sum(i['end_s'] - i['start_s'] for i in intervals), 1800)
+        for left, right in zip(intervals, intervals[1:]):
+            self.assertEqual(left['end_s'], right['start_s'])
+
+    def test_explicit_zero_profile_current_is_preserved(self):
+        device = {'nominal_A': 42, 'scenarios': {'Winter': [
+            {'start_s': 0, 'end_s': 300, 'expected_A': 0},
+            {'start_s': 300, 'end_s': 600, 'expected_A': 12}]}}
+        zero, active = self.module.analysis_interval_definitions('dcdc')[:2]
+        self.assertEqual(self.module.expected_current_for_interval(device, 'dcdc', 0, zero), 0)
+        self.assertEqual(self.module.expected_current_for_interval(device, 'dcdc', 0, active), 12)
+        self.assertEqual(self.module.interval_expected_current({}, device), 42)
+        self.assertEqual(self.module.interval_expected_current({'expected_A': None}, device), 42)
+        self.assertEqual(self.module.interval_expected_current({'expected_A': '0'}, device), 0)
+
+    def test_repeated_profile_limits_equal_independent_maximum(self):
+        import random
+        rng = random.Random(int(os.environ.get('CALC_SEED', 20261112)))
+        for iteration in range(int(os.environ.get('CALC_ITERATIONS', 250))):
+            currents = [0 if rng.random() < .5 else rng.uniform(0, 250) for _ in range(3)]
+            device = {'nominal_A': 800, 'scenarios': {f'WLTC {index}': [
+                {'start_s': 0, 'end_s': 300, 'expected_A': current}]
+                for index, current in enumerate(currents)}}
+            with self.subTest(iteration=iteration):
+                self.assertEqual(self.module.expected_current_for_interval(device, 'wltc', 20,
+                                 {'start_s': 0, 'end_s': 300}), max(currents))
 
 
 if __name__ == "__main__":

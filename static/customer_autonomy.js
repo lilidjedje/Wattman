@@ -1,5 +1,5 @@
 (() => {
-    const number = value => Number(String(value).replace(',', '.'));
+    const number = value => Number(String(value).replace(/\s/g, '').replace(',', '.'));
     const fixedRows = {
         cellBalancing: [20, 21, 24], pcuRam: [26, 27, 28], pcuSecure: [30, 31, 32],
         cdcRam: [34, 35, 36], cdcGarage: [38, 39, 40], cdcSecure: [42, 43, 44],
@@ -84,6 +84,7 @@
                     if (id === 'cellBalancing') {
                         set(col, 19, entry.extra?.periodMin);
                         set(col, 23, entry.extra?.balancingDays);
+                        if (cells[col + 19] <= 0) set(col, 22, 0);
                     }
                     if (id === 'smartAntenna') {
                         set(col, 50, entry.extra?.drxCurrent); set(col, 52, entry.extra?.drxDays); set(col, 54, entry.extra?.remoteEnergy);

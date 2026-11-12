@@ -33,6 +33,8 @@
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
 <body>
     <header><button type="button" class="back" onclick="window.location.href='/'">Retour</button><h1>Nouveau projet</h1></header>
@@ -192,5 +194,6 @@
             }
         });
     </script>
+    <script src="/static/app_summary.js" data-items="home"></script>
 </body>
 </html>

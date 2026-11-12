@@ -1,0 +1,28 @@
+/* Codes couleurs repris à l'identique des classeurs Excel (voir static/excel_colors.js).
+   Les !important garantissent que ces couleurs priment sur les thèmes de l'application. */
+
+table td.xl-input { background-color: #CCFFFF !important; }
+table td.xl-bold { font-weight: bold !important; }
+table td.xl-red { color: #FF0000 !important; }
+table td.xl-limit { background-color: #FFFF00 !important; }
+table td.xl-blm-duration { background-color: #9DC3E6 !important; }
+
+table td.xl-energy { color: #0000FF !important; font-weight: bold !important; }
+table td.xl-energy:not(.xl-input):not(.xl-limit) { background-color: #FFFFFF !important; }
+table td.xl-energy-gross { background-color: #FFFF99 !important; color: #0000FF !important; font-weight: bold !important; }
+table td.xl-energy-available { background-color: #CCFFCC !important; color: #0000FF !important; font-weight: bold !important; }
+table td.xl-sleep-total { background-color: #FFF2CC !important; color: #0000FF !important; font-weight: bold !important; }
+
+/* Autonomie (jours) : fond noir, police blanche ; police rouge si < 30 jours */
+.xl-autonomy { background-color: #000000 !important; color: #FFFFFF !important; font-weight: bold !important; }
+.xl-autonomy.xl-autonomy-low { color: #FF0000 !important; }
+.xl-autonomy-text { color: #000000; }
+.xl-autonomy-text.xl-autonomy-low { color: #FF0000 !important; }
+
+/* Biberonnage */
+.xl-soc-full { background-color: #66FF33 !important; }
+.xl-soc-90 { background-color: #FFC7CE !important; color: #9C0006 !important; }
+
+/* Bilan DCDC : comparaison à la sortie DCDC, activation 0/1 */
+.xl-dcdc-over { background-color: #FFC000 !important; }
+.xl-dcdc-under { background-color: #00B050 !important; }

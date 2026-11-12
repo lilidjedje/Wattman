@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/homologation_profiles.js"></script>
+    <script src="/static/homologation_targets.js"></script>
+    <link rel="stylesheet" href="/static/homologation_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Saisie et Configuration des PAO</title>
@@ -69,6 +72,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
 <body class="homologation-step-page pao-profile-page preserve-table-colors">
     <div class="header">
@@ -77,7 +82,6 @@
         <div class="header-actions">
             <div class="retractable-menu app-summary"><details id="actions-details"><summary>Sommaire</summary><div class="menu-content">
                 <span class="saved-status" id="saved-status" aria-live="polite"></span>
-                <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
                 <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
                 <hr>
                 <button class="btn-menu btn-mode" type="button" onclick="navigateTo('/mode_selection')">Sélection du mode</button>
@@ -129,141 +133,6 @@
     <script src="/static/project_storage.js"></script>
     <script src="/static/homologation_ui.js"></script>
     <script src="/static/homologation_defaults.js"></script>
-    <script>
-        const devIntervals = ['0 - 5 min', '5 - 10 min', '10 - 15 min', '15 - 25 min', '25 - 30 min'];
-        const altIntervals = ['0 - 1,67 min', '1,68 - 4 min', '4 - 7 min', '7 - 8,16 min', '12,25 - 25 min', '25 - 30 min'];
-        const profiles = ['winter', 'midseason', 'summer'];
-        const wltcProfiles = ['cycle1', 'cycle2', 'cycle3'];
-        
-        const subHeadersTr = document.getElementById('sub-headers');
-        profiles.forEach(() => devIntervals.forEach(int => { const th = document.createElement('th'); th.textContent = int; subHeadersTr.appendChild(th); }));
-        document.querySelectorAll('.main-header')[3].colSpan = 7;
-        wltcProfiles.forEach(profile => HomologationDefaults.intervalsFor('wltc', profile).forEach(int => { const th = document.createElement('th'); th.textContent = int; subHeadersTr.appendChild(th); }));
-
-        let paoData = JSON.parse(sessionStorage.getItem('paoData') || '[]');
-        HomologationDefaults.migrateAuxiliary(paoData);
-        const paoCountInput = document.getElementById('pao-count');
-        document.getElementById('button-group').classList.add('show');
-
-        function clearPAOData() {
-            paoData = [];
-            sessionStorage.removeItem('paoData');
-            document.getElementById('table-body').innerHTML = '';
-            document.getElementById('table-wrapper').classList.remove('show');
-            document.getElementById('button-group').classList.add('show');
-        }
-
-        paoCountInput.addEventListener('input', () => {
-            if (paoCountInput.value.trim() === '') {
-                clearPAOData();
-            }
-        });
-
-        if (paoData.length > 0) {
-            paoCountInput.value = paoData.length;
-            generatePAOTable(true);
-        }
-
-        function generatePAOTable(isReload = false) {
-            const count = parseInt(paoCountInput.value, 10) || 0;
-            const tbody = document.getElementById('table-body');
-            tbody.innerHTML = '';
-
-            if (count <= 0) {
-                clearPAOData();
-                return;
-            }
-
-            if (!isReload) {
-                let newPaoData = [];
-                for(let i=0; i<count; i++) {
-                    let existing = paoData[i] || {};
-                    newPaoData.push({
-                        name: existing.name || `PAO ${i+1}`,
-                        current: existing.current || '',
-                        lower: existing.lower || '1',
-                        upper: existing.upper || '0',
-                        devProfiles: existing.devProfiles || {},
-                        altProfiles: existing.altProfiles || {},
-                        wltcProfileVersion: 2
-                    });
-                }
-                paoData = newPaoData;
-                save();
-            }
-
-            paoData.forEach((pao, index) => {
-                const tr = document.createElement('tr');
-
-                // Name
-                const tdName = document.createElement('td');
-                const nameInput = document.createElement('input'); nameInput.type = 'text'; nameInput.className = 'pao-name-input'; nameInput.value = pao.name;
-                nameInput.addEventListener('change', (e) => { paoData[index].name = e.target.value; save(); });
-                tdName.appendChild(nameInput); tr.appendChild(tdName);
-
-                // Current
-                const tdCurr = document.createElement('td');
-                const currInput = document.createElement('input'); currInput.type = 'number'; currInput.step = '0.01'; currInput.value = pao.current;
-                currInput.addEventListener('change', (e) => { paoData[index].current = e.target.value; save(); });
-                tdCurr.appendChild(currInput); tr.appendChild(tdCurr);
-
-                // Lower
-                const tdLower = document.createElement('td');
-                const lSel = document.createElement('select'); lSel.className = 'bound-select'; lSel.innerHTML = '<option value="0">0</option><option value="1">1</option>';
-                lSel.value = pao.lower !== undefined ? pao.lower : '1';
-                lSel.addEventListener('change', (e) => { paoData[index].lower = e.target.value; save(); });
-                tdLower.appendChild(lSel); tr.appendChild(tdLower);
-
-                // Upper
-                const tdUpper = document.createElement('td');
-                const uSel = document.createElement('select'); uSel.className = 'bound-select'; uSel.innerHTML = '<option value="0">0</option><option value="1">1</option>';
-                uSel.value = pao.upper !== undefined ? pao.upper : '0';
-                uSel.addEventListener('change', (e) => { paoData[index].upper = e.target.value; save(); });
-                tdUpper.appendChild(uSel); tr.appendChild(tdUpper);
-
-                // Device List Profiles
-                profiles.forEach(p => {
-                    devIntervals.forEach(int => {
-                        const td = document.createElement('td'); const input = document.createElement('input'); input.type = 'text';
-                        const key = `${p}_${int}`; input.value = pao.devProfiles[key] || '100%';
-                        input.addEventListener('change', (e) => {
-                            let val = e.target.value.trim(); if (val && !val.includes('%') && !isNaN(val)) val += '%';
-                            paoData[index].devProfiles[key] = val || '100%'; input.value = paoData[index].devProfiles[key]; save();
-                        });
-                        td.appendChild(input); tr.appendChild(td);
-                    });
-                });
-
-                // Alternator Data Profiles
-                wltcProfiles.forEach(p => {
-                    HomologationDefaults.intervalsFor('wltc', p).forEach(int => {
-                        const td = document.createElement('td'); const input = document.createElement('input'); input.type = 'text';
-                        const key = `${p}_${int}`; input.value = pao.altProfiles[key] || '100%';
-                        input.addEventListener('change', (e) => {
-                            let val = e.target.value.trim(); if (val && !val.includes('%') && !isNaN(val)) val += '%';
-                            paoData[index].altProfiles[key] = val || '100%'; input.value = paoData[index].altProfiles[key]; save();
-                        });
-                        td.appendChild(input); tr.appendChild(td);
-                    });
-                });
-
-                tbody.appendChild(tr);
-            });
-
-            document.getElementById('table-wrapper').classList.add('show');
-            document.getElementById('button-group').classList.add('show');
-        }
-
-        function save() { sessionStorage.setItem('paoData', JSON.stringify(paoData)); }
-
-        function navigateTo(path) {
-            save();
-            window.location.href = path;
-        }
-
-        function returnToMenu() {
-            navigateTo('/mode_selection');
-        }
-    </script>
+    <script src="/static/homologation_auxiliary.js"></script>
 </body>
 </html>

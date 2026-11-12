@@ -1,16 +1,20 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/autonomy_profiles.js"></script>
+    <script src="/static/excel_colors.js"></script>
+    <link rel="stylesheet" href="/static/excel-colors.css">
+    <link rel="stylesheet" href="/static/autonomy_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Résultats autonomie DM</title>
     <style>
         :root {
             --blue: #bdd0ec;
-            --cyan: #d7ffff;
+            --cyan: #CCFFFF;
             --yellow: #fff900;
-            --pale-yellow: #ffffb8;
-            --green: #d0ffd0;
+            --pale-yellow: #FFFF99;
+            --green: #CCFFCC;
             --cream: #fff2cc;
             --ink: #111827;
             --navy: #1f4e78;
@@ -81,13 +85,14 @@
         .battery-header { background: #fff; font-size: 15px; font-weight: bold; }
         .scenario-header { background: var(--yellow); font-size: 15px; line-height: 1.2; font-weight: bold; }
         .autonomy-row th { background: var(--blue); font-size: 15px; }
-        .autonomy-value { font-size: 16px; font-weight: 800; color: #1f4e78; }
+        .autonomy-value { font-size: 16px; font-weight: 800; color: inherit; }
         .cyan { background: var(--cyan); }
         .pale-yellow { background: var(--pale-yellow); }
         .green { background: var(--green); }
         .cream { background: var(--cream); }
-        .energy-label, .energy-value { color: #063ee8; font-weight: 800; }
-        .total-row td { background: #dcfce7; color: #064e3b; font-weight: 800; font-size: 13px; }
+        .energy-label, .energy-value { color: #0000FF !important; font-weight: bold; }
+        td.energy-value { background: #FFFFFF; }
+        .total-row td { background: #FFF2CC; color: #0000FF !important; font-weight: bold; font-size: 13px; }
         .warning { color: #d10a0a; }
 
         dialog { width: min(440px, calc(100% - 30px)); border: 0; border-radius: 12px; padding: 0; box-shadow: 0 22px 65px rgba(15,23,42,.25); margin: auto; }
@@ -109,6 +114,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
 <body class="preserve-table-colors">
     <header class="topbar">
@@ -117,6 +124,7 @@
         </div>
         <div class="actions">
             <button class="primary" id="export-dm-excel" type="button">Export Excel File</button>
+            <button class="primary" id="export-dm-selection" type="button">Télécharger la synthèse (PDF / Excel)</button>
             <button class="primary" id="addProfileButton" type="button">＋ Ajouter un profil</button>
             
             <div class="retractable-menu app-summary">
@@ -124,7 +132,6 @@
                     <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved-status" id="saved-status" aria-live="polite"></span>
-                        <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
                         <button class="btn-menu btn-reset" type="button" id="reset-btn"> Valeurs initiales</button>
                         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
                         <button class="btn-menu btn-autonomy" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
@@ -199,21 +206,23 @@
             catch (_) { return fallback; }
         }
         function n(value, fallback = 0) {
-            const parsed = Number(String(value ?? '').replace(',', '.'));
+            if (value === null || value === undefined || String(value).trim() === '') return fallback;
+            const parsed = Number(String(value).replace(/\s/g, '').replace(',', '.'));
             return Number.isFinite(parsed) ? parsed : fallback;
         }
         function format(value, digits = 2) {
             return n(value).toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
         }
         function valueCell(value, unit = '', digits = 2, cls = 'cyan') {
-            return `<td class="value-col ${cls}">${format(value, digits)}${unit ? ' ' + unit : ''}</td>`;
+            const shown = window.CurrentUnits?.isUnit(unit) ? window.CurrentUnits.format(value,unit) : `${format(value,digits)}${unit ? ' '+unit : ''}`;
+            return `<td class="value-col ${cls}">${shown}</td>`;
         }
 
         // FONCTION GENERATRICE DE LIGNES CORRIGEE ET ALIGNEE
         function row(section, sectionClass, fn, parameter, values, options = {}) {
             if (options.colspan) {
                 const cls = options.energy ? 'energy-label' : 'parameter-col';
-                return `<tr><td colspan="${options.colspan}" class="${cls}">${parameter}</td>${values.map(v => valueCell(v.value, v.unit, v.digits, v.cls || (options.energy ? 'cyan energy-value' : 'cyan'))).join('')}</tr>`;
+                return `<tr><td colspan="${options.colspan}" class="${cls}">${parameter}</td>${values.map(v => valueCell(v.value, v.unit, v.digits, v.cls || (options.energy ? 'energy-value' : 'cyan'))).join('')}</tr>`;
             }
 
             const sectionCell = section ? `<td class="section-col ${sectionClass}" rowspan="${options.rowspan || 1}">${section}</td>` : '';
@@ -227,7 +236,7 @@
             const paramCls = options.energy ? 'energy-label' : 'parameter-col';
             const paramCell = `<td class="${paramCls}">${parameter}</td>`;
 
-            return `<tr>${sectionCell}${fnCell}${paramCell}${values.map(v => valueCell(v.value, v.unit, v.digits, v.cls || (options.energy ? 'cyan energy-value' : 'cyan'))).join('')}</tr>`;
+            return `<tr>${sectionCell}${fnCell}${paramCell}${values.map(v => valueCell(v.value, v.unit, v.digits, v.cls || (options.energy ? 'energy-value' : 'cyan'))).join('')}</tr>`;
         }
 
         function entryEnergy(entry) {
@@ -235,7 +244,8 @@
             const duration = n(entry?.duration);
             const calculation = entry?.calculation || 'energy';
             if (calculation === 'cell') {
-                const daily = (duration / 3600) * (current / 1000) * (24 * 60 / Math.max(n(entry?.extra?.periodMin, 480), 0.0001));
+                const period = n(entry?.extra?.periodMin, 480);
+                const daily = period > 0 ? (duration / 3600) * (current / 1000) * (24 * 60 / period) : 0;
                 return daily * n(entry?.extra?.balancingDays, 90);
             }
             if (calculation === 'daily') return (current / 1000) * 24 * duration;
@@ -303,12 +313,12 @@
 
             const sleep = getSleepScenario(data.sleep, scenario.key);
             
-            const wakePeriod = Math.max(n(wakeConfig.wakePeriodHours, 8), 0.0001);
+            const wakePeriod = n(wakeConfig.wakePeriodHours, 8);
             const wakeDuration = n(wakeConfig.wakeDurationSeconds, 2);
             const wakeCurrent = n(wakeConfig.wakeCurrentMa, 536);
             const balancingDuration = n(wakeConfig.wakeCellBalancingDurationSeconds, 60);
             const balancingCurrent = n(wakeConfig.wakeCellBalancingCurrentMa, 4359);
-            const wakesPerDay = 24 / wakePeriod;
+            const wakesPerDay = wakePeriod > 0 ? 24 / wakePeriod : 0;
             const technicalWake = ((wakeCurrent / 1000) * (wakeDuration / 3600) + (balancingCurrent / 1000) * (balancingDuration / 3600)) * wakesPerDay;
 
             const { instantaneousUa: instantaneous, dailyAh: sleepCurrentEnergy } = SleepCurrent.calculate(mode);
@@ -335,12 +345,13 @@
         function fixedEntryRows(columns, key, label, section = '', rowspan = 0) {
             const entries = columns.map(c => c.fixed.entries[key]);
             const unit = entries[0]?.unit === 's' ? 's' : entries[0]?.unit === 'jours' ? 'jours' : entries[0]?.unit || 'h';
-            let html = row(section, 'green', label, key === 'transport' ? 'Conso HFM' : 'Consommation', entries.map(e => ({ value: n(e.current), unit: 'mA', digits: 2 })), { rowspan, fnRowspan: key === 'transport' ? 4 : 3 });
+            const capped = ['pcuRam', 'cdcRam', 'ivc3'].includes(key);
+            let html = row(section, 'green', label, key === 'transport' ? 'Conso HFM' : 'Consommation', entries.map(e => ({ value: n(e.current), unit: 'mA', digits: 2, cls: capped ? 'cyan xl-red' : 'cyan' })), { rowspan, fnRowspan: key === 'transport' ? 4 : 3 });
             if (key === 'transport') {
-                html += row('', '', '', 'Ah/jour du Welcome Access', entries.map(e => ({ value: n(e.current) / 1000 * 24, unit: 'Ah/j', digits: 3 })));
+                html += row('', '', '', 'Ah/jour du Welcome Access', entries.map(e => ({ value: n(e.current) / 1000 * 24, unit: 'Ah/j', digits: 3, cls: 'xl-bold' })));
                 html += row('', '', '', "Durée d'activité de la fonction", entries.map(e => ({ value: n(e.duration), unit, digits: 1 })));
             } else {
-                html += row('', '', '', 'Durée', entries.map(e => ({ value: n(e.duration), unit, digits: 1 })));
+                html += row('', '', '', 'Durée', entries.map(e => ({ value: n(e.duration), unit, digits: 1, cls: capped ? 'xl-limit xl-red' : 'cyan' })));
             }
             html += row('', '', '', 'Énergie', entries.map(e => ({ value: entryEnergy(e), unit: 'Ah', digits: 3 })), { energy: true });
             return html;
@@ -416,20 +427,20 @@
                         <tr><th colspan="3"></th><th class="ev-header" colspan="2">EV</th></tr>
                         <tr><th colspan="3"></th>${cols.map(c => `<th class="battery-header">${c.scenario.battery} ${format(c.capacity, c.capacity % 1 ? 1 : 0)}Ah</th>`).join('')}</tr>
                         <tr><th colspan="3"></th>${cols.map(c => `<th class="scenario-header">${c.scenario.label}</th>`).join('')}</tr>
-                        <tr class="autonomy-row"><th colspan="3">Autonomie ${mode}</th>${cols.map(c => `<th><span class="autonomy-value ${c.autonomy < 5 ? 'warning' : ''}">${format(c.autonomy, 1)} jours</span></th>`).join('')}</tr>
+                        <tr class="autonomy-row"><th colspan="3">Autonomie ${mode}</th>${cols.map(c => `<th class="${window.ExcelColors ? ExcelColors.autonomyClass(c.autonomy) : ''}"><span class="autonomy-value">${format(c.autonomy, 1)} jours</span></th>`).join('')}</tr>
                     </thead>
                     <tbody>
                         ${row('Batterie', 'pale-yellow', '', 'Capacité batterie', cols.map(c => ({ value: c.capacity, unit: 'Ah', digits: c.capacity % 1 ? 1 : 0 })), { rowspan: 4, fnRowspan: 4 })}
                         ${row('', '', '', 'SOC de départ', cols.map(c => ({ value: c.startSoc, unit: '%', digits: 0 })))}
-                        ${row('', '', '', 'SOC minimum en veille', cols.map(c => ({ value: c.minSoc, unit: '%', digits: 0 })))}
-                        ${row('', '', '', 'Énergie disponible brute', cols.map(c => ({ value: c.gross, unit: 'Ah', digits: 2 })), { energy: true })}
+                        ${row('', '', '', 'SOC minimum en veille', cols.map(c => ({ value: c.minSoc, unit: '%', digits: 0, cls: 'xl-bold' })))}
+                        ${row('', '', '', 'Énergie disponible brute', cols.map(c => ({ value: c.gross, unit: 'Ah', digits: 2, cls: 'xl-energy-gross' })), { energy: true })}
                         
                         ${row('Avant veille', 'pale-yellow', 'Endormissement véhicule', 'Énergie par endormissement', cols.map(c => ({ value: c.vehicleUnit, unit: 'Ah', digits: 3 })), { rowspan: 2, fnRowspan: 2 })}
                         ${row('', '', '', 'Énergie', cols.map(c => ({ value: c.vehicleTotal, unit: 'Ah', digits: 3 })), { energy: true })}
                         
                         ${fixedHtml}
                         
-                        ${row('', '', '', 'Énergie disponible en début de veille', cols.map(c => ({ value: c.available, unit: 'Ah', digits: 2 })), { energy: true, colspan: 3 })}
+                        ${row('', '', '', 'Énergie disponible en début de veille', cols.map(c => ({ value: c.available, unit: 'Ah', digits: 2, cls: 'xl-energy-available' })), { energy: true, colspan: 3 })}
                         
                         ${row('Veille', 'cream', 'Courant veille', 'Conso veille instantanée', cols.map(c => ({ value: c.instantaneous, unit: 'µA', digits: 3 })), { rowspan: sleepSectionRows, fnRowspan: 2 })}
                         ${row('', '', '', 'Consommation', cols.map(c => ({ value: c.sleepCurrentEnergy, unit: 'Ah/j', digits: 8 })), { energy: true })}
@@ -444,8 +455,8 @@
                         ${deletedSleep.has('alarm') ? '' : row('', '', 'ALARME', 'Conso alarme', cols.map(c => ({ value: c.sleep.alarm, unit: 'mA', digits: 2 })), { fnRowspan: 2 })}
                         ${deletedSleep.has('alarm') ? '' : row('', '', '', 'Consommation', cols.map(c => ({ value: c.alarmEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
                         
-                        ${deletedSleep.has('sansEbdu') ? '' : row('', '', 'Sans e-BDU s53', 'Conso', cols.map(c => ({ value: c.sleep.sansEbdu, unit: 'mA', digits: 2 })), { fnRowspan: 2 })}
-                        ${deletedSleep.has('sansEbdu') ? '' : row('', '', '', 'Consommation', cols.map(c => ({ value: c.sansEbduEnergy, unit: 'Ah/j', digits: 4 })), { energy: true })}
+                        ${deletedSleep.has('sansEbdu') ? '' : row('', '', 'Sans e-BDU s53', 'Conso', cols.map(c => ({ value: c.sleep.sansEbdu, unit: 'mA', digits: 2, cls: 'xl-limit' })), { fnRowspan: 2 })}
+                        ${deletedSleep.has('sansEbdu') ? '' : row('', '', '', 'Consommation', cols.map(c => ({ value: c.sansEbduEnergy, unit: 'Ah/j', digits: 4, cls: 'xl-limit energy-value' })), { energy: true })}
                         
                         ${deletedSleep.has('twt') ? '' : twtRows(cols)}
 
@@ -462,6 +473,10 @@
         }
 
         function getProfiles() {
+            if(window.AutonomyProfiles){
+                const profile=AutonomyProfiles.selected,config=readJson('batteryConfiguration',{});
+                return [{id:profile.id,name:profile.name,capacity:Math.max(1,n(config.capacityAh,60)),removable:false}];
+            }
             const config = readJson('batteryConfiguration', {});
             const baseCapacity = Math.max(1, n(config.capacityAh, 60));
             const custom = readJson('dmBatteryProfiles', []);
@@ -479,7 +494,7 @@
                     const result = computeColumn(activeSubMode, scenario, n(profile.capacity));
                     return `<article class="summary-scenario-card">
                         <h3>${escapeHtml(scenario.label)}</h3>
-                        <strong>${format(result.autonomy, 1)} <small>jours</small></strong>
+                        <strong class="xl-autonomy-text ${window.ExcelColors?.isAutonomyLow(result.autonomy) ? 'xl-autonomy-low' : ''}">${format(result.autonomy, 1)} <small>jours</small></strong>
                     </article>`;
                 }).join('');
                 return `<article class="profile">
@@ -536,6 +551,7 @@
         document.getElementById('addProfileButton').addEventListener('click', openDialog);
         document.getElementById('bottomAddProfile').addEventListener('click', openDialog);
         window.getSynthesisExcelData = () => ({
+            configuration:window.AutonomyProfiles?{id:AutonomyProfiles.selected.id,name:AutonomyProfiles.selected.name}:null,
             profiles: getProfiles().map(profile => ({
                 id: String(profile.id), name: profile.name, capacity: n(profile.capacity),
                 columns: SCENARIOS.filter(scenario => !selectedScenarioKeys.size || selectedScenarioKeys.has(scenario.key))
@@ -550,7 +566,7 @@
                             extra:{...entry.extra, periodMin:n(entry.extra?.periodMin,480), balancingDays:n(entry.extra?.balancingDays,90)}
                         });
                         result.fixed.entries = Object.fromEntries(Object.entries(result.fixed.entries).map(([key, entry]) => [key, numericEntry(entry)]));
-                        result.fixed.custom = result.fixed.custom.map(numericEntry);
+                        result.fixed.custom = result.fixed.custom.map(entry => ({...numericEntry(entry), energy:entryEnergy(entry)}));
                         return result;
                     })
             }))
@@ -654,6 +670,13 @@
         });
 
         render();
-    </script>
+            // Ouvre l'export global présélectionné sur ce mode et ce profil (PDF + Excel).
+        document.getElementById('export-dm-selection').addEventListener('click', () => {
+            const mode = String(sessionStorage.getItem('batterySubMode') || 'DM1').toLowerCase() === 'dm2' ? 'dm2' : 'dm1';
+            const query = new URLSearchParams({ preset: mode });
+            if (window.AutonomyProfiles?.selected) query.set('configuration', AutonomyProfiles.selected.id);
+            window.location.href = `/export_synthesis_pdf?${query}`;
+        });
+</script>
 </body>
 </html>

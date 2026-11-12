@@ -247,6 +247,15 @@ function installMenu() {
         { label: 'Enregistrer le projet en JSON…', accelerator: 'Ctrl+S', click: safe(saveJsonProject) },
         { type: 'separator' },
         { label: 'Exporter la page en PDF…', accelerator: 'Ctrl+P', click: safe(async () => {
+          if (mainWindow.webContents.getURL().startsWith('app://local/export_synthesis_pdf')) {
+            const started = await mainWindow.webContents.executeJavaScript(`(() => {
+              const button=document.getElementById('generate-pdf');
+              if (!button || button.disabled) return false;
+              button.click();return true;
+            })()`);
+            if (!started) throw new Error('Affichez la synthèse sélectionnée avant de générer le PDF.');
+            return;
+          }
           const result = await dialog.showSaveDialog(mainWindow, {
             defaultPath: 'synthese.pdf',
             filters: [{ name: 'PDF', extensions: ['pdf'] }]
@@ -482,8 +491,11 @@ app.whenReady().then(async () => {
     if (error) throw new Error(error);
     return true;
   });
-  ipcMain.handle('generate-synthesis-pdf', async (event, projectName) => {
+  ipcMain.handle('generate-synthesis-pdf', async (event, projectName, bytes) => {
     if (!event.senderFrame.url.startsWith('app://local/export_synthesis_pdf')) throw new Error('Origine non autorisée.');
+    if (!ArrayBuffer.isView(bytes) || bytes.byteLength > 50 * 1024 * 1024) throw new Error('Le document PDF est invalide.');
+    const pdf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (pdf.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('Le document PDF est invalide.');
     const safeName = String(projectName || 'synthese')
       .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
       .trim()
@@ -494,13 +506,25 @@ app.whenReady().then(async () => {
       filters: [{ name: 'Document PDF', extensions: ['pdf'] }]
     });
     if (result.canceled || !result.filePath) return { canceled: true };
-    const pdf = await mainWindow.webContents.printToPDF({
-      pageSize: 'A4',
-      printBackground: true,
-      preferCSSPageSize: true,
-      margins: { top: 0.3, bottom: 0.3, left: 0.3, right: 0.3 }
-    });
     fs.writeFileSync(result.filePath, pdf);
+    return { canceled: false, filePath: result.filePath };
+  });
+  // Excel de synthèse : boîte « Enregistrer sous » à chaque génération (pas de téléchargement
+  // automatique, que Chromium bloque après le premier).
+  ipcMain.handle('save-synthesis-excel', async (event, fileName, bytes) => {
+    if (!event.senderFrame.url.startsWith('app://local/export_synthesis_pdf')) throw new Error('Origine non autorisée.');
+    if (!ArrayBuffer.isView(bytes) || bytes.byteLength > 200 * 1024 * 1024) throw new Error('Le fichier Excel est invalide.');
+    const data = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (data.subarray(0, 2).toString('ascii') !== 'PK') throw new Error('Le fichier Excel est invalide.');
+    const requested = Array.from(String(fileName || 'Synthese_Wattman.zip'), character => (character.charCodeAt(0) < 32 || '<>:"/|?*'.includes(character) || character.charCodeAt(0) === 92 ? '-' : character)).join('').trim().slice(0, 140);
+    const extension = requested.toLowerCase().endsWith('.xlsx') ? 'xlsx' : 'zip';
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Enregistrer la synthèse Excel',
+      defaultPath: requested || `Synthese_Wattman.${extension}`,
+      filters: [extension === 'xlsx' ? { name: 'Classeur Excel', extensions: ['xlsx'] } : { name: 'Archive des classeurs Excel', extensions: ['zip'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    fs.writeFileSync(result.filePath, data);
     return { canceled: false, filePath: result.filePath };
   });
   const projectStore = createProjectStore(path.join(app.getPath('userData'), 'projects'));

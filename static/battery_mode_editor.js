@@ -1,9 +1,15 @@
 (() => {
-    const table = document.querySelector('.dm-matrix-page table');
+    const table = document.querySelector('.dm-matrix-page table, .customer-matrix-page table');
     const tbody = document.getElementById('table-body');
     if (!table || !tbody || typeof daysColumns === 'undefined') return;
 
     const mode = sessionStorage.getItem('batterySubMode') || 'DM1';
+    const setupUrl = mode === 'Customer Mode' ? '/configure_customer_currents' : '/configure_dm_currents';
+    if (sessionStorage.getItem(SleepCurrent.setupKey(mode)) !== 'true') {
+        window.location.replace(setupUrl);
+        return;
+    }
+    const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/static/autonomy_currents.css';document.head.append(stylesheet);
     window.SleepCurrent?.migrateEditorCurrentsToMicroamps(sessionStorage, mode);
     const currentKey = mode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${mode}Currents`;
     const matrixKey = mode === 'Customer Mode' ? 'customerModeMatrix' : `${mode.toLowerCase()}ModeMatrix`;
@@ -16,9 +22,25 @@
 
     const currentHeader = document.querySelector('th.sticky-col2');
     if (currentHeader) currentHeader.textContent = 'Current (µA)';
+    const totalHeader=document.createElement('th');totalHeader.className='total-dark-current';
+    totalHeader.textContent='Total Dark Current (µA)';
+    currentHeader?.after(totalHeader);
+
+    function addTotalCell(row,key,name,input) {
+        const cell=document.createElement('td');cell.className='total-dark-current';cell.dataset.output='total-dark-current';
+        row.cells[1].after(cell);
+        const update=()=>{
+            const device=SleepCurrent.devices(mode).find(item=>item.key===key);
+            const base=device?.currentUa || 0;
+            const extra=SleepCurrent.contributions(mode,key,name);
+            cell.textContent=new Intl.NumberFormat('fr-FR',{maximumFractionDigits:3}).format(base+extra.technicalWakeupA*1000000+extra.smartmosUa)+' µA';
+            cell.title=`Current : ${base} µA + Load Technical Wakeup : ${extra.technicalWakeupA} A + SmartMOS : ${extra.smartmosUa} µA`;
+        };
+        input?.addEventListener('input',update);update();
+    }
 
     function unitField(input, unit) {
-        if (input.parentElement?.classList.contains('battery-unit-field')) return;
+        if ((input.parentElement?.classList.contains('battery-unit-field') || input.parentElement?.classList.contains('matrix-current-unit'))) return;
         const wrapper = document.createElement('span');
         wrapper.className = 'battery-unit-field';
         input.before(wrapper);
@@ -37,9 +59,11 @@
     const selected = selectedRaw === null ? null : new Set(JSON.parse(selectedRaw || '[]'));
     const available = [];
     (sourceSheet?.data || []).forEach((row, index) => {
-        const name = row['Device Name'] || row['ECU Name'] || `Item ${index + 1}`;
+        const name = String(row['Device Name'] || row['ECU Name'] || `Item ${index + 1}`).trim();
         const key = `${index}_${name}`;
         if (selected !== null && !selected.has(key)) return;
+        const category=String(row['current_category']||row['Current Category']||'').trim().toUpperCase();
+        if(selected===null && category!=='S')return;
         available.push({ key, name });
     });
 
@@ -94,9 +118,11 @@
         }
         const input = row.querySelector('td.sticky-col2 input');
         if (input) unitField(input, 'µA');
+        addTotalCell(row,info.key,info.name,input);
         addDeleteButton(row.cells[0], info.name, () => {
             deletedKeys.add(info.key);
             sessionStorage.setItem(deletedStorageKey, JSON.stringify([...deletedKeys]));
+            currents = JSON.parse(sessionStorage.getItem(currentKey) || '{}');
             delete currents[info.key];
             sessionStorage.setItem(currentKey, JSON.stringify(currents));
             row.remove();
@@ -113,6 +139,8 @@
         addDeleteButton(nameCell, device.name, () => {
             customDevices = customDevices.filter(item => item.id !== device.id);
             sessionStorage.setItem(customStorageKey, JSON.stringify(customDevices));
+            currents = JSON.parse(sessionStorage.getItem(currentKey) || '{}');
+            matrix = JSON.parse(sessionStorage.getItem(matrixKey) || '{}');
             delete currents[key];
             Object.keys(matrix).filter(k => k.startsWith(`${key}_`)).forEach(k => delete matrix[k]);
             sessionStorage.setItem(currentKey, JSON.stringify(currents));
@@ -128,14 +156,16 @@
         input.min = '0';
         input.step = '0.01';
         input.className = 'homologation-input';
-        input.value = currents[key] ?? device.current ?? 0;
-        input.addEventListener('change', () => {
+        input.value = window.CurrentUnits?.normalize(currents[key] ?? device.current ?? 0) ?? (currents[key] ?? device.current ?? 0);
+        input.addEventListener('input', () => {
+            currents = JSON.parse(sessionStorage.getItem(currentKey) || '{}');
             currents[key] = input.value;
             sessionStorage.setItem(currentKey, JSON.stringify(currents));
         });
         currentCell.append(input);
         unitField(input, 'µA');
         row.append(currentCell);
+        addTotalCell(row,key,device.name,input);
 
         daysColumns.forEach((day, index) => {
             const cell = document.createElement('td');
@@ -143,9 +173,10 @@
             select.className = 'profile-select';
             select.innerHTML = '<option value="0">0</option><option value="1">1</option>';
             const keyForDay = `${key}_${day}`;
-            const fallback = index % 2 === 0 ? '1' : '0';
+            const fallback = '1';
             select.value = matrix[keyForDay] ?? fallback;
             select.addEventListener('change', () => {
+                matrix = JSON.parse(sessionStorage.getItem(matrixKey) || '{}');
                 matrix[keyForDay] = select.value;
                 sessionStorage.setItem(matrixKey, JSON.stringify(matrix));
             });

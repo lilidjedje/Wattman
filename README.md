@@ -261,15 +261,15 @@ Ce projet est fourni à titre d'exemple.
 **Version:** 2.0
 
 
+Dans les excel, il y a des codes couleurs pour les valeurs numéiques (exemples, jours d'autonomie, consimmation de courant, energie...), je veux que sur mon application tu respecte exactement ces codes couleurs 
 
-Fait en sorte que le pdf soit bien généné : aucune page vide, rien d'achuré, tout rentre dans un format A4, tout a les meme styles de titres et sous-titres, et gérer le pdf homogène a chzque ajout ou suppression de profils. 
-Pour les courbes de dcdc et wltc elles sont affichées 2 fois dans la synthèse (quand wltc faire afficher cycle 1 2 3 et pour dcdc faire afficher celles de winter mid season summer): Corrige cela pour les afficher une seule fois. 
+Ici je veux que le bouton de retour ressemble aux autres boutons de retour
 
-les tableaux de dcdc sizing et wltc en excel ne sont pas bien générés dans les excel. Vérifie que tout est bien importé dans les excel et que les paramètres et résultats sont bien synchronisés. 
-Pour le DCDC ne génère pas de WLTC et inversmenent dans les excel. 
-Dans les DM1 DM2 Customer Mode et Biberonnage génère en fonction de ce qui est sélectionné et inclus toutes les pages nécessaires aux paramètres et calculs 
+Je veux que pour le biberonage des ici on puisse ajouter supprimet modifier et sauvegrader pour les synthèses des profils. Je veux aussi dans les synthèses de biberonage que je clique sur 30 jours ou 90 jours donner la possibilité d'afficher les profils de ceux de 30 jours, de 90 jours ou de les deux
 
-
+enlève les boutons enregistrer de chaque sommaire car tout s'enregistre automatiquement. Rajoute egalement le meme type de sommaire dans les pages ou y en a pas, avec les bonnes variation sde choix en fonction d'ou on est
 
 Sharepoint pour profils .json et InfluxDB ou PostgreSQL + TimescaleDB pour les mesures hautes fréquences d'acquisition 
+
+
 

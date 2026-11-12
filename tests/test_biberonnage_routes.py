@@ -89,18 +89,15 @@ class BiberonnageRoutesTest(unittest.TestCase):
         self.assertIn('@page { size: A4 portrait;', page)
         self.assertIn("body :is(.topbar, .profile, .profile-heading", page)
         self.assertIn("background:#fff !important", page)
-        self.assertIn("async function prepareReportsForPrint()", page)
+        self.assertIn("fetch('/generate_synthesis_pdf'", page)
+        self.assertIn("JSON.stringify(collectSynthesisPayload())", page)
         self.assertIn("break-before: auto; break-inside: auto;", page)
         self.assertNotIn("break-before: page", page)
         self.assertIn(".analysis { break-inside:auto;", page)
         self.assertIn("frame.scrolling = 'no'", page)
         self.assertIn("body *::-webkit-scrollbar", page)
         self.assertNotIn("section.append(heading, frame)", page)
-        self.assertIn("function createPrintReportCopies()", page)
-        self.assertIn("canvas.toDataURL('image/png')", page)
         self.assertIn("grid-template-columns:minmax(0,1fr) !important", page)
-        self.assertIn("height:112mm !important", page)
-        self.assertIn(".pdf-customer-report > h2", page)
         self.assertNotIn("html2canvas", page)
         self.assertNotIn("jspdf", page)
 
@@ -156,9 +153,10 @@ class BiberonnageRoutesTest(unittest.TestCase):
         with zipfile.ZipFile(BytesIO(response.data)) as archive:
             self.assertEqual(
                 set(archive.namelist()),
-                {"DCDC_Sizing_WLTC.xlsx", "Consoveille_Synthese.xlsx"},
+                {"DCDC_1_principal.xlsx", "WLTC_2_principal.xlsx", "Consoveille_Synthese.xlsx"},
             )
-            dcdc = load_workbook(BytesIO(archive.read("DCDC_Sizing_WLTC.xlsx")))
+            dcdc = load_workbook(BytesIO(archive.read("DCDC_1_principal.xlsx")))
+            wltc = load_workbook(BytesIO(archive.read("WLTC_2_principal.xlsx")))
             consoveille = load_workbook(BytesIO(archive.read("Consoveille_Synthese.xlsx")))
 
         self.assertTrue(all(worksheet.sheet_state == "visible" for worksheet in dcdc.worksheets))
@@ -174,15 +172,19 @@ class BiberonnageRoutesTest(unittest.TestCase):
         self.assertEqual(dcdc["Bilan DCDC"].cell(equipment_row, 8).value, 0.5)
         self.assertEqual(dcdc["Bilan DCDC"]["H92"].value, 3)
         self.assertEqual(dcdc["Bilan -7°C"]["J94"].value, 5)
+        self.assertEqual(wltc.active.title, 'Bilan -7°C')
+        self.assertEqual(wltc["Bilan -7°C"]["J94"].value, 5)
         self.assertEqual(consoveille["Logistic Mode"].sheet_state, "veryHidden")
         self.assertEqual(consoveille["Customer PIE"].sheet_state, "veryHidden")
-        self.assertEqual(consoveille["Customer Mode"].sheet_state, "visible")
-        self.assertEqual(consoveille["Mounting Mode"].sheet_state, "visible")
+        self.assertEqual(consoveille["Customer Mode"].sheet_state, "veryHidden")
+        self.assertEqual(consoveille["Customer Mode projet"].sheet_state, "visible")
+        self.assertEqual(consoveille["Mounting Mode"].sheet_state, "veryHidden")
         self.assertEqual(consoveille["Customer"]["E6"].value, 10)
         self.assertEqual(consoveille["Customer"]["E8"].value, 72)
         self.assertTrue(consoveille["Customer"].column_dimensions['F'].hidden)
         self.assertFalse(any(name.startswith('Wattman ') for name in consoveille.sheetnames))
         dcdc.close()
+        wltc.close()
         consoveille.close()
 
 

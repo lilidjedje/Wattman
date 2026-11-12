@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/autonomy_profiles.js"></script>
+    <link rel="stylesheet" href="/static/autonomy_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Consommation en veille</title>
@@ -15,7 +17,7 @@
         /* STEPPER / MENU DÉFILANT ÉTAPES */
         .stepper { 
             width: 100%; margin: 0 auto 24px; 
-            display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); 
+            display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); 
             gap: 12px; padding: 14px; border-radius: 12px; background: white; 
             box-shadow: 0 4px 15px rgba(0, 0, 0, .08); border: 1px solid #cbd5e1;
         }
@@ -60,9 +62,12 @@
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <link rel="stylesheet" href="/static/autonomy-navigation.css">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
-<body class="sleep-consumption-page">
+<body class="sleep-consumption-page preserve-table-colors">
     <main>
         <header>
             <button class="back" type="button" onclick="window.location.href='/fixed_consumption'">← Retour</button>
@@ -73,7 +78,6 @@
                     <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved" id="saved-status" aria-live="polite"></span>
-                        <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer le projet</button>
                         <button class="btn-menu btn-reset" type="button" id="reset-btn"> Valeurs initiales</button>
                         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
                         <button class="btn-menu btn-autonomy" id="autonomy-menu-button" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
@@ -146,6 +150,7 @@
         const firstStepLabel = isDmMode ? `1. Courants ${batterySubMode}` : '1. Courants Customer';
 
         stepperEl.innerHTML = `
+            <button class="step" type="button" onclick="window.location.href='${isDmMode ? "/configure_dm_currents" : "/configure_customer_currents"}'">Load Technical Wakeup et SmartMOS</button>
             <button class="step" type="button" onclick="window.location.href='${firstStepUrl}'">${firstStepLabel}</button>
             <button class="step" type="button" onclick="window.location.href='/fixed_consumption'">2. Consommations forfaitaires</button>
             <button class="step active" type="button" onclick="window.location.href='/sleep_consumption'">3. Consommation en veille</button>
@@ -191,7 +196,7 @@
             const number = Number(String(value).replace(',', '.'));
             return Number.isFinite(number) ? number : fallback;
         };
-        const format = (value, suffix, digits = 4) => `${toNumber(value).toFixed(digits).replace(/\.?0+$/, '').replace('.', ',')} ${suffix}`;
+        const format = (value, suffix, digits = 4) => window.CurrentUnits?.isUnit(suffix) ? window.CurrentUnits.format(value,suffix) : `${toNumber(value).toFixed(digits).replace(/\.?0+$/, '').replace('.', ',')} ${suffix}`;
         
         const batteryConfiguration = JSON.parse(sessionStorage.getItem('batteryConfiguration') || '{}');
         const batteryCapacity = toNumber(batteryConfiguration.capacityAh, 60);
@@ -235,7 +240,7 @@
                     input.type = 'number';
                     input.min = '0';
                     input.step = '0.0001';
-                    input.value = value;
+                    input.value = window.CurrentUnits?.normalize(value) ?? value;
                     input.addEventListener('change', () => { onChange(key, input.value); save(); render(); });
                     wrapper.append(input);
                     const unit = document.createElement('span');

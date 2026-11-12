@@ -44,6 +44,7 @@
         .feeding-quality-table td { background:#fff; color:#1e293b; }
 
     </style>
+    <script src="{{ url_for('shared_current_units') }}"></script>
 </head>
 <body class="measurement-dashboard">
     <header class="workstation-header">
@@ -189,14 +190,8 @@
         };
         const metric = (label, content, status = '') => `
             <div class="metric"><span>${label}</span><strong class="${status ? `score ${status}` : ''}">${content}</strong></div>`;
-        const formattedCurrent = currentA => {
-            if (currentA == null) return '—';
-            const numeric = Number(currentA);
-            if (!Number.isFinite(numeric)) return '—';
-            return Math.abs(numeric) < 1
-                ? `${value(numeric * 1000, 3)} mA`
-                : `${value(numeric, 3)} A`;
-        };
+        const formattedCurrent = currentA => currentA == null ? '\u2014' : CurrentUnits.format(currentA,'A');
+
         const verdict = status => status === 'no_reference' ? '<span class="verdict-badge no_data">HORS PROFIL THÉORIQUE</span>' : status === 'pass'
             ? '<span class="verdict-badge pass">OK</span>'
             : status === 'fail'
@@ -244,8 +239,8 @@
                         grid: { color: '#30383b' }
                     },
                     y: {
-                        title: { display: true, text: yTitle, color: '#e8ecec', font: { weight: 'bold' } },
-                        ticks: { color: '#c9d0d1', maxTicksLimit: 8, callback: tick => `${value(tick, 3)} ${yUnit}` },
+                        title: { display: true, text: CurrentUnits.isUnit(yUnit) ? 'Courant' : yTitle, color: '#e8ecec', font: { weight: 'bold' } },
+                        ticks: { color: '#c9d0d1', maxTicksLimit: 8, callback: tick => CurrentUnits.isUnit(yUnit) ? CurrentUnits.format(tick,yUnit) : `${value(tick, 3)} ${yUnit}` },
                         grid: { color: '#30383b' },
                         grace: '8%'
                     }
@@ -257,7 +252,7 @@
                         displayColors: true,
                         callbacks: {
                             title: items => items.length ? `Temps : ${formatAxisTime(items[0].parsed.x, timeUnit)}` : '',
-                            label: context => `${context.dataset.label} : ${value(context.parsed.y, 4)} ${yUnit}`
+                            label: context => `${context.dataset.label} : ${CurrentUnits.isUnit(yUnit) ? CurrentUnits.format(context.parsed.y,yUnit) : value(context.parsed.y,4)+' '+yUnit}`
                         }
                     }
                 }
@@ -503,7 +498,7 @@
                 const unit = factor === 1000 ? 'mA' : 'A';
                 feedingQualityCharts.push(new Chart(document.getElementById(`feedingExtremes${item.channel}`), {
                     type: 'bar', data: {labels: ['Attendu', 'Minimum réel', 'Maximum réel'], datasets: [{label: `Courant (${unit})`, data: [item.expected_current_A, minimum, maximum].map(current => current * factor), backgroundColor: ['#2563eb', '#f59e0b', '#dc2626']}]},
-                    options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, title: {display: true, text: `Courant (${unit})`}}}}
+                    options: {responsive: true, maintainAspectRatio: false, animation: false, scales: {y: {beginAtZero: true, title: {display: true, text: 'Courant'},ticks:{callback:tick=>CurrentUnits.format(tick,unit)}}}, plugins: {legend:{display:false},tooltip:{callbacks:{label:context=>CurrentUnits.format(context.parsed.y,unit)}}}}
                 }));
             });
         }

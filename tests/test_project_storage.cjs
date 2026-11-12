@@ -68,11 +68,17 @@ async function run() {
     await first.api.saveProject({ id: 'first', name: 'Same name' });
     first.sessionStorage.setItem('modifiedCurrents', '{"0_ECU":42}');
     first.sessionStorage.setItem('batteryConfiguration', '{"capacityAh":80}');
+    first.sessionStorage.setItem('autonomyCurrentContributionsDM','{"0_ECU":{"technicalEnabled":true,"technicalWakeupA":0.1}}');
+    first.sessionStorage.setItem('autonomyCurrentContributionsCustomer','{"0_ECU":{"smartmosEnabled":true,"smartmosUa":45}}');
+    first.sessionStorage.setItem('autonomyCurrentSetupDMReady','true');
     first.listeners.pagehide();
     await first.api.saveActiveProject();
     const restarted = renderer();
     assert.equal(restarted.sessionStorage.getItem('modifiedCurrents'), '{"0_ECU":42}');
     assert.equal(restarted.sessionStorage.getItem('batteryConfiguration'), '{"capacityAh":80}');
+    assert.equal(restarted.sessionStorage.getItem('autonomyCurrentContributionsDM'),first.sessionStorage.getItem('autonomyCurrentContributionsDM'));
+    assert.equal(restarted.sessionStorage.getItem('autonomyCurrentContributionsCustomer'),first.sessionStorage.getItem('autonomyCurrentContributionsCustomer'));
+    assert.equal(restarted.sessionStorage.getItem('autonomyCurrentSetupDMReady'),'true');
     restarted.api.clearWorkingData();
     restarted.sessionStorage.setItem('customDarkDevices', '[{"id":"custom","current":5}]');
     await restarted.api.saveProject({ id: 'second', name: 'Same name' });
@@ -85,6 +91,7 @@ async function run() {
     await restarted.api.restoreProject({ id: 'first', name: 'Same name' });
     assert.equal(restarted.sessionStorage.getItem('selectedDeviceKeys'), '["0_ECU"]');
     assert.equal(restarted.sessionStorage.getItem('customDarkDevices'), null);
+    assert.notEqual(restarted.sessionStorage.getItem('autonomyCurrentContributionsDM'),null);
     restarted.sessionStorage.setItem('modifiedCurrents', '{"0_ECU":99}');
     const abruptRestart = renderer();
     assert.equal(abruptRestart.sessionStorage.getItem('modifiedCurrents'), '{"0_ECU":99}');

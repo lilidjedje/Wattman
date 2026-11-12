@@ -38,6 +38,8 @@ const context = vm.createContext({
     Chart
 });
 
+vm.runInContext(fs.readFileSync(path.join(root,'static/current_units.js'),'utf8'),context);
+context.CurrentUnits=context.window.CurrentUnits;
 vm.runInContext(
     fs.readFileSync(path.join(root, 'can_server/static/js/sleep-autonomy.js'), 'utf8'),
     context

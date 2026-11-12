@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <script src="/static/homologation_profiles.js"></script>
+    <script src="/static/homologation_targets.js"></script>
+    <link rel="stylesheet" href="/static/homologation_profiles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Saisie et Configuration des GMV</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+        .header {
+            max-width: 1750px; margin: 0 auto 30px; color: white;
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;
+        }
+        .header h1 { font-size: 2.2em; }
+        .setup-box {
+            max-width: 450px; margin: 0 auto 30px; background: white; padding: 25px;
+            border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center;
+        }
+        .setup-box label { font-weight: 600; color: #333; display: block; margin-bottom: 12px; }
+        .setup-box input {
+            width: 100%; padding: 10px; border: 2px solid #cbd5e1; border-radius: 6px;
+            font-size: 1.1em; text-align: center; margin-bottom: 15px;
+        }
+        .btn {
+            padding: 10px 20px; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: 600; transition: all 0.3s ease; font-size: 1em;
+        }
+        .btn-primary { background: #667eea; color: white; width: 100%; }
+        .btn-primary:hover { background: #5a6fd6; }
+        .btn-back { background: rgba(255, 255, 255, 0.2); color: white; border: 2px solid white; }
+        .btn-back:hover { background: rgba(255, 255, 255, 0.3); transform: translateY(-2px); }
+        .btn-menu { background: #3182ce; color: white; }
+        .btn-menu:hover { background: #2563eb; transform: translateY(-2px); }
+        .btn-results { background: #27ae60; color: white; }
+        .btn-results:hover { background: #229954; transform: translateY(-2px); }
+
+        .container { max-width: 1750px; margin: 0 auto; }
+        .stepper { max-width: 1750px; margin: 0 auto 24px; display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; padding: 16px; border-radius: 12px; background: white; box-shadow: 0 4px 15px rgba(0, 0, 0, .12); }
+        .step { border: 0; border-radius: 8px; padding: 12px; color: #52647d; background: #f1f5f9; font: inherit; font-weight: 700; cursor: pointer; }
+        .step:hover { background: #e4e8ff; color: #4f46e5; }
+        .step.active { color: white; background: #4f46e5; }
+        @media (max-width: 650px) { .stepper { grid-template-columns: 1fr 1fr; } }
+        .table-wrapper {
+            background: white; border-radius: 12px; overflow-x: auto;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); margin-bottom: 30px; display: none;
+        }
+        .table-wrapper.show { display: block; }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        th { color: white; padding: 10px; font-size: 0.8em; border: 1px solid rgba(255, 255, 255, 0.2); }
+        th.main-header { font-size: 0.85em; padding: 8px; background: rgba(0,0,0,0.1); }
+        tbody tr { border-bottom: 1px solid #ecf0f1; }
+        tbody tr:nth-child(even) { background: #f8f9ff; }
+        td { padding: 6px; color: #333; font-size: 0.85em; border: 1px solid #e2e8f0; }
+
+        input[type="text"], input[type="number"] {
+            width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; font-size: 0.9em;
+        }
+        .gmv-name-input { text-align: left !important; font-weight: 600; min-width: 160px; color: #4a5568; }
+        select.bound-select { width: 60px; padding: 4px; font-weight: 600; text-align: center; cursor: pointer; }
+        .button-group { display: none; gap: 15px; justify-content: center; margin-top: 30px; }
+        .button-group.show { display: flex; }
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+</head>
+<body class="homologation-step-page gmv-profile-page preserve-table-colors">
+    <div class="header">
+        <button class="btn btn-back" onclick="navigateTo('/edit_pao')">← Retour</button>
+        <h1>Saisie et Configuration des GMV</h1>
+        <div class="header-actions">
+            <div class="retractable-menu app-summary"><details id="actions-details"><summary>Sommaire</summary><div class="menu-content">
+                <span class="saved-status" id="saved-status" aria-live="polite"></span>
+                <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
+                <hr>
+                <button class="btn-menu btn-mode" type="button" onclick="navigateTo('/mode_selection')">Sélection du mode</button>
+                <button class="btn-menu btn-home" type="button" id="homologation-home">Accueil</button>
+            </div></details></div>
+        </div>
+    </div>
+
+    <nav class="stepper" aria-label="Étapes du dimensionnement DCDC">
+        <button class="step" type="button" onclick="navigateTo('/edit_current')">1. DCDC Sizing</button>
+        <button class="step" type="button" onclick="navigateTo('/edit_alternator')">2. WLTC (-7 °C)</button>
+        <button class="step" type="button" onclick="navigateTo('/edit_pao')">3. PAO</button>
+        <button class="step active" type="button" onclick="navigateTo('/edit_gmv')">4. GMV</button>
+    </nav>
+
+    <div class="setup-box">
+        <label for="gmv-count">Combien de GMV voulez-vous ajouter ?</label>
+        <input type="number" id="gmv-count" min="0" placeholder="Ex: 2">
+        <button class="btn btn-primary" onclick="generateGMVTable()">Générer le formulaire</button>
+    </div>
+
+    <div class="container">
+        <div class="table-wrapper" id="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th rowspan="2" style="min-width: 160px;">GMV Name</th>
+                        <th rowspan="2" style="min-width: 110px; background-color: #4a5568;">Homologation Current (A)</th>
+                        <th rowspan="2" style="min-width: 70px; background-color: #4a5568;">Lower</th>
+                        <th rowspan="2" style="min-width: 70px; background-color: #4a5568;">Upper</th>
+                        <th colspan="5" class="main-header" style="background-color: #2b6cb0;">DCDC Sizing : Winter</th>
+                        <th colspan="5" class="main-header" style="background-color: #2b6cb0;">DCDC Sizing : Mid-season</th>
+                        <th colspan="5" class="main-header" style="background-color: #2b6cb0;">DCDC Sizing : Summer</th>
+                        <th colspan="6" class="main-header" style="background-color: #dd6b20;">WLTC (-7 °C) : Cycle 1</th>
+                        <th colspan="6" class="main-header" style="background-color: #dd6b20;">WLTC (-7 °C) : Cycle 2</th>
+                        <th colspan="6" class="main-header" style="background-color: #dd6b20;">WLTC (-7 °C) : Cycle 3</th>
+                    </tr>
+                    <tr id="sub-headers"></tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <div class="button-group" id="button-group">
+            <button class="btn btn-results" onclick="navigateTo('/synthesis')">Visualiser les Résultats →</button>
+        </div>
+    </div>
+
+    <script src="/static/project_storage.js"></script>
+    <script src="/static/homologation_ui.js"></script>
+    <script src="/static/homologation_defaults.js"></script>
+    <script src="/static/homologation_auxiliary.js"></script>
+</body>
+</html>

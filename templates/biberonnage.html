@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/biberonnage_profiles.js"></script>
+    <link rel="stylesheet" href="/static/autonomy_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biberonnage - Consommations sur {{ duration_days }} jours</title>
@@ -63,10 +65,12 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
 <body class="biberonnage-page preserve-table-colors">
     <header class="header">
-        <button class="previous-button" type="button" id="previous-step">← Retour</button>
+        <button class="btn-back previous-button" type="button" id="previous-step">← Retour</button>
         <h1>Biberonnage — {{ duration_days }} jours</h1>
 
         <div class="retractable-menu app-summary">
@@ -74,7 +78,6 @@
                 <summary>Sommaire</summary>
                 <div class="menu-content">
                     <span class="saved" id="saved" aria-live="polite"></span>
-                    <button class="btn-menu btn-save" type="button" id="project-save"> Enregistrer</button>
                     <button class="btn-menu btn-reset" type="button" id="reset"> Valeurs initiales</button>
                     <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
                     <button class="btn-menu btn-back" type="button" onclick="window.location.href='/battery_menu'"> Menu Autonomie</button>
@@ -159,6 +162,7 @@
                     input.type = 'text';
                     input.inputMode = 'decimal';
                     input.className = 'editable';
+                    if (row.unit === 'mA') input.dataset.currentBaseUnit = 'mA';
                     input.value = stored[key] ?? initial;
 
                     if (stored[key] !== undefined && stored[key] !== initial) {

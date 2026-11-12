@@ -53,7 +53,7 @@ can_server/wheels/
 # Duplicate project copy and machine-specific notes
 auto/
 a ajouter ou modifier.txt
-edit_gmv.html
+/edit_gmv.html
 Datasheet.docx
 ExtraFeeding Ampere Tool_v1.3.xlsm
 
@@ -64,3 +64,6 @@ outputs/
 # Versioned acquisition fixtures
 !test_asc/
 !test_asc/*.asc
+
+# Test and diagnostic artefacts
+tmp/

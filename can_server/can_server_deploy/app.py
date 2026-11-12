@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, Response, redirect, url_for
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, send_file
 import sqlite3
 import os
 import time
@@ -25,6 +25,12 @@ app = Flask(
     template_folder=os.path.join(PROJECT_DIR, "templates"),
     static_folder=os.path.join(PROJECT_DIR, "static")
 )
+
+@app.route('/shared-current-units.js')
+def shared_current_units():
+    return send_file(os.path.join(os.path.dirname(os.path.dirname(PROJECT_DIR)), 'static', 'current_units.js'),
+                     mimetype='text/javascript')
+
 can_collector = SocketCanCollector()
 
 

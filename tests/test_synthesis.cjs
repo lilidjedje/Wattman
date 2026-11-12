@@ -33,6 +33,12 @@ for (const current of [10, 800]) {
     context.HomologationDefaults = context.window.HomologationDefaults;
     vm.runInContext(script, context);
     const result = vm.runInContext('synthesisExportData', context);
+    vm.runInContext(html.slice(html.indexOf('        function buildExcelExportDevices'),html.indexOf('        window.getSynthesisExcelData')),context);
+    const exported=vm.runInContext('buildExcelExportDevices()',context);
+    assert.equal(exported.find(device=>device.name==='DRL').current,current);
+    assert.equal(exported.filter(device=>device.name==='ADAPTATIONS').length,1);
+    assert.equal(exported.find(device=>device.name==='ADAPTATIONS').current,0);
+
     for (const [mode, profiles] of Object.entries(result)) {
         for (const [profile, records] of Object.entries(profiles)) {
             records.forEach((record, index) => {
@@ -106,21 +112,12 @@ console.log('Six tableaux verifies : sommes, profils, virgules, modifications et
     assert.match(exportHtml, /container\.style\.height = '460px'/);
     assert.match(html, /filename='vendor\/chart\.umd\.js'/);
     assert.match(exportHtml, /body :is\(\.topbar, \.profile, \.profile-heading[\s\S]*?background:#fff !important/);
-    assert.match(exportHtml, /async function prepareReportsForPrint/);
     assert.match(exportHtml, /chart\.options\.animation = false/);
+    assert.match(exportHtml, /fetch\('\/generate_synthesis_pdf'/);
+    assert.doesNotMatch(exportHtml, /canvas\.toDataURL|createPrintReportCopies|window\.print\(/);
     assert.match(exportHtml, /frame\.scrolling = 'no'/);
     assert.match(exportHtml, /body \*::-webkit-scrollbar/);
     assert.doesNotMatch(exportHtml, /section\.append\(heading, frame\)/);
-    assert.match(exportHtml, /function createPrintReportCopies\(\)/);
-    assert.match(exportHtml, /canvas\.toDataURL\('image\/png'\)/);
-    assert.match(exportHtml, /grid-template-columns:minmax\(0,1fr\) !important/);
-    assert.match(exportHtml, /height:112mm !important/);
-    assert.match(exportHtml, /\.pdf-customer-report > h2[\s\S]*?font-size:1\.55rem/);
-    assert.match(exportHtml, /customer-summary-title[\s\S]*?font-size:24pt/);
-    assert.match(exportHtml, /\.report > iframe, \.report > h2/);
-    assert.match(exportHtml, /function setReportFramesVisible\(visible\)/);
-    assert.match(exportHtml, /setReportFramesVisible\(false\)/);
-    assert.match(exportHtml, /setReportFramesVisible\(true\)/);
 }
 
 console.log('Synthesis summary: chart peaks, chart-only report styling and local Chart.js loading verified.');
@@ -133,9 +130,9 @@ console.log('Synthesis summary: chart peaks, chart-only report styling and local
         dm1ModeMatrix: JSON.stringify({ '0_1 jours': '0,25' })
     };
     const context = vm.createContext({ frame: { contentWindow: {
-        sessionStorage: { getItem: key => storage[key] ?? null },
-        SleepCurrent: { sourceCurrentMicroamps: () => 3 }
+        sessionStorage: { getItem: key => storage[key] ?? null, setItem:(key,value)=>{storage[key]=value;} }
     } } });
+    vm.runInContext(fs.readFileSync(path.join(root,'static/sleep_current.js'),'utf8'),vm.createContext({window:context.frame.contentWindow}));
     vm.runInContext(page.slice(page.indexOf('        function getExcelMatrixRows'), page.indexOf('        function getExcelReportData')), context);
     const rows = vm.runInContext("getExcelMatrixRows(frame, 'DM1')", context);
     assert.equal(rows[0].currentUa, 1.5);

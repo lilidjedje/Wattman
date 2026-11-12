@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory() as folder:
             output=archive.read('Consoveille_Synthese.xlsx')
     workbook=load_workbook(BytesIO(output),data_only=False)
     source=load_workbook(ROOT/'Consoveille.xlsx',data_only=False,read_only=True)
-    related={'Logistic Mode','Logistic Wo unplug','Delivery','Customer Mode',*CUSTOMER_SHEETS.values()}
+    related={'Mounting Mode','Logistic Mode','Logistic Wo unplug','Delivery','Customer Mode',*CUSTOMER_SHEETS.values()}
     related.update(name for name in source.sheetnames if name.lower().startswith('biberonnage_23'))
     for original in source:
         if original.title not in related:
@@ -43,7 +43,6 @@ with tempfile.TemporaryDirectory() as folder:
                         continue
                     assert getattr(actual_value,'__dict__',actual_value)==getattr(expected_value,'__dict__',expected_value),(original.title,cell.coordinate)
     visible=[sheet for sheet in workbook if sheet.sheet_state=='visible']
-    assert not any(s.title.startswith('Wattman ') for s in workbook)
     deliveries=[s for s in visible if s.title.startswith('Delivery ')]
     expected_delivery=[]
     for report in payload['reports']:
@@ -52,6 +51,11 @@ with tempfile.TemporaryDirectory() as folder:
             for profile in profiles:
                 expected_delivery.append((module.upper(),profile))
         if module=='customer':
+            matrix=workbook['Customer Mode projet']
+            assert matrix.sheet_state=='visible'
+            for row_index,device in enumerate(report['data']['matrixRows'],4):
+                expected=float(device['currentUa'])+float(device['technicalWakeupA'])*1000000+float(device['smartmosUa'])
+                assert math.isclose(matrix.cell(row_index,5).value,expected,abs_tol=1e-9)
             for profile in profiles:
                 sheet=workbook[CUSTOMER_SHEETS[profile['id']]]
                 assert sheet.sheet_state=='visible'
@@ -73,7 +77,13 @@ with tempfile.TemporaryDirectory() as folder:
     assert len(logistics)==sum(len(p['columns']) for _,p in expected_delivery)
     for sheet in logistics:
         assert sheet.cell(4,1).value=='ECU selectionne'
-        assert sheet.cell(4,3).value in (750,575)
+        assert sheet.cell(4,6).value in (750,575)
+        assert math.isclose(sheet.cell(4,5).value,sheet.cell(4,2).value+sheet.cell(4,3).value*1000000+sheet.cell(4,4).value,abs_tol=1e-9)
+    mountains=[sheet for sheet in visible if sheet.title.startswith('Mountain Mode ')]
+    assert len(mountains)==len(expected_delivery)
+    for sheet in mountains:
+        assert sheet.cell(4,1).value=='ECU selectionne'
+        assert sheet.cell(4,6).value in (750,575)
     assert len(deliveries)==len(expected_delivery)
     for sheet,(mode,profile) in zip(deliveries,expected_delivery):
         assert mode in sheet.title
@@ -117,34 +127,55 @@ with tempfile.TemporaryDirectory() as folder:
             assert math.isclose(value(44),value(13)-value(17)-value(97),abs_tol=1e-10)
             assert math.isclose(value(92),sum(value(row) for row in (47,54,65,68,84,90,98)),abs_tol=1e-10)
             assert math.isclose(value(6),max(0,value(44))/value(92),abs_tol=1e-10)
+        custom_rows=[row for row in sheet if 'Fonction ajoutee' in str(row[1].value)]
+        assert len(custom_rows)==len(profile['columns'])
+        for row,column in zip(custom_rows,profile['columns']):
+            index=5 if column['scenario']['key']=='baseLab' else 7
+            assert math.isclose(sheet.cell(row[0].row,index).value,0.0625,abs_tol=1e-12)
         selected={5 if c['scenario']['key']=='baseLab' else 7 for c in profile['columns']}
         for index in (5,6,7,8,9):assert sheet.column_dimensions[chr(64+index)].hidden==(index not in selected)
     bibs=[r for r in payload['reports'] if r['module']=='biberonnage']
     if bibs:
-        sheet=workbook['Biberonnage 23°']
-        titles=[str(cell.value) for row in sheet for cell in row if str(cell.value).startswith('Biberonnage ')]
-        expected=[f'Biberonnage {r["data"]["days"]} jours - {p["name"]}' for r in bibs for p in r['data']['profiles']]
-        assert sorted(titles)==sorted(expected),(titles,expected)
-        assert len(sheet._charts)==len(expected)
-        for row in sheet:
-            if str(row[0].value).startswith('Biberonnage '):
-                section=row[0].row
-                report=next(r for r in bibs if f'{r["data"]["days"]} jours' in row[0].value)
-                profile=next(p for p in report['data']['profiles'] if row[0].value.endswith(' - '+p['name']))
-                result=profile['result']
-                for offset,key in enumerate(('capacityAh','startSoc','sumVeilleAh','totalLossL1','totalLossL2','totalRechargeAh','totalCost','bibCount'),2):
-                    assert math.isclose(sheet.cell(section+offset,2).value,result[key],abs_tol=1e-9),(row[0].value,key)
-                header=section+11
-                for offset,point in enumerate(profile['timeline'],1):
-                    expected_values=[point['days'],result['socCurrent'][offset-1],result['intervalAh'][offset-1],result['losses'][offset-1],result['recharges'][offset-1]]
-                    for col,expected_value in enumerate(expected_values,1):
-                        actual=sheet.cell(header+offset,col).value
-                        assert actual is None if expected_value is None else math.isclose(actual,expected_value,abs_tol=1e-9)
-                for offset,point in enumerate(result['socPoints'],1):
-                    assert math.isclose(sheet.cell(header+offset,15).value,point['x'],abs_tol=1e-9)
-                    assert math.isclose(sheet.cell(header+offset,16).value,point['y'],abs_tol=1e-9)
+        bib_sheets=[sheet for sheet in visible if sheet.title.startswith('Biberonnage 23')]
+        assert len(bib_sheets)==len({p['id'] for r in bibs for p in r['data']['profiles']})
+        for sheet in bib_sheets:
+            aux_x=4+max(len(p['timeline']) for r in bibs for p in r['data']['profiles'] if sheet['A1'].value.endswith(' - '+p['name']))
+            titles=[str(cell.value) for row in sheet for cell in row if str(cell.value).startswith('Biberonnage ')]
+            expected=[f'Biberonnage {r["data"]["days"]} jours - {p["name"]}' for r in bibs for p in r['data']['profiles'] if p['name']==sheet['A1'].value.split(' - ',1)[1]]
+            assert sorted(titles)==sorted(expected),(titles,expected)
+            assert len(sheet._charts)==len(expected)
+            for row in sheet:
+                if str(row[0].value).startswith('Biberonnage '):
+                    section=row[0].row
+                    report=next(r for r in bibs if f'{r["data"]["days"]} jours' in row[0].value)
+                    profile=next(p for p in report['data']['profiles'] if row[0].value.endswith(' - '+p['name']))
+                    result=profile['result']
+                    for offset,key in enumerate(('capacityAh','startSoc','sumVeilleAh','totalLossL1','totalLossL2','totalRechargeAh','totalCost','bibCount'),2):
+                        assert math.isclose(sheet.cell(section+offset,2).value,result[key],abs_tol=1e-9),(row[0].value,key)
+                    header=section+11
+                    for offset,point in enumerate(profile['timeline'],1):
+                        expected_values=[point['days'],result['socCurrent'][offset-1],result['intervalAh'][offset-1],result['losses'][offset-1],result['recharges'][offset-1]]
+                        for col,expected_value in enumerate(expected_values,1):
+                            actual=sheet.cell(header+offset,col).value
+                            assert actual is None if expected_value is None else math.isclose(actual,expected_value,abs_tol=1e-9)
+                    if profile.get('inputRows'):
+                        first=next(cell.row for line in sheet for cell in line if cell.value=='Donnees de consommation selectionnees' and cell.row>section)
+                        source_input=profile['inputRows'][0]
+                        assert sheet.cell(first+2,1).value==source_input['name']
+                        for col,point in enumerate(profile['timeline'],3):
+                            assert math.isclose(sheet.cell(first+2,col).value,source_input['values'][point['label']],abs_tol=1e-12)
+                    for offset,point in enumerate(result['socPoints'],1):
+                        assert math.isclose(sheet.cell(header+offset,aux_x).value,point['x'],abs_tol=1e-9)
+                        assert math.isclose(sheet.cell(header+offset,aux_x+1).value,point['y'],abs_tol=1e-9)
     if 'customer' not in payload['modules']:
         assert all(workbook[name].sheet_state!='visible' for name in ['Customer Mode',*CUSTOMER_SHEETS.values()])
+    if payload.get('applicationData'):
+        assert 'Parametres application' in workbook
+        inputs=workbook['Wattman Device List']
+        name_column=next(cell.column for cell in inputs[1] if cell.value=='Device Name')
+        assert inputs.cell(2,name_column).value=='ECU selectionne'
+        params={row[0].value:row[1].value for row in workbook['Parametres application'] if len(row)>1}
+        assert params['fixedConsumptionDM1.baseLab.entries.pcuRam.current']=='1,5'
     (ROOT/f'tmp/excel-tests/case-{case}.xlsx').write_bytes(output)
     print(f'Excel case {case}: selected profiles/scenarios/durations, numeric results and all unrelated reference pages verified.')
     workbook.close();source.close()

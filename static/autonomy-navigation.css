@@ -1,0 +1,60 @@
+/* Shared autonomy navigation and light consumption tables. */
+.stepper { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stepper .step { min-width: 0; white-space: normal; }
+@media (max-width: 1000px) {
+    .stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 540px) {
+    .stepper { grid-template-columns: 1fr; }
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) :is(table, table *, .table-wrap) {
+    font-family: "Segoe UI", system-ui, sans-serif !important;
+    border-color: #dce4ef !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) :is(table, .table-wrap, tbody tr, tbody td) {
+    color: #1e293b !important;
+    background: #fff !important;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) table thead th:nth-child(n) {
+    color: #334155 !important;
+    background: #f1f5fb !important;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) table .section td {
+    color: #1f4e78 !important;
+    background: #edf3ff !important;
+    border-top: 1px solid #cbdaf1 !important;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) table tbody tr:nth-child(n) td:is(.computed, .calculated) {
+    color: #1d4ed8 !important;
+    background: #eef5ff !important;
+    border-left: 1px solid #dce4ef !important;
+    white-space: normal;
+    line-height: 1.5;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) table :is(input, select) {
+    color: #1e293b !important;
+    background: #fff !important;
+    border: 1px solid #b9c7da !important;
+    border-radius: 6px !important;
+}
+body.sleep-consumption-page table td.manual {
+    color: #1e293b !important;
+    background: #fff !important;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) table :is(input, select):focus {
+    outline: 2px solid #82aaff !important;
+}
+body:is(.fixed-consumption-page, .sleep-consumption-page) table .delete {
+    color: #a4262c !important;
+    background: #fff1f2 !important;
+    border: 1px solid #f0bfc4 !important;
+    border-radius: 6px !important;
+}
+body.sleep-consumption-page .sleep-current-summary > div {
+    color: #1e293b !important;
+    background: #f8faff !important;
+    border: 1px solid #dce4ef !important;
+    border-radius: 8px;
+}

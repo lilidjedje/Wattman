@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <style>.dashboard-setup [hidden] { display: none !important; }</style>
+    <script src="{{ url_for('shared_current_units') }}"></script>
 </head>
 <body class="dashboard-setup">
     <header class="workstation-header">
@@ -150,7 +151,7 @@
             list.innerHTML = devices.map(device => `
                 <label class="device-choice">
                     <input type="checkbox" value="${escapeHtml(device.id)}" checked>
-                    <span><strong>${escapeHtml(device.name)}</strong><small>${Number(device.nominal_A || 0).toFixed(4)} A nominal</small></span>
+                    <span><strong>${escapeHtml(device.name)}</strong><small>${CurrentUnits.format(device.nominal_A || 0,'A')} nominal</small></span>
                 </label>`).join('');
             if (!devices.length) list.innerHTML = '<div class="empty-notice">Aucun ECU compatible n’est synchronisé dans le projet.</div>';
             list.querySelectorAll('input').forEach(input => input.addEventListener('change', updateCount));

@@ -6,6 +6,7 @@
     <title>Acquisition ESP32-C3 multi INA226</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('shared_current_units') }}"></script>
 </head>
 <body>
     <header class="workstation-header">
@@ -213,7 +214,7 @@
                 const current = data.collector?.[`latest_current_${channel}`];
                 document.getElementById(`current${channel}`).textContent =
                     current !== null && current !== undefined && Number.isFinite(Number(current))
-                        ? `${Number(current).toFixed(3)} A`
+                        ? CurrentUnits.format(current,'A')
                         : 'En attente de mesure';
                 document.getElementById(`stopButton${channel}`).disabled = !sensor.running;
                 const sensorDuration = Number(sensor.duration || 0);

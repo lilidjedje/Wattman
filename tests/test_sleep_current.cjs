@@ -117,14 +117,19 @@ assert.ok(editor.includes('<span class="battery-unit-suffix">µA</span>'));
     };
     const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-10, `${actual} != ${expected}`);
     const result = calculator.calculate('Customer Mode', storage);
-    near(result.instantaneousUa, reference.expectedUa);
-    near(result.dailyAh, reference.expectedDailyAh);
+    const baseUa=calculator.devices('Customer Mode',storage).reduce((sum,device)=>
+        sum+device.currentUa*reference.rows[Number(device.matrixKey)].oneDay,0);
+    near(baseUa,reference.expectedUa);
+    // New defaults: AIBS + active PIUs + BMS + PCU, plus three SmartMOS loads.
+    const expectedUa=reference.expectedUa+138.17;
+    near(result.instantaneousUa,expectedUa);
+    near(result.dailyAh,expectedUa*24/1000000);
     // The same imported legacy values use µA, rather than the editor's mA.
     values.excelData['ECU List'].data = reference.rows.map(row => ({
         'ECU Name': row.name, 'Current (A)': row.currentUa
     }));
-    near(calculator.calculate('Customer Mode', storage).dailyAh, reference.expectedDailyAh);
+    near(calculator.calculate('Customer Mode', storage).dailyAh,expectedUa*24/1000000);
     values.modifiedCustomerCurrents = { [`0_${reference.rows[0].name}`]: '420' };
-    near(calculator.calculate('Customer Mode', storage).instantaneousUa, reference.expectedUa + 210);
-    console.log('Consoveille Customer!E88:E89: 3.0482 mA -> 0.0731568 Ah/j verified from Customer Mode!M54:M55.');
+    near(calculator.calculate('Customer Mode', storage).instantaneousUa,expectedUa+210);
+    console.log('Customer source currents preserved; new Wakeup/SmartMOS contributions and day profiles verified.');
 }

@@ -1,7 +1,7 @@
 (() => {
     const n = (value, fallback = 0) => {
         if (value === null || value === undefined || String(value).trim() === '') return fallback;
-        const parsed = Number(String(value).replace(',', '.'));
+        const parsed = Number(String(value).replace(/\s/g, '').replace(',', '.'));
         return Number.isFinite(parsed) ? parsed : fallback;
     };
     const labels = {

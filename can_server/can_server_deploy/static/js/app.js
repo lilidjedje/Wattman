@@ -105,7 +105,7 @@ function genererRapportPics(seuilAmpere = null, unite = null) {
                 html += `<tr>
                     <td style="font-weight: bold; color: ${badgeColor};">${p.capteur}</td>
                     <td>${formatTimestamp(p.debut)}</td>
-                    <td style="font-weight: bold;">${valeurConvertie.toFixed(unite === "mA" ? 2 : 6)} ${unite}</td>
+                    <td style="font-weight: bold;">${CurrentUnits.format(p.valeur_max,'A')}</td>
                     <td>${p.duree_ms.toFixed(2)} ms</td>
                 </tr>`;
             });
@@ -152,9 +152,11 @@ function mettreAJourGraphique(data, unite = "A") {
             animation: false,
             parsing: false,
             scales: {
-                x: { type: 'linear', position: 'bottom' }
+                x: { type: 'linear', position: 'bottom' },
+                y: {title:{display:true,text:'Courant'},ticks:{callback:value=>CurrentUnits.format(value,unite)}}
             },
             plugins: {
+                tooltip:{callbacks:{label:context=>`${context.dataset.label}: ${CurrentUnits.format(context.parsed.y,unite)}`}},
                 zoom: {
                     zoom: {
                         wheel: { enabled: true, modifierKey: 'ctrl' },
@@ -212,9 +214,9 @@ function chargerResume1m() {
                 <tr>
                     <td>${formatTimestamp(item.timestamp_minute)}</td>
                     <td>${item.channel}</td>
-                    <td>${item.current_min.toFixed(6)}</td>
-                    <td>${item.current_max.toFixed(6)}</td>
-                    <td>${item.current_avg.toFixed(6)}</td>
+                    <td>${CurrentUnits.format(item.current_min,'A')}</td>
+                    <td>${CurrentUnits.format(item.current_max,'A')}</td>
+                    <td>${CurrentUnits.format(item.current_avg,'A')}</td>
                 </tr>
             `).join("");
         })

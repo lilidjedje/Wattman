@@ -1,0 +1,47 @@
+.autonomy-current-setup { margin:0; background:#f2f5f9; color:#243447; font:15px/1.5 "Segoe UI",Tahoma,sans-serif; }
+.autonomy-current-setup * { box-sizing:border-box; }
+.setup-page { max-width:1440px; margin:auto; padding:28px; }
+.setup-header,.setup-footer,.setup-card-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; }
+.setup-step { color:#64748b; font-size:13px; }
+.setup-intro { padding:30px 0 22px; }
+.setup-navigation { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 24px; padding:14px; background:#fff; border:1px solid #d9e1eb; border-radius:12px; }
+.setup-navigation .step { min-width:0; white-space:normal; color:#36516e; background:#f1f5f9; border-color:#cbd5e1; }
+.setup-navigation .step:hover { background:#e6edf7; }
+.setup-navigation .step.active { color:#fff; background:#2563eb; border-color:#2563eb; }
+@media(max-width:1000px) { .setup-navigation { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:540px) { .setup-navigation { grid-template-columns:1fr; } }
+.setup-kicker { color:#2563eb; font-size:12px; font-weight:800; letter-spacing:.16em; }
+.setup-page h1 { margin:0 0 10px; font-size:30px; color:#1f4e78; }
+.setup-page h2 { margin:0 0 4px; font-size:20px; }
+.setup-page p { margin:8px 0; }
+.setup-formula { padding:14px 18px; background:#e6edf7; border-left:3px solid #2563eb; border-radius:4px; }
+.setup-card { padding:22px; border:1px solid #d9e1eb; background:white; border-radius:12px; box-shadow:0 4px 20px #24344708; }
+.setup-card-heading p,.setup-add small { color:#64748b; }
+.setup-table-scroll { overflow-x:auto; margin-top:18px; }
+.setup-table { width:100%; border-collapse:collapse; min-width:900px; }
+.setup-table th { padding:14px 10px; text-align:left; color:#42566c; background:#f3f6fa; border-bottom:2px solid #dbe3ed; font-size:13px; }
+.setup-table td { padding:14px 10px; border-bottom:1px solid #e5eaf1; }
+.setup-table td:first-child { min-width:200px; max-width:320px; overflow-wrap:anywhere; font-weight:600; }
+.setup-table td:nth-child(5) { font-weight:700; color:#1f4e78; white-space:nowrap; }
+.setup-contribution-field { display:flex; align-items:center; gap:9px; }
+.setup-contribution-field input[type=number] { width:112px; padding:9px; border:1px solid #bac8d9; border-radius:6px; font:inherit; }
+.setup-contribution-field input:disabled { background:#f1f5f9; color:#94a3b8; }
+.setup-contribution-field input[type=checkbox] { width:18px; height:18px; accent-color:#2563eb; }
+.setup-page button,.setup-secondary { font:inherit; font-weight:600; cursor:pointer; border:1px solid transparent; border-radius:7px; padding:10px 15px; text-decoration:none; }
+.setup-primary { background:#2563eb; color:white; }
+.setup-primary:hover { background:#1d4ed8; }
+.setup-secondary { color:#36516e; background:white; border-color:#cbd5e1 !important; }
+.setup-remove { color:#a83232; background:#fff3f3; white-space:nowrap; }
+.setup-add { margin-top:24px; padding-top:20px; border-top:1px solid #e5eaf1; }
+.setup-add label { display:block; margin-bottom:8px; font-weight:600; }
+.setup-add > div { display:flex; gap:10px; }
+.setup-add select { flex:1; min-width:0; padding:10px; font:inherit; border:1px solid #bac8d9; border-radius:6px; }
+.setup-add small { display:block; margin-top:9px; }
+.setup-empty { padding:20px; color:#64748b; }
+.setup-footer { margin-top:22px; }
+.setup-footer p { flex:1; color:#42627c; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+.matrix-edit-page .total-dark-current { min-width:175px; width:175px; font-weight:700; white-space:nowrap; }
+.matrix-edit-page td.total-dark-current { color:#1f4e78 !important; background:#e6f1fa !important; }
+.matrix-edit-page .current-contribution-link { display:inline-block; margin:0 0 14px; padding:10px 15px; border:1px solid #b7c9d6; border-radius:6px; background:white; color:#1f4e78; font-weight:600; text-decoration:none; }
+@media(max-width:700px) { .setup-page { padding:16px; } .setup-page h1 { font-size:24px; } .setup-card { padding:15px; } .setup-footer { align-items:stretch; flex-direction:column; } .setup-step { display:none; } }

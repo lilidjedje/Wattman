@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/autonomy_profiles.js"></script>
+    <link rel="stylesheet" href="/static/autonomy_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calcul de l'Autonomie Batterie</title>
@@ -147,6 +149,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="{{ url_for('static', filename='summary-menu.js') }}" defer></script>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
+    <script src="/static/excel_colors.js"></script>
+    <link rel="stylesheet" href="/static/excel-colors.css">
 </head>
 <body class="battery-results-page preserve-table-colors">
 
@@ -161,7 +167,6 @@
                     <summary>Sommaire</summary>
                     <div class="menu-content">
                         <span class="saved-status" id="saved-status" aria-live="polite"></span>
-                        <button class="btn-menu btn-save" type="button" id="project-save">Enregistrer le projet</button>
                         <button class="btn-menu btn-reset" type="button" id="reset-btn">Valeurs initiales</button>
                         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 4px 0;">
                         <button class="btn-menu btn-mode" type="button" onclick="window.location.href='/mode_selection'">Sélection du mode</button>
@@ -201,6 +206,9 @@
             <button class="btn-export-excel" id="export-customer-excel" type="button">
                 Exporter les résultats en Excel
             </button>
+            <button class="btn-export-excel" id="export-customer-selection" type="button">
+                Télécharger la synthèse (PDF / Excel)
+            </button>
         </div>
 
         <button class="btn-back" onclick="window.location.href='/sleep_consumption'">← Retour aux consommations en veille</button>
@@ -222,6 +230,10 @@
     <script src="/static/customer_reference.js"></script>
     <script src="/static/customer_autonomy.js"></script>
     <script>
+        function autonomyCell(content, days = content) {
+            return window.ExcelColors ? ExcelColors.autonomyCell(content ?? '0', days) : (content ?? '0');
+        }
+
         function cells(values) {
             return values.map(value => String(value).trim().startsWith('<td') ? value : `<td>${value}</td>`).join('');
         }
@@ -238,6 +250,10 @@
             const numericValue = Number(String(value ?? '').replace(',', '.'));
             if (!Number.isFinite(numericValue)) return '0';
             return numericValue.toFixed(digits).replace(/\.?0+$/, '').replace('.', ',');
+        }
+
+        function formatCurrentDisplay(value, unit) {
+            return window.CurrentUnits ? window.CurrentUnits.format(value,unit) : `${formatConfigurationNumber(value)} ${unit}`;
         }
 
         function readBatteryConfiguration() {
@@ -326,16 +342,16 @@
             const current = homologationCurrent();
             const values = {
                 curr_veille_conso: isDmMode
-                    ? `${formatConfigurationNumber(current, 3)} µA`
-                    : `${formatConfigurationNumber(current / 1000, 4)} mA`,
+                    ? `${formatCurrentDisplay(current, 'µA')}`
+                    : `${formatCurrentDisplay(current / 1000, 'mA')}`,
                 curr_veille: `${formatConfigurationNumber(SleepCurrent.calculate(batterySubMode).dailyAh, 8)} Ah/j`,
-                sans_ebdu_conso: `${formatConfigurationNumber(Number(configuration.sansEbdu))} mA`,
+                sans_ebdu_conso: `${formatCurrentDisplay(Number(configuration.sansEbdu), 'mA')}`,
                 sans_ebdu_cons: `${formatConfigurationNumber(Number(configuration.sansEbdu) / 1000 * 24)} Ah/j`,
-                alarme_conso: `${formatConfigurationNumber(Number(configuration.alarm))} mA`,
+                alarme_conso: `${formatCurrentDisplay(Number(configuration.alarm), 'mA')}`,
                 alarme: `${formatConfigurationNumber(Number(configuration.alarm) / 1000 * 24)} Ah/j`,
-                aid_conso: `${formatConfigurationNumber(Number(configuration.aid))} mA`,
+                aid_conso: `${formatCurrentDisplay(Number(configuration.aid), 'mA')}`,
                 aid: `${formatConfigurationNumber(Number(configuration.aid) / 1000 * 24)} Ah/j`,
-                tachy_conso: `${formatConfigurationNumber(Number(configuration.tachy))} mA`,
+                tachy_conso: `${formatCurrentDisplay(Number(configuration.tachy), 'mA')}`,
                 tachy: `${formatConfigurationNumber(Number(configuration.tachy) / 1000 * 24)} Ah/j`,
                 aging_soc: `${formatConfigurationNumber(Number(configuration.agingSoc))}%`,
                 aging_cons: `${formatConfigurationNumber(Number(configuration.agingSoc) / 100 * batteryConfiguration.capacityAh)} Ah/j`
@@ -351,7 +367,7 @@
                 if (mapping) {
                     const entry = configuration.twt[mapping[0]];
                     const value = mapping[1] === 'energy' ? twtEnergy(entry) : Number(entry[mapping[1]]) || 0;
-                    return `${formatConfigurationNumber(value)} ${mapping[2]}`;
+                    return window.CurrentUnits?.isUnit(mapping[2]) ? formatCurrentDisplay(value,mapping[2]) : `${formatConfigurationNumber(value)} ${mapping[2]}`;
                 }
                 if (['aid_conso', 'aid', 'tachy_conso', 'tachy'].includes(rowId)) return null;
             }
@@ -374,6 +390,18 @@
             return Number(duration) * (factors[unit] || 0);
         }
 
+        function fixedNumber(value, fallback = 0) {
+            if (value === null || value === undefined || String(value).trim() === '') return fallback;
+            const parsed = Number(String(value).replace(/\s/g, '').replace(',', '.'));
+            return Number.isFinite(parsed) ? parsed : fallback;
+        }
+
+        function cellBalancingDaily(entry) {
+            const period = fixedNumber(entry?.extra?.periodMin, 480);
+            return entry && period > 0 ? fixedNumber(entry.duration) / 3600
+                * fixedNumber(entry.current) / 1000 * 1440 / period : 0;
+        }
+
         function fixedConsumptionEnergy(scenarioKey) {
             const entries = fixedConsumption[scenarioKey]?.entries || {};
             const deleted = new Set(JSON.parse(sessionStorage.getItem(`deletedFixedFunctionIds_${batterySubMode}`) || '[]'));
@@ -383,7 +411,7 @@
                 return entry ? (Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit) : 0;
             };
             const cellBalancing = deleted.has('cellBalancing') ? null : entries.cellBalancing;
-            const cellEnergy = cellBalancing ? (Number(cellBalancing.duration) / 3600) * (Number(cellBalancing.current) / 1000) * (24 * 60 / Number(cellBalancing.extra?.periodMin || 1)) * Number(cellBalancing.extra?.balancingDays || 0) : 0;
+            const cellEnergy = cellBalancingDaily(cellBalancing) * fixedNumber(cellBalancing?.extra?.balancingDays);
             const smartAntenna = deleted.has('smartAntenna') ? null : entries.smartAntenna;
             const smartAntennaEnergy = smartAntenna ? (Number(smartAntenna.current) / 1000) * 24 * Number(smartAntenna.duration) + (Number(smartAntenna.extra?.drxCurrent) / 1000) * 24 * Number(smartAntenna.extra?.drxDays) + 6 * Number(smartAntenna.extra?.remoteEnergy) : 0;
             const dailyEnergy = (entryKey) => { if (deleted.has(entryKey)) return 0; const entry = entries[entryKey]; return entry ? (Number(entry.current) / 1000) * 24 * Number(entry.duration) : 0; };
@@ -429,7 +457,7 @@
                 endor_energy: `${formatConfigurationNumber(batteryConfiguration.vehicleSleepEnergyAh)} Ah`,
                 endor_tot: `${formatConfigurationNumber(vehicleSleepEnergy)} Ah`,
                 rev_tech_cb_duree: `${formatConfigurationNumber(batteryConfiguration.wakeCellBalancingDurationSeconds)} s`,
-                rev_tech_cb_conso: `${formatConfigurationNumber(batteryConfiguration.wakeCellBalancingCurrentMa)} mA`,
+                rev_tech_cb_conso: `${formatCurrentDisplay(batteryConfiguration.wakeCellBalancingCurrentMa, 'mA')}`,
                 rev_tech: `${formatConfigurationNumber(technicalWakeConsumption)} Ah/j`,
                 energy_debut_veille: `${formatConfigurationNumber(sleepEnergy)} Ah`,
                 veille_tot: `${formatConfigurationNumber(sleepConsumptionTotal)} Ah/j`,
@@ -447,11 +475,11 @@
                 const drxEnergy = Number(smartAntenna.extra?.drxDays) * drxDaily;
                 const remoteEnergy = Number(smartAntenna.extra?.remoteEnergy);
                 const smartAntennaValues = {
-                    sa_mqtt_conso: `${formatConfigurationNumber(Number(smartAntenna.current))} mA`,
+                    sa_mqtt_conso: `${formatCurrentDisplay(Number(smartAntenna.current), 'mA')}`,
                     sa_mqtt_ahj: `${formatConfigurationNumber(mqttDaily)} Ah/j`,
                     sa_mqtt_dur: `${formatConfigurationNumber(Number(smartAntenna.duration))} jours`,
                     sa_mqtt_eng: `${formatConfigurationNumber(mqttEnergy)} Ah`,
-                    sa_drx_conso: `${formatConfigurationNumber(Number(smartAntenna.extra?.drxCurrent))} mA`,
+                    sa_drx_conso: `${formatCurrentDisplay(Number(smartAntenna.extra?.drxCurrent), 'mA')}`,
                     sa_drx_ahj: `${formatConfigurationNumber(drxDaily)} Ah/j`,
                     sa_drx_dur: `${formatConfigurationNumber(Number(smartAntenna.extra?.drxDays))} jours`,
                     sa_drx_eng: `${formatConfigurationNumber(drxEnergy)} Ah`,
@@ -462,49 +490,49 @@
             }
             const rowMap = {
                 cb_per: ['cellBalancing', (entry) => `${formatConfigurationNumber(Number(entry.extra?.periodMin || 0))} min`],
-                cb_conso: ['cellBalancing', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                cb_conso: ['cellBalancing', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 cb_duree: ['cellBalancing', (entry) => `${formatConfigurationNumber(Number(entry.duration))} s`],
-                cb_ahj: ['cellBalancing', (entry) => `${formatConfigurationNumber((Number(entry.duration) / 3600) * (Number(entry.current) / 1000) * (24 * 60 / Number(entry.extra?.periodMin || 1)))} Ah/j`],
+                cb_ahj: ['cellBalancing', (entry) => `${formatConfigurationNumber(cellBalancingDaily(entry))} Ah/j`],
                 cb_dur_bal: ['cellBalancing', (entry) => `${formatConfigurationNumber(Number(entry.extra?.balancingDays || 0))} jours`],
-                cb_energy_tot: ['cellBalancing', (entry) => `${formatConfigurationNumber(((Number(entry.duration) / 3600) * (Number(entry.current) / 1000) * (24 * 60 / Number(entry.extra?.periodMin || 1))) * Number(entry.extra?.balancingDays || 0))} Ah`],
-                pcu_ram_conso: ['pcuRam', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                cb_energy_tot: ['cellBalancing', (entry) => `${formatConfigurationNumber(cellBalancingDaily(entry) * readConfigurationNumber(entry.extra?.balancingDays, 0))} Ah`],
+                pcu_ram_conso: ['pcuRam', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 pcu_ram_duree: ['pcuRam', (entry) => `${formatConfigurationNumber(Number(entry.duration))} h`],
                 pcu_ram_energy: ['pcuRam', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                pcu_sec_conso: ['pcuSecure', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                pcu_sec_conso: ['pcuSecure', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 pcu_sec_duree: ['pcuSecure', (entry) => `${formatConfigurationNumber(Number(entry.duration))} s`],
                 pcu_sec_energy: ['pcuSecure', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                cdc_ram_conso: ['cdcRam', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                cdc_ram_conso: ['cdcRam', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 cdc_ram_duree: ['cdcRam', (entry) => `${formatConfigurationNumber(Number(entry.duration))} h`],
                 cdc_ram_energy: ['cdcRam', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                ivc3_conso: ['ivc3', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                ivc3_conso: ['ivc3', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 ivc3_duree: ['ivc3', (entry) => `${formatConfigurationNumber(Number(entry.duration))} h`],
                 ivc3_energy: ['ivc3', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                cdc_gar_conso: ['cdcGarage', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                cdc_gar_conso: ['cdcGarage', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 cdc_gar_duree: ['cdcGarage', (entry) => `${formatConfigurationNumber(Number(entry.duration))} min`],
                 cdc_gar_energy: ['cdcGarage', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                cdc_sec_conso: ['cdcSecure', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                cdc_sec_conso: ['cdcSecure', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 cdc_sec_duree: ['cdcSecure', (entry) => `${formatConfigurationNumber(Number(entry.duration))} min`],
                 cdc_sec_energy: ['cdcSecure', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                fota_conso: ['fota', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                fota_conso: ['fota', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 fota_duree: ['fota', (entry) => `${formatConfigurationNumber(Number(entry.duration))} ${entry.unit}`],
                 fota_energy: ['fota', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * durationInHours(entry.duration, entry.unit))} Ah`],
-                hfk3_conso: ['handFree3', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                hfk3_conso: ['handFree3', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 hfk3_ahj: ['handFree3', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24)} Ah/j`],
                 hfk3_duree: ['handFree3', (entry) => `${formatConfigurationNumber(Number(entry.duration))} jours`],
                 hfk3_energy: ['handFree3', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24 * Number(entry.duration))} Ah`],
-                hfk48_conso: ['handFree48', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                hfk48_conso: ['handFree48', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 hfk48_ahj: ['handFree48', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24)} Ah/j`],
                 hfk48_duree: ['handFree48', (entry) => `${formatConfigurationNumber(Number(entry.duration))} jours`],
                 hfk48_energy: ['handFree48', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24 * Number(entry.duration))} Ah`],
-                transport_conso: ['transport', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                transport_conso: ['transport', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 transport_ahj: ['transport', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24)} Ah/j`],
                 transport_duree: ['transport', (entry) => `${formatConfigurationNumber(Number(entry.duration))} jours`],
                 transport_energy: ['transport', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24 * Number(entry.duration))} Ah`],
-                first8_conso: ['first8', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                first8_conso: ['first8', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 first8_ah: ['first8', (entry) => `${formatConfigurationNumber(Number(entry.current) / 1000)} Ah`],
                 first8_duree: ['first8', (entry) => `${formatConfigurationNumber(Number(entry.duration))} h`],
                 first8_energy: ['first8', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * Number(entry.duration))} Ah`],
-                blm_conso: ['blm', (entry) => `${formatConfigurationNumber(Number(entry.current))} mA`],
+                blm_conso: ['blm', (entry) => `${formatCurrentDisplay(Number(entry.current), 'mA')}`],
                 blm_ahj: ['blm', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24)} Ah/j`],
                 blm_duree: ['blm', (entry) => `${formatConfigurationNumber(Number(entry.duration))} jours`],
                 blm_energy: ['blm', (entry) => `${formatConfigurationNumber((Number(entry.current) / 1000) * 24 * Number(entry.duration))} Ah`]
@@ -523,7 +551,7 @@
                 energy_brute: `${formatConfigurationNumber(batteryConfiguration.capacityAh * (batteryConfiguration.startingSoc - batteryConfiguration.minimumSoc) / 100)} Ah`,
                 rev_tech_period: `${formatConfigurationNumber(batteryConfiguration.wakePeriodHours)} heures`,
                 rev_tech_soc_duree: `${formatConfigurationNumber(batteryConfiguration.wakeDurationSeconds)} s`,
-                rev_tech_soc_conso: `${formatConfigurationNumber(batteryConfiguration.wakeCurrentMa)} mA`
+                rev_tech_soc_conso: `${formatCurrentDisplay(batteryConfiguration.wakeCurrentMa, 'mA')}`
             };
             if (values[rowId] !== undefined) return cells(Array(columnCount).fill(values[rowId]));
             const reportValues = activeScenarioKeys.map((scenarioKey) => reportValue(rowId, scenarioKey));
@@ -535,7 +563,11 @@
         }
 
         // Fonction globale pour générer le squelette de base commun (Lignes de composants communes aux photos 1, 2 et 3)
-        function generateCommonRows(modeHtmlHeaders, modeBodyValuesFunction, valueColumnCount) {
+        function generateCommonRows(modeHtmlHeaders, rawModeBodyValuesFunction, valueColumnCount) {
+            // Applique les codes couleurs Excel (feuilles Customer / Delivery) à chaque ligne de valeurs.
+            const modeBodyValuesFunction = rowId => window.ExcelColors
+                ? ExcelColors.decorateRow(rawModeBodyValuesFunction(rowId), rowId, isDmMode)
+                : rawModeBodyValuesFunction(rowId);
             const totalColumns = 3 + valueColumnCount;
             const valueColumns = Array.from({ length: valueColumnCount }, () => '<col class="value-col">').join('');
             return `
@@ -844,7 +876,7 @@
                         <tr class="energy-row"><td colspan="2" style="text-align:left; font-weight:normal;">Consommation</td>${modeBodyValuesFunction('curr_veille')}</tr>
                         <tr><td class="sub-section-title" rowspan="6">Réveil technique périodique<br>SOC</td><td class="lbl-col">périodicité réveil technique</td><td class="param-col">${formatConfigurationNumber(batteryConfiguration.wakePeriodHours)} heures</td>${modeBodyValuesFunction('rev_tech_period')}</tr>
                         <tr><td class="lbl-col">durée réveil technique SOC</td><td class="param-col">${formatConfigurationNumber(batteryConfiguration.wakeDurationSeconds)} s</td>${modeBodyValuesFunction('rev_tech_soc_duree')}</tr>
-                        <tr><td class="lbl-col">conso réveil technique SOC</td><td class="param-col">${formatConfigurationNumber(batteryConfiguration.wakeCurrentMa)} mA</td>${modeBodyValuesFunction('rev_tech_soc_conso')}</tr>
+                        <tr><td class="lbl-col">conso réveil technique SOC</td><td class="param-col">${formatCurrentDisplay(batteryConfiguration.wakeCurrentMa, 'mA')}</td>${modeBodyValuesFunction('rev_tech_soc_conso')}</tr>
                         <tr><td class="lbl-col">durée réveil technique cells balancing</td><td class="param-col">60 s</td>${modeBodyValuesFunction('rev_tech_cb_duree')}</tr>
                         <tr><td class="lbl-col">conso réveil technique cells balancing</td><td class="param-col">0 mA</td>${modeBodyValuesFunction('rev_tech_cb_conso')}</tr>
                         <tr class="energy-row"><td colspan="2" style="text-align:left; font-weight:normal;">Consommation</td>${modeBodyValuesFunction('rev_tech')}</tr>
@@ -909,14 +941,14 @@
             };
             const escape = text => String(text).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
             const headers = `<tr><th colspan="3"></th>${columns.map(column => `<th>${escape(column.label)}</th>`).join('')}</tr>
-                <tr class="kpi-row"><td colspan="3">DURÉE DE TENUE EN VEILLE</td>${cells(columns.map(column => column.autonomy === null ? 'Non calculable' : `${formatConfigurationNumber(column.autonomy, 4)} jours`))}</tr>
+                <tr class="kpi-row"><td colspan="3">DURÉE DE TENUE EN VEILLE</td>${cells(columns.map(column => { const text = column.autonomy === null ? 'Non calculable' : `${formatConfigurationNumber(column.autonomy, 4)} jours`; return globalThis.ExcelColors ? ExcelColors.autonomyCell(text, column.autonomy) : text; }))}</tr>
                 <tr><td colspan="3">SANS BIBERONNAGE</td>${cells(columns.map(column => `${formatConfigurationNumber(column.value(8))} Ah`))}</tr>`;
             if (window.customerSummaryMode) {
                 const selectedIndices = new Set(window.selectedCustomerScenarios || []);
                 const selectedColumns = columns.filter((_column, index) => selectedIndices.has(index));
                 const cards = selectedColumns.map(column => `<article class="customer-autonomy-card">
                     <h3>${escape(column.label)}</h3>
-                    <strong>${column.autonomy === null ? 'Non calculable' : `${formatConfigurationNumber(column.autonomy, 1)} jours`}</strong>
+                    <strong class="xl-autonomy-text ${column.autonomy !== null && window.ExcelColors?.isAutonomyLow(column.autonomy) ? 'xl-autonomy-low' : ''}">${column.autonomy === null ? 'Non calculable' : `${formatConfigurationNumber(column.autonomy, 1)} jours`}</strong>
                 </article>`).join('');
                 target.innerHTML = `<div class="customer-autonomy-grid">${cards}</div>`;
                 document.getElementById('m-title').textContent = mode === 'Customer'
@@ -929,7 +961,7 @@
                 const mapping = rowMap[rowId];
                 if (!mapping) return cells(columns.map(() => '—'));
                 const [row, unit, factor = 1] = mapping;
-                return cells(columns.map(column => `${formatConfigurationNumber(column.value(row) * factor, 8)}${unit ? ' ' + unit : ''}`));
+                return cells(columns.map(column => window.CurrentUnits?.isUnit(unit) ? formatCurrentDisplay(column.value(row)*factor,unit) : `${formatConfigurationNumber(column.value(row) * factor, 8)}${unit ? ' ' + unit : ''}`));
             }, columns.length);
             if (mode === 'CustomerPIE') {
                 // The Excel PIE columns describe technical cases, not accessory combinations.
@@ -962,7 +994,7 @@
                     <tr><th colspan="3" style="border:none;"></th><th colspan="4" class="hdr-dark-blue">Batterie L2* / 60Ah</th></tr>
                     <tr><th colspan="3" style="border:none;"></th><th class="hdr-green">Base LAB</th><th class="hdr-yellow">Avec Alarme</th><th class="hdr-green">Sans Alarme<br>avec TACHY</th><th class="hdr-yellow">Avec ALARME + TACHY</th></tr>
                     <tr class="hdr-sky-blue"><th colspan="3">Autonomie ${batterySubMode}</th><th></th><th></th><th></th><th></th></tr>
-                    <tr class="kpi-row"><td colspan="3" style="text-align:left; font-size:12px;">DURÉE DE TENUE EN VEILLE</td>${cells(activeScenarioKeys.map((scenarioKey) => reportValue('autonomy_days', scenarioKey)))}</tr>
+                    <tr class="kpi-row"><td colspan="3" style="text-align:left; font-size:12px;">DURÉE DE TENUE EN VEILLE</td>${cells(activeScenarioKeys.map((scenarioKey) => autonomyCell(reportValue('autonomy_days', scenarioKey))))}</tr>
                     <tr style="background:#d9e1f2; font-weight:bold;"><td colspan="3" style="text-align:left;">SANS BIBERONNAGE</td><td>60</td><td>60</td><td>60</td><td>60</td></tr>
                 `;
                 
@@ -1054,7 +1086,7 @@
                     <tr><th colspan="3" style="border:none;"></th><th colspan="4" class="hdr-dark-blue">EV<br>Batterie L2* / 60Ah</th></tr>
                     <tr><th colspan="3" style="border:none;"></th><th class="hdr-yellow">Base LAB</th><th class="hdr-yellow">Avec Alarme</th><th class="hdr-yellow">Sans Alarme<br>avec TACHY</th><th class="hdr-yellow">Avec ALARME<br>+ TACHY</th></tr>
                     <tr class="hdr-sky-blue"><th colspan="3">Autonomie ${batterySubMode}</th><th></th><th></th><th></th><th></th></tr>
-                    <tr class="kpi-row"><td colspan="3" style="text-align:left; font-size:12px;">DURÉE DE TENUE EN VEILLE</td>${cells(activeScenarioKeys.map((scenarioKey) => reportValue('autonomy_days', scenarioKey)))}</tr>
+                    <tr class="kpi-row"><td colspan="3" style="text-align:left; font-size:12px;">DURÉE DE TENUE EN VEILLE</td>${cells(activeScenarioKeys.map((scenarioKey) => autonomyCell(reportValue('autonomy_days', scenarioKey))))}</tr>
                     <tr style="background:#d9e1f2; font-weight:bold;"><td colspan="3" style="text-align:left;">SANS BIBERONNAGE</td><td>60</td><td>60</td><td>60</td><td>60</td></tr>
                 `;
 
@@ -1079,7 +1111,7 @@
                 headersHtml = `
                     <tr><th colspan="3" style="border:none;"></th><th class="hdr-green">Base LAB</th><th class="hdr-orange">Avec alarme</th><th class="hdr-blue">Sans alarme<br>avec TACHY</th><th class="hdr-blue">Avec alarme<br>avec TACHY</th><th class="hdr-dark-blue">Base LAB</th></tr>
                     <tr class="hdr-sky-blue"><th colspan="3">Autonomie ${batterySubMode}</th><th></th><th></th><th></th><th></th><th></th></tr>
-                    <tr class="kpi-row"><td colspan="3" style="text-align:left; font-size:12px;">DURÉE DE TENUE EN VEILLE</td>${cells(activeScenarioKeys.map((scenarioKey) => reportValue('autonomy_days', scenarioKey)))}</tr>
+                    <tr class="kpi-row"><td colspan="3" style="text-align:left; font-size:12px;">DURÉE DE TENUE EN VEILLE</td>${cells(activeScenarioKeys.map((scenarioKey) => autonomyCell(reportValue('autonomy_days', scenarioKey))))}</tr>
                     <tr style="background:#d9e1f2; font-weight:bold;"><td colspan="3" style="text-align:left;">SANS BIBERONNAGE</td><td>60</td><td>60</td><td>60</td><td>60</td><td>60</td></tr>
                 `;
 
@@ -1105,6 +1137,13 @@
         function closeReportModal(event) {
             document.getElementById('resultModal').classList.remove('show');
         }
+
+        // Ouvre l'export global présélectionné sur le profil Customer actif (PDF + Excel).
+        document.getElementById('export-customer-selection')?.addEventListener?.('click', () => {
+            const query = new URLSearchParams({ preset: isDmMode ? batterySubMode.toLowerCase() : 'customer' });
+            if (window.AutonomyProfiles?.selected) query.set('configuration', AutonomyProfiles.selected.id);
+            window.location.href = `/export_synthesis_pdf?${query}`;
+        });
 
         document.getElementById('export-customer-excel').addEventListener('click', async (event) => {
             const button = event.currentTarget;
@@ -1166,6 +1205,7 @@ document.addEventListener('click', function(e) {
 });
 
 window.getSynthesisExcelData = () => ({
+    configuration:window.AutonomyProfiles?{id:AutonomyProfiles.selected.id,name:AutonomyProfiles.selected.name}:null,
     profiles: (window.selectedCustomerProfiles || []).map(id => ({
         id,
         columns: (window.customerExcelColumns?.[id] || [])

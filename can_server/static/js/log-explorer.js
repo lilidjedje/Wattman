@@ -1,5 +1,8 @@
 (() => {
     const form = document.getElementById('logFilterForm');
+    form.elements.unit.value='A';
+    form.elements.unit.hidden=true;
+    form.elements.threshold.dataset.currentBaseUnit='A';
     const status = document.getElementById('logSearchStatus');
     const charts = [];
     const states = Object.fromEntries(['A', 'B'].map(channel => [channel, {page: 0, totalPages: 0}]));
@@ -84,8 +87,8 @@
                 }))},
                 options: {responsive: true, maintainAspectRatio: false, animation: false, parsing: false,
                     interaction: {intersect: false, mode: 'index'},
-                    scales: {x: {type: 'linear', ticks: {maxTicksLimit: 6, callback: value => new Date(value).toLocaleString('fr-FR')}, title: {display: true, text: 'Date et heure locales'}}, y: {title: {display: true, text: `Courant (${unitName(params.get('unit'))})`}}},
-                    plugins: {tooltip: {callbacks: {title: items => {const item = items[0].raw.interval; return item ? `${new Date(item.start * 1000).toLocaleString('fr-FR')} → ${new Date(item.end * 1000).toLocaleString('fr-FR')} · ${number(item.samples)} mesures` : '';}}}}
+                    scales: {x: {type: 'linear', ticks: {maxTicksLimit: 6, callback: value => new Date(value).toLocaleString('fr-FR')}, title: {display: true, text: 'Date et heure locales'}}, y: {title: {display: true, text: 'Courant'},ticks:{callback:value=>CurrentUnits.format(value,params.get('unit'))}}},
+                    plugins: {tooltip: {callbacks: {label:context=>`${context.dataset.label}: ${CurrentUnits.format(context.parsed.y,params.get('unit'))}`,title: items => {const item = items[0].raw.interval; return item ? `${new Date(item.start * 1000).toLocaleString('fr-FR')} → ${new Date(item.end * 1000).toLocaleString('fr-FR')} · ${number(item.samples)} mesures` : '';}}}}
                 }
             }));
         }
@@ -111,10 +114,10 @@
         params.set('page', targetPage + 1);
         const data = await readJson(archiveUrl(`${window.logExplorerEndpoints.search}?${params}`));
         state.page = Math.max(0, data.page - 1); state.totalPages = data.total_pages;
-        document.getElementById(`logCurrentHeading${channel}`).textContent = `Courant (${unitName(applied.get('unit'))})`;
+        document.getElementById(`logCurrentHeading${channel}`).textContent = 'Courant';
         document.getElementById(`logRows${channel}`).innerHTML = data.rows.length ? data.rows.map(item => {
             const [date, time] = timestampParts(item.timestamp);
-            return `<tr><td>${date}</td><td class="timestamp-cell">${time}</td><td class="current-cell">${number(item.current_A * scale(applied.get('unit')))}</td></tr>`;
+            return `<tr><td>${date}</td><td class="timestamp-cell">${time}</td><td class="current-cell">${CurrentUnits.format(item.current_A,'A')}</td></tr>`;
         }).join('') : '<tr><td colspan="3" class="empty-results">Aucune mesure sur cette période pour ce canal.</td></tr>';
         document.getElementById(`logPage${channel}`).textContent = `Page ${number(data.page)} sur ${number(data.total_pages)} · ${number(data.total_samples)} mesures`;
         const period = data.period;
@@ -132,7 +135,11 @@
         try {
             if (!channel) {
                 applied = restore?.filters ? new URLSearchParams(restore.filters) : filters();
-                appliedForm = restore?.form || [...new FormData(form)];
+                if (applied.get('unit') !== 'A') {
+                    if (applied.get('threshold')) applied.set('threshold',Number(applied.get('threshold'))/scale(applied.get('unit')));
+                    applied.set('unit','A');
+                }
+                appliedForm = [...new FormData(form)];
                 const selected = applied.get('channel');
                 const channels = ['A', 'B'].filter(value => selected === 'AB' || selected === value);
                 for (const value of ['A', 'B']) {
@@ -186,7 +193,10 @@
                 if (!field.name) continue;
                 const value = saved.form.find(pair => pair[0] === field.name)?.[1];
                 if (field.type === 'checkbox') field.checked = value !== undefined;
-                else if (value !== undefined) field.value = value;
+                else if (value !== undefined && field.name !== 'unit') {
+                    const sourceUnit=saved.form.find(pair=>pair[0]==='unit')?.[1] || 'A';
+                    field.value=field.name==='threshold' && value!=='' ? Number(value)/scale(sourceUnit) : value;
+                }
             }
         }
         if (saved?.filters) await search(null, 0, saved);

@@ -22,10 +22,12 @@ python -m PyInstaller `
     --hidden-import sqlite3 `
     --hidden-import werkzeug.middleware.dispatcher `
     --collect-all openpyxl `
+    --collect-all reportlab `
     --add-data "$projectRoot\templates;templates" `
     --add-data "$projectRoot\static;static" `
     --add-data "$projectRoot\app.py;." `
     --add-data "$projectRoot\synthesis_excel.py;." `
+    --add-data "$projectRoot\synthesis_pdf.py;." `
     --add-data "$projectRoot\can_server\templates;can_server\templates" `
     --add-data "$projectRoot\can_server\static;can_server\static" `
     --add-data "$projectRoot\can_server\app.py;can_server" `

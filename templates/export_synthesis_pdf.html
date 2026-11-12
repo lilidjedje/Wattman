@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <script src="/static/autonomy_profiles.js"></script>
+    <script src="/static/homologation_profiles.js"></script>
+    <script src="/static/biberonnage_profiles.js"></script>
+    <link rel="stylesheet" href="/static/homologation_profiles.css">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Synthèses du projet</title>
@@ -45,6 +49,7 @@
         .project-details dt { color: #64748b; font-size: .8rem; font-weight: 700; }
         .project-details dd { margin: 4px 0 0; overflow-wrap: anywhere; font-weight: 650; }
         .report { overflow: hidden; }
+        .report-title { margin: 0; padding: 12px 16px; color: #fff; background: #1f4e78; font-size: 1.1rem; }
         .report h2 { margin: 0; padding: 15px 18px; border-bottom: 1px solid #dbe2ea; background: #f8fafc; }
         iframe { display: block; width: 100%; min-height: 120px; border: 0; background: white; overflow: hidden; }
         @media (max-width: 650px) {
@@ -54,6 +59,8 @@
             .selection-actions { justify-content: stretch; flex-direction: column; }
         }
     </style>
+    <script src="/static/current_units.js"></script>
+    <script src="/static/wattman_current.js"></script>
 </head>
 <body>
     <main class="page">
@@ -79,6 +86,14 @@
                     </div>
                 </div>
 
+                <div class="group hidden" data-options="dcdc">
+                    <h3>Profils DCDC</h3><div class="checks" data-profiles="dcdc"></div>
+                    <a href="/edit_current">Configurer les profils DCDC</a>
+                </div>
+                <div class="group hidden" data-options="wltc">
+                    <h3>Profils WLTC</h3><div class="checks" data-profiles="wltc"></div>
+                    <a href="/edit_alternator">Configurer les profils WLTC</a>
+                </div>
                 <div class="group hidden" data-options="dm1">
                     <h3>Profils batterie DM1</h3>
                     <div class="checks" data-profiles="dm1"></div>
@@ -97,6 +112,8 @@
                 </div>
                 <div class="group hidden" data-options="customer">
                     <h3>Profils Customer Mode</h3>
+                    <div class="checks" data-profiles="customer"></div>
+                    <h3>Rapports du profil</h3>
                     <div class="checks">
                         <label class="check"><input type="checkbox" name="customer-profile" value="Customer" checked><span>Standard</span></label>
                         <label class="check"><input type="checkbox" name="customer-profile" value="CustomerWO" checked><span>Sans Unplug</span></label>
@@ -116,10 +133,16 @@
                         <label class="check"><input type="checkbox" name="bib-days" value="30" checked><span>30 jours</span></label>
                         <label class="check"><input type="checkbox" name="bib-days" value="90"><span>90 jours</span></label>
                     </div>
-                    <h3>Profils — 30 jours</h3>
-                    <div class="checks" data-profiles="biberonnage-30"></div>
-                    <h3>Profils — 90 jours</h3>
-                    <div class="checks" data-profiles="biberonnage-90"></div>
+                    <h3>Profils biberonnage</h3>
+                    <div class="checks" data-profiles="biberonnage-config"></div>
+                    <div data-bib-days-block="30">
+                        <h3>Analyses — 30 jours</h3>
+                        <div class="checks" data-profiles="biberonnage-30"></div>
+                    </div>
+                    <div data-bib-days-block="90">
+                        <h3>Analyses — 90 jours</h3>
+                        <div class="checks" data-profiles="biberonnage-90"></div>
+                    </div>
                 </div>
                 <div class="selection-actions">
                     <button type="button" id="back-to-selection" class="hidden">Modifier la sélection</button>
@@ -205,7 +228,9 @@
         }
 
         function populateProfiles() {
+            populateHomologationProfiles();
             ['dm1', 'dm2'].forEach(mode => {
+                if(window.AutonomyProfiles)return;
                 const config = readJson('batteryConfiguration', {});
                 const capacity = Number(config.capacityAh) || 60;
                 const profiles = [{ id: 'main', name: 'Profil principal', capacity }, ...readJson('dmBatteryProfiles', [])];
@@ -213,20 +238,71 @@
                     checkbox(`${mode}-profile`, profile.id, profile.name, `${profile.capacity} Ah`)
                 ).join('');
             });
+            populateAutonomyProfiles();
             const defaultDays = sessionStorage.getItem('biberonnageDurationDays') === '90' ? 90 : 30;
             form.querySelector(`[name="bib-days"][value="${defaultDays}"]`).checked = true;
+            populateBibConfigurations();
             populateBibProfiles(30);
             populateBibProfiles(90);
+            updateBibDaysBlocks();
+        }
+
+        // Affiche les profils 30 jours, 90 jours ou les deux selon les durées cochées.
+        function updateBibDaysBlocks() {
+            document.querySelectorAll('[data-bib-days-block]').forEach(block => {
+                const input = form.querySelector(`[name="bib-days"][value="${block.dataset.bibDaysBlock}"]`);
+                block.classList.toggle('hidden', !input?.checked);
+            });
+        }
+
+        function populateHomologationProfiles() {
+            ['dcdc','wltc'].forEach(mode => {
+                const group=document.querySelector(`[data-profiles="${mode}"]`);
+                const previous=new Map([...group.querySelectorAll('input')].map(input=>[input.value,input.checked]));
+                group.innerHTML=HomologationProfiles.list(mode)
+                    .map(profile=>checkbox(`${mode}-configuration`,profile.id,profile.name)).join('');
+                group.querySelectorAll('input').forEach(input=>{if(previous.has(input.value))input.checked=previous.get(input.value);});
+            });
+        }
+
+        function populateAutonomyProfiles() {
+            if(!window.AutonomyProfiles)return;
+            AutonomyProfiles.groups.forEach(mode=>{
+                const group=document.querySelector(`[data-profiles="${mode}"]`);
+                const previous=new Map([...group.querySelectorAll('input')].map(input=>[input.value,input.checked]));
+                const field=mode==='customer'?'customer-configuration':`${mode}-profile`;
+                group.innerHTML=AutonomyProfiles.list(mode).map(profile=>checkbox(field,profile.id,profile.name)).join('');
+                group.querySelectorAll('input').forEach(input=>{if(previous.has(input.value))input.checked=previous.get(input.value);});
+            });
+        }
+
+        function bibProfiles() {
+            return window.BiberonnageProfiles ? BiberonnageProfiles.list() : [{ id: 'main', name: 'Profil principal', values: {} }];
+        }
+
+        function bibProfileDays(profile) {
+            return window.BiberonnageProfiles ? BiberonnageProfiles.daysOf(profile) : [30, 90];
+        }
+
+        function populateBibConfigurations() {
+            const group = document.querySelector('[data-profiles="biberonnage-config"]');
+            group.innerHTML = bibProfiles().map(profile =>
+                checkbox('bib-config', profile.id, profile.name, bibProfileDays(profile).map(days => `${days} j`).join(' + '))
+            ).join('');
         }
 
         function populateBibProfiles(days) {
             const suffix = days === 90 ? '90Days' : '';
-            const custom = readJson(`biberonnageCustomAnalyses${suffix}`, []);
+            // Analyses disponibles dans l'ensemble des profils pour cette durée.
+            const custom = bibProfiles().flatMap(profile => {
+                try { return JSON.parse(profile.values?.[`biberonnageCustomAnalyses${suffix}`] || '[]'); } catch { return []; }
+            });
+            const seen = new Set();
             const profiles = [
                 { id: 'base', name: 'BASE' },
                 { id: 'tt-opt', name: 'TT Opt avec TACHY + Alarme' },
                 ...(Array.isArray(custom) ? custom : [])
-            ];
+            ].filter(profile => profile?.id && !seen.has(String(profile.id)) && seen.add(String(profile.id)));
             document.querySelector(`[data-profiles="biberonnage-${days}"]`).innerHTML = profiles.map(profile =>
                 checkbox(`bib-profile-${days}`, profile.id, profile.name)
             ).join('');
@@ -240,6 +316,7 @@
 
         form.addEventListener('change', event => {
             if (event.target.name === 'module') updateOptions();
+            if (event.target.name === 'bib-days') updateBibDaysBlocks();
         });
 
         function selectedValues(name) {
@@ -276,213 +353,30 @@
             ));
         }
 
-        function getPrintStyleKey(element) {
-            return element.href || element.textContent;
-        }
-
-        // Each embedded report owns its CSS. Never let its body, heading or grid
-        // rules change the cover or another report when flattening the iframes.
-        function splitReportSelectors(selectorText) {
-            const selectors = [];
-            let depth = 0, start = 0;
-            for (let index = 0; index < selectorText.length; index++) {
-                const char = selectorText[index];
-                if (char === '(' || char === '[') depth++;
-                if (char === ')' || char === ']') depth--;
-                if (char === ',' && depth === 0) {
-                    selectors.push(selectorText.slice(start, index));
-                    start = index + 1;
-                }
-            }
-            selectors.push(selectorText.slice(start));
-            return selectors;
-        }
-
-        function scopeReportRules(rules, scope) {
-            return [...rules].map(rule => {
-                if (rule.type === 1) {
-                    const selectors = splitReportSelectors(rule.selectorText).map(selector => {
-                        const rooted = selector.trim().replace(/^(?:html\s+)?body\b|^html\b|^:root\b/, scope);
-                        return rooted.startsWith(scope) ? rooted : `${scope} ${rooted}`;
-                    }).join(',');
-                    return `${selectors} { ${rule.style.cssText} }`;
-                }
-                if (rule.type === 4 || rule.type === 12) {
-                    const prefix = rule.cssText.slice(0, rule.cssText.indexOf('{'));
-                    return `${prefix} { ${scopeReportRules(rule.cssRules, scope)} }`;
-                }
-                return rule.type === 5 ? rule.cssText : '';
-            }).join('\n');
-        }
-
-        async function createPrintReportCopies() {
-            document.querySelectorAll('.print-report-copy, [data-print-report-style]').forEach(element => element.remove());
-            let reportIndex = 0;
-            for (const frame of reportContent.querySelectorAll('iframe')) {
-                const source = frame.contentDocument;
-                if (!source) throw new Error(`Rapport indisponible : ${frame.title}`);
-                const copy = document.createElement('div');
-                copy.className = 'print-report-copy';
-                copy.dataset.printReportId = String(reportIndex++);
-                copy.dataset.reportTitle = frame.title;
-                const scope = `.print-report-copy[data-print-report-id="${copy.dataset.printReportId}"]`;
-                const stylesheet = document.createElement('style');
-                stylesheet.dataset.printReportStyle = 'true';
-                stylesheet.textContent = [...source.styleSheets].map(sheet =>
-                    scopeReportRules(sheet.cssRules, scope)
-                ).join('\n');
-                document.head.appendChild(stylesheet);
-                const contentRoot = source.querySelector('#customer-export-reports');
-                const children = contentRoot ? [contentRoot] : [...source.body.children];
-                children.forEach(child => {
-                    if (child.tagName === 'SCRIPT') return;
-                    const clone = document.importNode(child, true);
-                    const sourceCanvases = [child, ...child.querySelectorAll('canvas')].filter(node => node.tagName === 'CANVAS');
-                    const clonedCanvases = [clone, ...clone.querySelectorAll('canvas')].filter(node => node.tagName === 'CANVAS');
-                    sourceCanvases.forEach((canvas, index) => {
-                        const image = document.createElement('img');
-                        image.className = 'chart-print-image';
-                        image.alt = canvas.getAttribute('aria-label') || 'Graphique';
-                        image.src = canvas.toDataURL('image/png');
-                        image.width = canvas.width;
-                        image.height = canvas.height;
-                        clonedCanvases[index]?.replaceWith(image);
-                    });
-                    copy.appendChild(clone);
-                });
-                frame.parentElement.appendChild(copy);
-            }
-            const printStyle = document.createElement('style');
-            printStyle.dataset.printReportStyle = 'true';
-            printStyle.textContent = `
-                @media print {
-                    html, body, .page, .reports, .report, .print-report-copy {
-                        width:100% !important; max-width:none !important; height:auto !important;
-                        min-height:0 !important; overflow:visible !important;
-                        color:#1f2937 !important; background:#fff !important; background-image:none !important;
-                    }
-                    .report > iframe, .report > h2 { display:none !important; }
-                    .print-report-copy { display:block !important; padding:0 !important; margin:0 !important; }
-                    .print-report-copy * {
-                        color:#1f2937 !important; background-color:#fff !important;
-                        box-shadow:none !important; text-shadow:none !important;
-                        scrollbar-width:none !important;
-                    }
-                    .print-report-copy :is(h1,h2,h3,h4) { color:#1f4e78 !important; }
-                    .print-report-copy .customer-summary-title {
-                        margin:0 0 8mm !important; padding:0 0 3mm !important;
-                        border-bottom:2px solid #dbe2ea !important;
-                        color:#1f4e78 !important; font-size:24pt !important; font-weight:750 !important;
-                    }
-                    .print-report-copy .pdf-customer-report > h2 {
-                        margin:0 0 6mm !important; padding:3mm 0 !important;
-                        border-bottom:1px solid #dbe2ea !important;
-                        font-size:1.55rem !important; font-weight:700 !important;
-                    }
-                    .print-report-copy :is(.profile, .profile-heading, .summary-scenario-card,
-                        .customer-autonomy-card, .analysis, .dash-card, .table-card,
-                        .table-header-title, .chart-container, .chart-box, table, thead, tbody,
-                        tr, th, td) { background:#fff !important; }
-                    html body:not(.preserve-table-colors) .print-report-copy table,
-                    html body:not(.preserve-table-colors) .print-report-copy table thead,
-                    html body:not(.preserve-table-colors) .print-report-copy table tbody,
-                    html body:not(.preserve-table-colors) .print-report-copy table tr,
-                    html body:not(.preserve-table-colors) .print-report-copy table th,
-                    html body:not(.preserve-table-colors) .print-report-copy table td {
-                        color:#1f2937 !important; background:#fff !important; border-color:#dbe2ea !important;
-                    }
-                    .print-report-copy .synthesis-grid {
-                        display:grid !important; grid-template-columns:minmax(0,1fr) !important;
-                        width:100% !important; overflow:visible !important;
-                    }
-                    .print-report-copy .table-card {
-                        display:flex !important; width:100% !important; min-width:0 !important;
-                        break-inside:avoid !important; page-break-inside:avoid !important;
-                    }
-                    .print-report-copy .chart-container { display:block !important; width:100% !important; height:112mm !important; }
-                    .print-report-copy .chart-box { width:100% !important; height:75mm !important; }
-                    .print-report-copy .chart-print-image {
-                        display:block !important; width:100% !important; height:100% !important;
-                        object-fit:contain !important; break-inside:avoid !important;
-                    }
-                    .print-report-copy .analysis, .print-report-copy .dash-card {
-                        width:100% !important; max-width:none !important; overflow:visible !important;
-                        break-inside:auto !important; page-break-inside:auto !important;
-                    }
-                    .print-report-copy .dashboard { display:block !important; width:100% !important; }
-                    .print-report-copy .dashboard > .dash-card { margin:0 0 6mm !important; }
-                    .print-report-copy .table-container { overflow:visible !important; }
-                    /* Override the embedded themes, including their ID selectors. */
-                    #report-content#report-content .print-report-copy, #report-content#report-content .print-report-copy * { box-sizing:border-box !important; color:#1f2937 !important; background:#fff !important; background-image:none !important; font-family:"Segoe UI",Tahoma,sans-serif !important; }
-                    #report-content#report-content .print-report-copy { font-size:10pt !important; line-height:1.4 !important; }
-                    #report-content#report-content .print-report-copy :is(h1,.customer-summary-title,.section-title) {
-                        color:#1f4e78 !important; font-size:20pt !important; font-weight:700 !important;
-                        margin:0 0 6mm !important; padding:0 0 3mm !important;
-                        border-bottom:1px solid #cbd5e1 !important;
-                    }
-                    #report-content#report-content .print-report-copy :is(h2,.pdf-customer-report > h2,.table-header-title) {
-                        color:#1f4e78 !important; font-size:14pt !important; font-weight:700 !important;
-                        margin:0 0 3mm !important; padding:2mm 0 !important;
-                    }
-                    #report-content#report-content .print-report-copy :is(h3,h4,.profile-heading) {
-                        color:#1f4e78 !important; font-size:11pt !important; font-weight:700 !important;
-                        margin:0 0 2mm !important;
-                    }
-                    #report-content#report-content .print-report-copy :is(h1,h2,h3,h4,.section-title,.table-header-title,.profile-heading) {
-                        break-after:avoid !important; page-break-after:avoid !important;
-                    }
-                    #report-content#report-content .print-report-copy :is(.container,main,.report,.profile,.pdf-customer-report,.analysis,.dashboard,.synthesis-grid) {
-                        display:block !important; width:100% !important; min-width:0 !important;
-                        max-width:100% !important; height:auto !important; min-height:0 !important;
-                        margin:0 0 5mm !important; padding:0 !important;
-                        break-before:auto !important; break-after:auto !important;
-                        break-inside:auto !important;
-                    }
-                    #report-content#report-content .print-report-copy :is(.profile,.dash-card,.pdf-customer-report,.topbar) { break-inside:avoid !important; page-break-inside:avoid !important; }
-                    #report-content#report-content .print-report-copy .table-card { display:block !important; margin:0 0 6mm !important; }
-                    #report-content#report-content .print-report-copy :is(table,.table-container) { width:100% !important; min-width:0 !important; max-width:100% !important; }
-                    #report-content#report-content .print-report-copy table { table-layout:fixed !important; border-collapse:collapse !important; font-size:8pt !important; }
-                    #report-content#report-content .print-report-copy :is(th,td) { padding:2mm !important; overflow-wrap:anywhere !important; }
-                    #report-content#report-content .print-report-copy thead { display:table-header-group !important; }
-                    #report-content#report-content .print-report-copy tr { break-inside:avoid !important; }
-                    #report-content#report-content .print-report-copy :is(img,svg) { max-width:100% !important; }
-                    #report-content#report-content .print-report-copy p { orphans:3; widows:3; }
-                    #report-content#report-content .print-report-copy *::before, #report-content#report-content .print-report-copy *::after {
-                        background-image:none !important; box-shadow:none !important;
-                    }
-
-                }
-            `;
-            document.head.appendChild(printStyle);
-            await document.fonts?.ready;
-        }
-
-        function removePrintReportCopies() {
-            document.querySelectorAll('.print-report-copy, [data-print-report-style]').forEach(element => element.remove());
-        }
-
-        function setReportFramesVisible(visible) {
-            reportContent.querySelectorAll('iframe').forEach(frame => {
-                frame.style.display = visible ? '' : 'none';
-            });
-        }
-
         function addReport(title, type, url, module) {
             const section = document.createElement('section');
             section.className = 'report';
             section.dataset.module = module;
+            // Titre visible : module et profil affichés explicitement dans la synthèse.
+            const heading = document.createElement('h2');
+            heading.className = 'report-title';
+            heading.textContent = title;
+            section.appendChild(heading);
             const frame = document.createElement('iframe');
             frame.title = title;
             frame.scrolling = 'no';
             frame.src = url;
             frame.addEventListener('load', async () => {
+                if (!section.isConnected) return;
                 try {
                     await prepareFrame(frame, type);
                 } catch (error) {
+                    if (!section.isConnected) return;
                     console.error(`Impossible de préparer le rapport « ${title} ».`, error);
                     status.textContent = `Erreur de chargement du rapport « ${title} » : ${error.message}`;
                     return;
                 }
+                if (!section.isConnected) return;
                 loadedReports += 1;
                 if (loadedReports === expectedReports) {
                     document.getElementById('generate-pdf').disabled = false;
@@ -627,7 +521,7 @@
                             badge.className = 'chart-peak';
                             badge.append(`${metric.label} — pic : `);
                             const value = doc.createElement('strong');
-                            value.textContent = `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(metric.value)} A`;
+                            value.textContent = CurrentUnits.format(metric.value,'A');
                             badge.appendChild(value);
                             peaks.appendChild(badge);
                         });
@@ -667,24 +561,6 @@
             frame.style.height = `${Math.max(140, Math.ceil(contentHeight + 24))}px`;
         }
 
-        async function prepareReportsForPrint() {
-            for (const frame of reportContent.querySelectorAll('iframe')) {
-                const doc = frame.contentDocument;
-                if (!doc) throw new Error(`Le rapport « ${frame.title} » n’est plus disponible.`);
-                await doc.fonts?.ready;
-                frame.contentWindow.dispatchEvent(new Event('resize'));
-            }
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            for (const frame of reportContent.querySelectorAll('iframe')) {
-                const contentHeight = getReportContentHeight(frame.contentDocument);
-                frame.style.height = `${Math.max(140, Math.ceil(contentHeight + 24))}px`;
-            }
-            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-            await createPrintReportCopies();
-            await Promise.all([...document.querySelectorAll('.print-report-copy img')].map(image => image.decode()));
-            setReportFramesVisible(false);
-        }
-
         form.addEventListener('submit', event => {
             event.preventDefault();
             const selectedModules = selectedValues('module');
@@ -692,18 +568,23 @@
             const selectedBibDays = selectedModules.includes('biberonnage')
                 ? selectedValues('bib-days')
                 : [];
+            const selectedBibConfigs = bibProfiles().filter(profile => selectedValues('bib-config').includes(profile.id));
+            // Un rapport par profil et par durée étudiée par ce profil.
             const selectedBibReports = getBiberonnageReportSelections(
                 selectedBibDays,
                 days => selectedValues(`bib-profile-${days}`)
-            );
+            ).flatMap(report => selectedBibConfigs
+                .filter(profile => bibProfileDays(profile).includes(Number(report.days)))
+                .map(profile => ({ ...report, configuration: profile.id, configurationName: profile.name })));
             if (!selectedModules.length) {
                 status.textContent = 'Sélectionnez au moins un rapport.';
                 return;
             }
-            const invalidSelection = ['dm1', 'dm2'].some(mode => selectedModules.includes(mode)
+            const invalidSelection = ['dcdc','wltc'].some(mode => selectedModules.includes(mode) && !selectedValues(`${mode}-configuration`).length)
+                || ['dm1', 'dm2'].some(mode => selectedModules.includes(mode)
                 && (!selectedValues(`${mode}-profile`).length || !selectedValues(`${mode}-scenario`).length))
-                || (selectedModules.includes('customer') && (!selectedValues('customer-profile').length || !selectedValues('customer-scenario').length))
-                || (selectedModules.includes('biberonnage') && (!selectedBibDays.length || selectedBibReports.some(report => !report.profiles.length)));
+                || (selectedModules.includes('customer') && (!selectedValues('customer-profile').length || !selectedValues('customer-scenario').length || (window.AutonomyProfiles&&!selectedValues('customer-configuration').length)))
+                || (selectedModules.includes('biberonnage') && (!selectedBibDays.length || !selectedBibReports.length || selectedBibReports.some(report => !report.profiles.length)));
             if (invalidSelection) {
                 status.textContent = 'Chaque rapport sélectionné doit contenir au moins un profil et un scénario.';
                 return;
@@ -716,31 +597,56 @@
             }
             reportContent.replaceChildren();
             document.getElementById('generate-pdf').disabled = true;
+            document.getElementById('generate-excel').disabled = true;
             document.getElementById('report-actions').classList.add('hidden');
             expectedReports = selectedModules.length - (selectedModules.includes('biberonnage') ? 1 : 0) + selectedBibReports.length;
+            ['dcdc','wltc'].forEach(mode=>{if(selectedModules.includes(mode))expectedReports+=selectedValues(`${mode}-configuration`).length-1;});
+            if(window.AutonomyProfiles){
+                ['dm1','dm2'].forEach(mode=>{if(selectedModules.includes(mode))expectedReports+=selectedValues(`${mode}-profile`).length-1;});
+                if(selectedModules.includes('customer'))expectedReports+=selectedValues('customer-configuration').length-1;
+            }
             loadedReports = 0;
             reports.classList.remove('hidden');
             populateCover();
             document.getElementById('project-cover').style.display = '';
-            if (selectedModules.includes('dcdc')) addReport('DCDC Sizing — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=dcdc', 'dcdc');
-            if (selectedModules.includes('wltc')) addReport('WLTC — Courbes détaillées', 'synthesis', '/synthesis?summary=1&module=wltc', 'wltc');
+            ['dcdc','wltc'].forEach(mode=>{
+                if(!selectedModules.includes(mode))return;
+                HomologationProfiles.list(mode).filter(profile=>selectedValues(`${mode}-configuration`).includes(profile.id)).forEach(profile=>{
+                    const query=new URLSearchParams({summary:'1',module:mode,configuration:profile.id});
+                    addReport(`${mode.toUpperCase()} — ${profile.name}`, 'synthesis', `/synthesis?${query}`,mode);
+                });
+            });
             ['dm1', 'dm2'].forEach(mode => {
                 if (!selectedModules.includes(mode)) return;
                 const profiles = selectedValues(`${mode}-profile`);
                 const scenarios = selectedValues(`${mode}-scenario`);
-                const query = new URLSearchParams({ mode: mode.toUpperCase(), summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
-                addReport(`Autonomie ${mode.toUpperCase()} — Jours selon la capacité batterie`, 'dm', `/dm_results?${query}`, mode);
+                if(window.AutonomyProfiles){
+                    AutonomyProfiles.list(mode).filter(profile=>profiles.includes(profile.id)).forEach(profile=>{
+                        const query=new URLSearchParams({mode:mode.toUpperCase(),summary:'1',configuration:profile.id,profiles:profile.id,scenarios:scenarios.join(',')});
+                        addReport(`Autonomie ${mode.toUpperCase()} — Profil : ${profile.name}`,'dm',`/dm_results?${query}`,mode);
+                    });
+                } else {
+                    const query = new URLSearchParams({ mode: mode.toUpperCase(), summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
+                    addReport(`Autonomie ${mode.toUpperCase()} — Jours selon la capacité batterie`, 'dm', `/dm_results?${query}`, mode);
+                }
             });
             if (selectedModules.includes('customer')) {
                 const profiles = selectedValues('customer-profile');
                 const scenarios = selectedValues('customer-scenario');
-                const query = new URLSearchParams({ mode: 'Customer Mode', summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
-                addReport('Autonomie Customer Mode', 'customer', `/battery_results_menu?${query}`, 'customer');
+                if(window.AutonomyProfiles){
+                    AutonomyProfiles.list('customer').filter(profile=>selectedValues('customer-configuration').includes(profile.id)).forEach(profile=>{
+                        const query=new URLSearchParams({mode:'Customer Mode',summary:'1',configuration:profile.id,profiles:profiles.join(','),scenarios:scenarios.join(',')});
+                        addReport(`Autonomie Customer Mode — Profil : ${profile.name}`,'customer',`/battery_results_menu?${query}`,'customer');
+                    });
+                } else {
+                    const query = new URLSearchParams({ mode: 'Customer Mode', summary: '1', profiles: profiles.join(','), scenarios: scenarios.join(',') });
+                    addReport('Autonomie Customer Mode', 'customer', `/battery_results_menu?${query}`, 'customer');
+                }
             }
             if (selectedModules.includes('biberonnage')) {
-                selectedBibReports.forEach(({ days, profiles }) => {
-                    const query = new URLSearchParams({ summary: '1', days, profiles: profiles.join(',') });
-                    addReport(`Biberonnage — ${days} jours`, 'biberonnage', `/biberonnage/resultats?${query}`, 'biberonnage');
+                selectedBibReports.forEach(({ days, profiles, configuration, configurationName }) => {
+                    const query = new URLSearchParams({ summary: '1', days, configuration, profiles: profiles.join(',') });
+                    addReport(`Biberonnage — Profil : ${configurationName} — ${days} jours`, 'biberonnage', `/biberonnage/resultats?${query}`, 'biberonnage');
                 });
             }
             selection.querySelector('#back-to-selection').classList.remove('hidden');
@@ -756,21 +662,28 @@
             button.disabled = true;
             status.textContent = 'Génération du PDF A4…';
             try {
-                removePrintReportCopies();
-                await prepareReportsForPrint();
+                const payload = collectSynthesisPayload();
+                const response = await fetch('/generate_synthesis_pdf', {
+                    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const error=await response.json().catch(()=>({}));
+                    throw new Error(error.error || 'Impossible de générer le rapport PDF.');
+                }
+                const bytes = new Uint8Array(await response.arrayBuffer());
                 if (window.desktopEnvironment?.generateSynthesisPdf) {
-                    const result = await window.desktopEnvironment.generateSynthesisPdf(projectName);
-                    status.textContent = result.canceled ? 'Enregistrement du PDF annulé.' : `PDF enregistré : ${result.filePath}`;
+                    const result=await window.desktopEnvironment.generateSynthesisPdf(projectName,bytes);
+                    status.textContent=result.canceled ? 'Enregistrement du PDF annulé.' : `PDF enregistré : ${result.filePath}`;
                 } else {
-                    window.print();
-                    status.textContent = 'Dans la fenêtre d’impression, choisissez « Enregistrer au format PDF ».';
+                    const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));
+                    const link=document.createElement('a');link.href=url;link.download=`${projectName}-synthese.pdf`;link.click();
+                    setTimeout(()=>URL.revokeObjectURL(url),1000);
+                    status.textContent='Rapport PDF généré.';
                 }
             } catch (error) {
                 console.error('La génération du PDF a échoué.', error);
                 status.textContent = `Erreur de génération du PDF : ${error.message}`;
             } finally {
-                removePrintReportCopies();
-                setReportFramesVisible(true);
                 button.disabled = false;
             }
         });
@@ -778,23 +691,12 @@
         function getExcelMatrixRows(frame, mode) {
             const storage = frame.contentWindow.sessionStorage;
             const read = (key, fallback) => JSON.parse(storage.getItem(key) || JSON.stringify(fallback));
-            const excel = read('excelData', {});
-            const sheet = excel['Device List'] || excel['ECU List'] || Object.values(excel)[0];
-            const selected = new Set(read('selectedEcuKeys', []));
-            const deleted = new Set(read('deletedDarkDeviceKeys', []));
-            const currents = read(mode === 'Customer Mode' ? 'modifiedCustomerCurrents' : `modified${mode}Currents`, {});
             const matrix = read(mode === 'Customer Mode' ? 'customerModeMatrix' : `${mode.toLowerCase()}ModeMatrix`, {});
-            const devices = (sheet?.data || []).map((row, index) => ({
-                key: `${index}_${row['Device Name'] || row['ECU Name'] || `Item ${index+1}`}`,
-                matrixKey: String(index), name: row['Device Name'] || row['ECU Name'] || `Item ${index+1}`,
-                currentUa: frame.contentWindow.SleepCurrent.sourceCurrentMicroamps(row, mode)
-            })).filter(device => !deleted.has(device.key) && (storage.getItem('selectedEcuKeys') === null || selected.has(device.key)));
-            read('customDarkDevices', []).forEach(device => {
-                const key = `custom:${device.id}`;
-                if (!deleted.has(key)) devices.push({key, matrixKey:key, name:device.name, currentUa:Number(device.current)||0});
-            });
+            const devices = frame.contentWindow.SleepCurrent.devices(mode,storage);
             return devices.map(device => ({
-                name: device.name, currentUa: Number(String(currents[device.key] ?? device.currentUa).replace(',','.')) || 0,
+                name: device.name, currentUa:device.currentUa,
+                technicalWakeupA:device.technicalWakeupA, smartmosUa:device.smartmosUa,
+                totalDarkCurrentUa:device.totalDarkCurrentUa,
                 coefficients: Array.from({length:90}, (_, index) => {
                     const prefix = `${device.matrixKey}_`;
                     const value = Object.entries(matrix).find(([key]) => key.startsWith(prefix)
@@ -836,6 +738,23 @@
             };
         }
 
+        function collectSynthesisPayload() {
+            const reportsData=[...reportContent.querySelectorAll('.report')].map(getExcelReportData);
+            const homologationFrame=reportContent.querySelector('[data-module="dcdc"] iframe')
+                || reportContent.querySelector('[data-module="wltc"] iframe');
+            const homologationData=homologationFrame ? homologationFrame.contentWindow.getSynthesisExcelData() : {synthesis:{},devices:[]};
+            const project=JSON.parse(localStorage.getItem('activeProject') || 'null') || {};
+            return {
+                modules:selectedSynthesisModules,reports:reportsData,
+                generatedDate:new Date().toLocaleDateString('fr-FR',{timeZone:'Europe/Paris'}),
+                project:{name:project.name || '',date:project.date || '',pilotWattman:project.pilotWattman || ''},
+                synthesis:homologationData.synthesis,devices:homologationData.devices,
+                applicationData:Object.fromEntries(Object.keys(sessionStorage)
+                    .filter(key=>!key.startsWith('__') && key!=='workingProjectId')
+                    .map(key=>{const value=sessionStorage.getItem(key);try{return [key,JSON.parse(value)]}catch{return [key,value]}}))
+            };
+        }
+
         document.getElementById('generate-excel').addEventListener('click', async event => {
             const button = event.currentTarget;
             const pdfButton = document.getElementById('generate-pdf');
@@ -843,41 +762,31 @@
             pdfButton.disabled = true;
             status.textContent = 'Génération du fichier Excel…';
             try {
-                const reportSections = [...reportContent.querySelectorAll('.report')];
-                const reportsData = reportSections.map(getExcelReportData);
-                const homologationFrame = reportContent.querySelector('[data-module="dcdc"] iframe')
-                    || reportContent.querySelector('[data-module="wltc"] iframe');
-                const homologationData = homologationFrame
-                    ? homologationFrame.contentWindow.getSynthesisExcelData()
-                    : { synthesis: {}, devices: [] };
-                const project = JSON.parse(localStorage.getItem('activeProject') || 'null') || {};
                 const response = await fetch('/export_synthesis_excel_bundle', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        modules: selectedSynthesisModules,
-                        reports: reportsData,
-                        project: {
-                            name: project.name || '',
-                            date: project.date || '',
-                            pilotWattman: project.pilotWattman || ''
-                        },
-                        synthesis: homologationData.synthesis,
-                        devices: homologationData.devices
-                    })
+                    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collectSynthesisPayload())
                 });
+                const project=JSON.parse(localStorage.getItem('activeProject') || 'null') || {};
                 if (!response.ok) {
                     const error = await response.json().catch(() => ({}));
                     throw new Error(error.error || 'Impossible de générer le fichier Excel.');
                 }
                 const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `Synthese_Wattman_${project.name || 'projet'}.zip`;
-                link.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-                status.textContent = 'Fichier Excel généré.';
+                const fileName = `Synthese_Wattman_${project.name || 'projet'}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`;
+                if (window.desktopEnvironment?.saveSynthesisExcel) {
+                    // Application bureau : boîte « Enregistrer sous » à chaque génération.
+                    const result = await window.desktopEnvironment.saveSynthesisExcel(fileName, new Uint8Array(await blob.arrayBuffer()));
+                    status.textContent = result.canceled ? 'Enregistrement du fichier Excel annulé.' : `Fichier Excel enregistré : ${result.filePath}`;
+                } else {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = fileName;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    status.textContent = 'Fichier Excel généré.';
+                }
             } catch (error) {
                 console.error('La génération du fichier Excel a échoué.', error);
                 status.textContent = `Erreur de génération Excel : ${error.message}`;
@@ -887,7 +796,6 @@
             }
         });
 
-        window.addEventListener('afterprint', removePrintReportCopies);
 
         document.getElementById('back-to-selection').addEventListener('click', () => {
             reports.classList.add('hidden');
@@ -902,7 +810,42 @@
 
         populateProfiles();
         updateOptions();
+        applyPreset();
+
+        // Présélection depuis une page de résultats (DM1, DM2, Customer Mode, Biberonnage) :
+        // ?preset=dm1&configuration=<profil>&scenarios=a,b&profiles=Customer,... puis affichage direct
+        // des résultats, prêts à être téléchargés en PDF et en Excel.
+        function applyPreset() {
+            const params = new URLSearchParams(location.search);
+            const preset = params.get('preset');
+            if (!modules.has(preset) && !['dcdc','wltc','dm1','dm2','customer','biberonnage'].includes(preset)) return;
+            const list = name => (params.get(name) || '').split(',').filter(Boolean);
+            const configuration = params.get('configuration');
+            const scenarios = list('scenarios');
+            const reports = list('profiles');
+            const setGroup = (name, wanted) => {
+                if (!wanted.length) return;
+                form.querySelectorAll(`input[name="${name}"]`).forEach(input => { input.checked = wanted.includes(input.value); });
+            };
+            form.querySelectorAll('input[name="module"]').forEach(input => { input.checked = input.value === preset; });
+            if (preset === 'dm1' || preset === 'dm2') {
+                setGroup(`${preset}-profile`, configuration ? [configuration] : []);
+                setGroup(`${preset}-scenario`, scenarios);
+            } else if (preset === 'customer') {
+                setGroup('customer-configuration', configuration ? [configuration] : []);
+                setGroup('customer-profile', reports);
+                setGroup('customer-scenario', scenarios);
+            } else if (preset === 'biberonnage') {
+                setGroup('bib-config', configuration ? [configuration] : []);
+                const days = list('days');
+                setGroup('bib-days', days);
+                updateBibDaysBlocks();
+            }
+            updateOptions();
+            form.requestSubmit();
+        }
     </script>
+    <script src="/static/homologation_synthesis.js"></script>
     <style>
         @page { size: A4 portrait; margin: 12mm; }
         @media print {
