@@ -14,6 +14,7 @@
     <script src="/static/design-system/rg-ui.js"></script>
     <script src="/static/design-system/rg-grid.js" defer></script>
     <script src="/static/design-system/rg-hero3d.js" defer></script>
+    <link rel="stylesheet" href="/static/design-system/hub.css">
     <style>
         @media screen {
         html body.rg-home { padding: var(--rg-appbar-h) 0 0 !important; min-height: 100vh; display: block; }
@@ -32,31 +33,6 @@
         html body .home-actions .action { min-height: 52px; padding: 14px 26px; font-size: 1rem !important; display: inline-flex; align-items: center; gap: 12px; }
         .home-actions .action svg { width: 18px; height: 18px; transition: transform var(--rg-dur-base) var(--rg-ease-out); }
         .home-actions .action:hover svg { transform: translateX(3px); }
-        .home-modules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 8px 0 0; padding: 0; list-style: none; background: var(--rg-line); border: 1px solid var(--rg-line); max-width: 640px; }
-        .home-modules li { padding: 14px 16px; background: var(--rg-canvas); }
-        .home-modules strong { display: block; font-size: var(--rg-text-sm); color: var(--rg-ink); }
-        .home-modules span { display: block; margin-top: 3px; font-size: var(--rg-text-xs); color: var(--rg-ink-3); line-height: 1.45; }
-        .home-stage { position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px clamp(24px, 4vw, 56px); overflow: hidden; background: var(--rg-surface); border-left: 1px solid var(--rg-line); }
-        .home-stage canvas { position: absolute; inset: 0 0 34% 0; width: 100%; height: 66%; }
-        .home-stage::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 35%, color-mix(in srgb, var(--rg-yellow) 9%, transparent), transparent 70%); pointer-events: none; }
-        .stage-caption { position: absolute; top: 24px; left: clamp(24px, 4vw, 56px); right: 24px; display: flex; justify-content: space-between; color: var(--rg-ink-3); font: 500 var(--rg-text-xs)/1.3 var(--rg-font-mono); letter-spacing: .04em; }
-        .recent { position: relative; z-index: 1; }
-        .recent-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
-        html body .recent-head h2 { margin: 0; font-size: var(--rg-text-sm) !important; letter-spacing: var(--rg-tracking-caps) !important; text-transform: uppercase; color: var(--rg-ink-3) !important; font-family: var(--rg-font-sans) !important; }
-        .recent-head span { font-size: var(--rg-text-xs); color: var(--rg-ink-3); font-variant-numeric: tabular-nums; }
-        #recent-projects { display: grid; gap: 6px; }
-        .recent-item {
-            all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
-            padding: 12px 14px; cursor: pointer; background: var(--rg-canvas); border: 1px solid var(--rg-line); border-radius: var(--rg-radius-sm);
-            transition: border-color var(--rg-dur-fast) ease, transform var(--rg-dur-base) var(--rg-ease-out), box-shadow var(--rg-dur-base) ease;
-        }
-        .recent-item:hover { border-color: var(--rg-ink); box-shadow: inset 3px 0 0 var(--rg-yellow); }
-        .recent-item:active { transform: scale(.99); }
-        .recent-item:focus-visible { outline: 2px solid var(--rg-focus); outline-offset: 2px; }
-        .recent-item strong { display: block; font-size: var(--rg-text-md); color: var(--rg-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .recent-item small { display: block; margin-top: 2px; color: var(--rg-ink-3); font-size: var(--rg-text-xs); }
-        .recent-item .type-badge { margin: 0 !important; }
-        .recent-empty { padding: 16px; color: var(--rg-ink-3); border: 1px dashed var(--rg-line-strong); border-radius: var(--rg-radius-sm); font-size: var(--rg-text-sm); }
 
         /* Boîte de dialogue des projets */
         dialog#project-dialog { width: min(720px, calc(100% - 32px)); padding: 28px; }
@@ -75,9 +51,8 @@
 
         @media (max-width: 980px) {
             .rg-home main.home#home-main { grid-template-columns: 1fr; }
-            .home-stage { min-height: 460px; border-left: 0; border-top: 1px solid var(--rg-line); }
         }
-        @media (max-width: 560px) { .home-actions .action { width: 100%; justify-content: center; } .home-modules { grid-template-columns: 1fr; } .search-filters { flex-direction: column; } }
+        @media (max-width: 560px) { .home-actions .action { width: 100%; justify-content: center; } .search-filters { flex-direction: column; } }
         }
     </style>
 </head>
@@ -94,17 +69,38 @@
                 </button>
                 <button class="action" type="button" id="load-project">Sélectionner un projet existant</button>
             </div>
-            <ul class="home-modules rg-reveal-item" aria-label="Outils disponibles">
-                <li><strong>DCDC Sizing / WLTC (-7 °C)</strong><span>Bilans de courant, alternateur, PAO et GMV par profil d'homologation</span></li>
-                <li><strong>Autonomie batterie</strong><span>Modes DM, client, consommation fixe et veille</span></li>
-                <li><strong>Biberonnage</strong><span>Analyses 30 et 90 jours, SOC et recharges</span></li>
-                <li><strong>Analyse de logs</strong><span>Acquisition ESP32-C3 multi INA226, CAN et numérique</span></li>
+            <ul class="hub-tools rg-reveal-item" aria-label="Outils disponibles">
+                <li><button type="button" class="hub-tool" data-tool="dcdc" aria-expanded="false">
+                    <span class="hub-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h3M8.5 8.5v3M14 10h3M7 15h10"/></svg></span>
+                    <span class="hub-tool-title">DCDC Sizing / WLTC (-7 °C)</span><span class="hub-tool-arrow" aria-hidden="true">→</span>
+                    <span class="hub-tool-desc">Bilans de courant, alternateur, PAO et GMV par profil d'homologation</span>
+                    <span class="hub-tool-detail"><div><ul><li>Configuration</li><li>DCDC Sizing</li><li>WLTC (-7 °C)</li><li>PAO</li><li>GMV</li><li>Synthèse</li></ul><p>Ouvrez ou créez un projet, puis choisissez ce module dans « Modes d'analyse ».</p></div></span>
+                </button></li>
+                <li><button type="button" class="hub-tool" data-tool="auto" aria-expanded="false">
+                    <span class="hub-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M6 11v2M10 11v2M14 11v2"/></svg></span>
+                    <span class="hub-tool-title">Autonomie batterie</span><span class="hub-tool-arrow" aria-hidden="true">→</span>
+                    <span class="hub-tool-desc">Modes DM, client, consommation fixe et veille</span>
+                    <span class="hub-tool-detail"><div><ul><li>Batterie</li><li>Customer Mode</li><li>Mode DM</li><li>Consommations forfaitaires</li><li>Veille</li><li>Synthèses</li></ul><p>Ouvrez ou créez un projet, puis choisissez « Autonomie Batterie ».</p></div></span>
+                </button></li>
+                <li><button type="button" class="hub-tool" data-tool="bib" aria-expanded="false">
+                    <span class="hub-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></span>
+                    <span class="hub-tool-title">Biberonnage</span><span class="hub-tool-arrow" aria-hidden="true">→</span>
+                    <span class="hub-tool-desc">Analyses 30 et 90 jours, SOC et recharges</span>
+                    <span class="hub-tool-detail"><div><ul><li>Profil 30 jours</li><li>Profil 90 jours</li><li>SOC batterie</li><li>Recharges périodiques et sur seuil</li></ul><p>Accessible depuis le menu Autonomie batterie d'un projet.</p></div></span>
+                </button></li>
+                <li><button type="button" class="hub-tool" data-tool="logs" aria-expanded="false">
+                    <span class="hub-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 5-7"/></svg></span>
+                    <span class="hub-tool-title">Analyse de logs</span><span class="hub-tool-arrow" aria-hidden="true">→</span>
+                    <span class="hub-tool-desc">Acquisition ESP32-C3 multi INA226, CAN et numérique</span>
+                    <span class="hub-tool-detail"><div><ul><li>Workstation</li><li>Acquisition</li><li>Import des logs</li><li>Dashboard</li></ul><p>Ouvrez ou créez un projet, puis choisissez « Analyse de logs ».</p></div></span>
+                </button></li>
             </ul>
         </section>
 
         <section class="home-stage" aria-label="Projets récents">
             <canvas data-rg-hero3d aria-hidden="true"></canvas>
-            <div class="stage-caption" aria-hidden="true"><span>MODULE 12 V · VUE FILAIRE</span><span>ILLUSTRATION</span></div>
+            <div class="stage-caption" aria-hidden="true"><span>ARCHITECTURE ÉLECTRIQUE · VUE ÉCLATÉE</span><span>ILLUSTRATION</span></div>
+            <div class="stage-legend" aria-hidden="true"><span><i style="background:var(--rg-yellow)"></i>ECU · courant 12 V</span><span><i style="background:#7fd3ff"></i>Pack batterie</span></div>
             <div class="recent">
                 <div class="recent-head"><h2>Projets récents</h2><span id="project-count"></span></div>
                 <div id="recent-projects"></div>
@@ -171,13 +167,15 @@
         }
 
         // Ouverture d'un projet : logique d'origine, partagée par la liste et les récents.
-        async function openProject(project, statusElement) {
+        async function openProject(project, statusElement, card) {
             if (statusElement) statusElement.textContent = 'Chargement des données...';
+            card?.classList.add('is-opening');
             try {
                 const restored = await ProjectStorage.restoreProject(project);
                 sessionStorage.setItem('openedExistingProject', '1');
                 window.location.href = restored.sourceRecovered ? '/select_components' : '/mode_selection';
             } catch (error) {
+                card?.classList.remove('is-opening');
                 alert(`Impossible de charger le projet : ${error.message}`);
             }
         }
@@ -200,25 +198,61 @@
             projects.slice(0, 4).forEach((project, index) => {
                 const item = document.createElement('button');
                 item.type = 'button';
-                item.className = 'recent-item rg-reveal-item';
+                item.className = 'hub-project';
+                item.dataset.type = projectTypeKey(project);
+                item.style.setProperty('--i', String(index));
                 const text = document.createElement('span');
                 const name = document.createElement('strong');
                 name.textContent = project.name || 'Projet sans nom';
-                const meta = document.createElement('small');
+                const meta = document.createElement('span');
+                meta.className = 'hub-project-meta';
                 const updated = project.updatedAt ? new Date(project.updatedAt) : null;
-                meta.textContent = [
-                    project.milestone && `Jalon ${project.milestone}`,
-                    project.pilotWattman && `Pilote ${project.pilotWattman}`,
-                    updated && !Number.isNaN(updated.valueOf()) && `Modifié le ${updated.toLocaleDateString('fr-FR')}`
-                ].filter(Boolean).join(' · ') || 'Ouvrir le projet';
+                if (project.milestone) meta.append(chip(ICON_FLAG, 'Jalon', project.milestone));
+                if (project.pilotWattman) meta.append(chip(ICON_USER, 'Pilote', project.pilotWattman));
+                if (updated && !Number.isNaN(updated.valueOf())) meta.append(chip(ICON_CLOCK, 'Modifié', updated.toLocaleDateString('fr-FR')));
                 text.append(name, meta);
-                const badge = document.createElement('span');
-                badge.className = 'type-badge';
-                badge.textContent = projectTypeText(project);
-                item.append(text, badge);
-                item.addEventListener('click', () => openProject(project, meta));
+                const side = document.createElement('span');
+                side.className = 'hub-project-side';
+                const go = document.createElement('span');
+                go.className = 'hub-project-go';
+                go.setAttribute('aria-hidden', 'true');
+                go.textContent = '→';
+                side.append(typeBadge(project), go);
+                item.append(text, side);
+                item.title = `Ouvrir le projet « ${project.name || 'Projet sans nom'} »`;
+                item.addEventListener('click', () => openProject(project, null, item));
                 recentContainer.append(item);
             });
+        }
+
+        // Repères visuels des projets : couleur par motorisation, badge et puces d'information.
+        const ICON_FLAG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>';
+        const ICON_USER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>';
+        const ICON_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+        const ICON_EV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>';
+        const ICON_ICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c3 4 6 6 6 10a6 6 0 0 1-12 0c0-2 1-3.5 2-5 .5 2 1.5 3 3 3-1-3 0-6 1-8z"/></svg>';
+        function projectTypeKey(project) { return project.projectType === 'EV' ? 'ev' : 'ice'; }
+        function typeBadge(project) {
+            const badge = document.createElement('span');
+            badge.className = 'hub-badge type-badge';
+            const full = projectTypeText(project);
+            const match = full.match(/^(\S+)\s*\((.*)\)$/);
+            badge.innerHTML = projectTypeKey(project) === 'ev' ? ICON_EV : ICON_ICE;
+            const main = document.createElement('b');
+            main.textContent = match ? match[1] : full;
+            badge.append(main);
+            if (match) { const sub = document.createElement('span'); sub.textContent = match[2]; badge.append(sub); }
+            badge.title = full;
+            return badge;
+        }
+        function chip(icon, label, value) {
+            const node = document.createElement('span');
+            node.className = 'hub-chip';
+            node.innerHTML = icon;
+            const em = document.createElement('em');
+            em.textContent = label;
+            node.append(em, document.createTextNode(String(value)));
+            return node;
         }
 
         function renderProjects() {
@@ -276,14 +310,11 @@
                 const details = document.createElement('span');
                 details.textContent = `Date : ${project.date || 'N/C'} | Pilote : ${project.pilotWattman || 'N/C'} | Fiche : ${project.serverFilename || project.filename || 'Aucune'}`;
 
-                const badge = document.createElement('span');
-                badge.className = 'type-badge';
-                badge.textContent = projectTypeText(project);
-
-                info.append(name, details, badge);
+                card.dataset.type = projectTypeKey(project);
+                info.append(name, details, typeBadge(project));
 
                 // Clic sur les détails -> Charger le projet
-                info.addEventListener('click', () => openProject(project, info.querySelector('span')));
+                info.addEventListener('click', () => openProject(project, info.querySelector('span'), card));
 
                 // Bouton de suppression
                 const deleteBtn = document.createElement('button');
@@ -318,6 +349,21 @@
         typeFilter.addEventListener('change', renderProjects);
 
         document.getElementById('close-dialog').addEventListener('click', () => dialog.close());
+        // Cartes outils : activation (onde lumineuse) et dépliage des sections réelles du module.
+        document.querySelectorAll('.hub-tool').forEach(tool => tool.addEventListener('click', event => {
+            const open = tool.getAttribute('aria-expanded') !== 'true';
+            document.querySelectorAll('.hub-tool[aria-expanded="true"]').forEach(other => { if (other !== tool) other.setAttribute('aria-expanded', 'false'); });
+            tool.setAttribute('aria-expanded', String(open));
+            if (!window.RGUI?.reducedMotion()) {
+                const rect = tool.getBoundingClientRect();
+                const ripple = document.createElement('span');
+                ripple.className = 'hub-ripple';
+                ripple.style.left = `${(event.clientX || rect.left + rect.width / 2) - rect.left}px`;
+                ripple.style.top = `${(event.clientY || rect.top + rect.height / 2) - rect.top}px`;
+                tool.append(ripple);
+                ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+            }
+        }));
         renderRecent();
     </script>
 </body>

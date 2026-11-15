@@ -10,7 +10,7 @@ test('l’accueil affiche la scène 3D, les outils et le compte connecté', asyn
   await expect(page.locator('#home-title')).toHaveText('Engineering Calculator Hub');
   await expect(page.locator('.rg-user-name')).toHaveText('Admin E2E');
   await expect(page.locator('.rg-admin-link')).toBeVisible();
-  await expect(page.locator('.home-modules li')).toHaveCount(4);
+  await expect(page.locator('.hub-tool')).toHaveCount(4);
   await expect(page.locator('canvas[data-rg-hero3d]')).toBeVisible();
   await expect(page.locator('.recent-empty')).toContainText('Aucun projet');
 });
@@ -63,7 +63,7 @@ test('création d’un projet depuis un classeur Excel de référence', async ({
 
 test('le projet apparaît dans les récents et s’ouvre depuis la sélection', async ({ page }) => {
   await go(page, '/');
-  await expect(page.locator('.recent-item').first()).toContainText('Projet E2E Playwright');
+  await expect(page.locator('.hub-project').first()).toContainText('Projet E2E Playwright');
   await expect(page.locator('#project-count')).toContainText('1 projet');
   await page.locator('#load-project').click();
   await expect(page.locator('#project-dialog')).toBeVisible();
