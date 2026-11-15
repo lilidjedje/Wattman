@@ -133,8 +133,8 @@
     border: 1px solid var(--rg-primary) !important;
     border-radius: var(--rg-radius-sm) !important;
     box-shadow: none !important;
-    font: 600 var(--rg-text-md)/1.35 var(--rg-font-sans) !important;
-    letter-spacing: .005em !important;
+    font: 700 var(--rg-text-md)/1.35 var(--rg-font-brand) !important;
+    letter-spacing: .01em !important;
     text-decoration: none !important;
     cursor: pointer;
     transition: background var(--rg-dur-fast) ease, border-color var(--rg-dur-fast) ease,
@@ -377,19 +377,14 @@
   }
 }
 
-/* Transitions de page natives (même origine app://local) : fondu court, la
-   barre d'application reste immobile. Désactivées si mouvements réduits. */
-@media (prefers-reduced-motion: no-preference) {
-  @view-transition { navigation: auto; }
+/* Entrée de page : fondu court du contenu, la barre d'application reste fixe.
+   (Les View Transitions inter-documents ont été écartées : sous le protocole
+   app:// d'Electron elles peuvent bloquer requestAnimationFrame.) */
+@media screen and (prefers-reduced-motion: no-preference) {
+  html.rg-has-appbar body > :not(.rg-appbar):not(dialog):not(script):not(style) { animation: rg-page-in 240ms var(--rg-ease-out) both; }
 }
-::view-transition-old(root) { animation: 140ms ease both rg-vt-out; }
-::view-transition-new(root) { animation: 220ms var(--rg-ease-out) both rg-vt-in; }
-::view-transition-group(rg-appbar) { animation: none; }
-:root[data-motion="reduced"]::view-transition-group(*),
-:root[data-motion="reduced"]::view-transition-old(*),
-:root[data-motion="reduced"]::view-transition-new(*) { animation: none !important; }
-@keyframes rg-vt-out { to { opacity: 0; } }
-@keyframes rg-vt-in { from { opacity: 0; transform: translateY(6px); } }
+:root[data-motion="reduced"] body > * { animation: none !important; }
+@keyframes rg-page-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* =========================================================================
    Barre d'application (injectée par rg-ui.js)
@@ -402,7 +397,7 @@ html body .rg-appbar { position: fixed !important; inset: 0 0 auto 0 !important;
   background: var(--rg-appbar-bg) !important;
   border-bottom: 1px solid rgba(255, 255, 255, .08) !important;
   font: 500 var(--rg-text-sm)/1 var(--rg-font-sans) !important;
-  view-transition-name: rg-appbar !important; }
+  }
 html body .rg-appbar::after { /* filet d'accent fin, signature discrète */
   content: "" !important; position: absolute !important; left: 0 !important; bottom: -1px !important; width: 72px !important; height: 2px !important; background: var(--rg-yellow) !important; }
 html body .rg-appbar a { color: inherit !important; text-decoration: none !important; }
@@ -573,4 +568,188 @@ table.rg-grid td.rg-num { text-align: right; font-variant-numeric: tabular-nums;
     letter-spacing: -.015em !important;
     border-bottom-color: var(--rg-line) !important;
   }
+}
+
+/* =========================================================================
+   Affinages inspirés des sites Renault / Renault Group / Polestar / Porsche
+   ========================================================================= */
+@media screen {
+  /* Titres : géométriques, serrés (renault.fr, Porsche) */
+  html body :is(h1, h2, h3):not(table *, .chart-shell *, .chart-box *) { font-family: var(--rg-font-brand) !important; }
+  html body h1:not(table *) { font-weight: 800 !important; letter-spacing: -.03em !important; }
+
+  /* Libellés éditoriaux : capitales taupe soulignées (Brandhub « CORE ELEMENTS ») */
+  html body :is(.eyebrow, .module-index, .mode-index, .home-eyebrow, .rg-label) {
+    color: var(--rg-taupe) !important;
+    font-family: var(--rg-font-brand) !important;
+    font-weight: 700 !important;
+  }
+  html body :is(.eyebrow, .module-index, .mode-index) {
+    display: inline-block; padding-bottom: 4px;
+    border-bottom: 2px solid color-mix(in srgb, var(--rg-taupe) 55%, transparent);
+  }
+
+  /* Onglets en rail (renault.fr : trait fin, actif en trait épais) */
+  html body :is(.card-tabs, .tabs, [role="tablist"]):not(.rg-appbar *) { gap: 0 !important; background: transparent !important; border: 0 !important; }
+  html body :is(.card-tab.card-tab, [role="tab"]):not(table *, .rg-appbar *) {
+    min-height: 44px !important;
+    color: var(--rg-ink-3) !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-top: 2px solid var(--rg-line) !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    font: 700 var(--rg-text-sm)/1.2 var(--rg-font-brand) !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase;
+    transition: color var(--rg-dur-base) ease, border-color var(--rg-dur-base) ease !important;
+  }
+  html body :is(.card-tab.card-tab, [role="tab"]):not(table *, .rg-appbar *):hover { color: var(--rg-ink) !important; border-top-color: var(--rg-ink-3) !important; background: transparent !important; }
+  html body :is(.card-tab.card-tab.active, [role="tab"][aria-selected="true"]):not(table *, .rg-appbar *) {
+    color: var(--rg-ink) !important; background: transparent !important;
+    border-top: 4px solid var(--rg-ink) !important; box-shadow: none !important;
+  }
+
+  /* Indicateurs façon fiche technique (Polestar) : grand chiffre, unité discrète */
+  html body :is(.metric, .channel-box, .kpi, .rg-kpi) strong {
+    font-family: var(--rg-font-brand) !important;
+    font-weight: 700 !important;
+    font-size: clamp(1.25rem, 1.8vw, 1.75rem) !important;
+    letter-spacing: -.02em !important;
+    line-height: 1.1 !important;
+  }
+  html body :is(.metric, .channel-box, .kpi, .rg-kpi) :is(span, small, label) {
+    font-family: var(--rg-font-sans) !important;
+    font-size: var(--rg-text-xs) !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase;
+  }
+
+  /* Liens fléchés (Polestar « Voir l'offre → ») */
+  .rg-link-arrow { display: inline-flex; align-items: center; gap: 8px; font: 700 var(--rg-text-md)/1 var(--rg-font-brand); color: var(--rg-ink); text-decoration: none; }
+  .rg-link-arrow::after { content: "→"; transition: transform var(--rg-dur-base) var(--rg-ease-out); }
+  .rg-link-arrow:hover::after { transform: translateX(4px); }
+
+  /* Barre d'application : police de marque */
+  html body .rg-brand.rg-brand { font-family: var(--rg-font-brand) !important; font-weight: 800 !important; }
+}
+
+/* ---- Data grid : regroupement, extrêmes, réorganisation ---- */
+@media screen {
+  html body .rg-grid-toolbar .rg-grid-group {
+    min-height: 30px !important; height: 30px !important; padding: 0 28px 0 10px !important;
+    font: 600 var(--rg-text-xs)/1 var(--rg-font-sans) !important; max-width: 220px;
+  }
+  html body .rg-grid-toolbar .rg-pop-hint { margin: 4px 8px 6px; color: var(--rg-ink-3); font-size: var(--rg-text-xs); }
+  html body .rg-grid-toolbar .rg-export .rg-pop { min-width: 220px; }
+  html body .rg-grid-toolbar .rg-export .rg-pop button { justify-content: flex-start !important; }
+  table.rg-grid tr.rg-group-row > td {
+    padding: 8px 10px !important; text-align: left !important;
+    background: #f3f1ee !important; color: #111214 !important;
+    border-top: 2px solid #111214 !important;
+  }
+  table.rg-grid .rg-group-toggle {
+    all: unset; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    font: 700 .85rem/1.2 var(--rg-font-brand); color: #111214;
+  }
+  table.rg-grid .rg-group-toggle:focus-visible { outline: 2px solid #111214; outline-offset: 2px; }
+  table.rg-grid .rg-caret { width: 0; height: 0; border: 5px solid transparent; border-left-color: #111214; border-right: 0; transform: rotate(90deg); transition: transform var(--rg-dur-base) var(--rg-ease-out); }
+  table.rg-grid .rg-group-toggle[aria-expanded="false"] .rg-caret { transform: none; }
+  table.rg-grid .rg-group-count { color: #67625c; font-weight: 600; font-size: .78rem; }
+  table.rg-grid .rg-derived-badge {
+    margin-left: 14px; padding: 1px 6px; border: 1px dashed #8a7b6c; color: #6d6052;
+    font: 700 .66rem/1.5 var(--rg-font-sans); letter-spacing: .08em; text-transform: uppercase;
+  }
+  table.rg-grid .rg-group-stats { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; margin-left: 10px; font-size: .78rem; color: #3b3936; font-style: italic; }
+  table.rg-grid .rg-group-stats em { font-style: normal; font-weight: 700; color: #6d6052; }
+  /* Extrêmes : anneau intérieur, ne remplace jamais le fond Excel */
+  table.rg-grid td.rg-min { box-shadow: inset 0 0 0 2px #1f5fbf !important; }
+  table.rg-grid td.rg-max { box-shadow: inset 0 0 0 2px #b42318 !important; }
+  table.rg-grid td.rg-min::before, table.rg-grid td.rg-max::before {
+    float: left; margin-right: 6px; font: 800 .62rem/1.6 var(--rg-font-sans); letter-spacing: .06em;
+  }
+  table.rg-grid td.rg-min::before { content: "MIN"; color: #1f5fbf; }
+  table.rg-grid td.rg-max::before { content: "MAX"; color: #b42318; }
+  table.rg-grid th.rg-dragging { opacity: .45; }
+  table.rg-grid th.rg-drop-before { box-shadow: inset 3px 0 0 #111214 !important; }
+  table.rg-grid th.rg-drop-after { box-shadow: inset -3px 0 0 #111214 !important; }
+  html body .rg-grid-toolbar.rg-grid-toolbar.rg-grid-toolbar button[aria-pressed="true"] { color: var(--rg-ink) !important; border-color: var(--rg-ink) !important; background: var(--rg-surface-sunken) !important; }
+}
+@media screen {
+  html body :is(.rg-grid-toolbar, .rg-chart-toolbar) :is(button, select, details)[hidden] { display: none !important; }
+}
+
+/* =========================================================================
+   Dashboard de mesure (can_server) — mise en page « poste d'analyse »
+   ========================================================================= */
+@media screen {
+  html body.measurement-dashboard .workstation-header {
+    display: grid !important; grid-template-columns: auto 1fr auto !important; align-items: center; gap: 24px;
+  }
+  html body.measurement-dashboard .workstation-header > :first-child { justify-self: start; width: auto !important; }
+  html body.measurement-dashboard .workstation-header h1 { text-align: center; }
+
+  /* Bande d'informations : fiche technique en colonnes (Polestar) */
+  html body .system-strip.system-strip {
+    display: grid !important; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 !important;
+    padding: 0 !important; overflow: hidden;
+    font: 600 var(--rg-text-xs)/1.45 var(--rg-font-sans) !important; letter-spacing: .04em;
+  }
+  html body .system-strip.system-strip > span:not([hidden]) {
+    padding: 12px 16px; border-right: 1px solid var(--rg-line); color: var(--rg-ink-2);
+    font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+  }
+
+  /* Graphiques : surface claire/sombre cohérente avec les axes thémés */
+  html body .chart-shell.chart-shell, html body .feeding-chart-shell, html body .feeding-quality-chart {
+    background: var(--rg-surface) !important; border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-md) !important; box-shadow: none !important;
+  }
+  html body .chart-toolbar.chart-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  html body .chart-toolbar.chart-toolbar span { color: var(--rg-ink-3) !important; font: 500 var(--rg-text-xs)/1.4 var(--rg-font-sans) !important; margin-right: auto; }
+  html body .chart-toolbar.chart-toolbar button {
+    min-height: 0 !important; height: 32px !important; padding: 0 12px !important;
+    color: var(--rg-ink) !important; background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line-strong) !important; border-radius: var(--rg-radius-sm) !important;
+    font: 700 var(--rg-text-xs)/1 var(--rg-font-brand) !important; letter-spacing: .03em !important;
+  }
+  html body .chart-toolbar.chart-toolbar button:hover { border-color: var(--rg-ink) !important; background: var(--rg-surface-2) !important; }
+
+  /* Indicateurs */
+  html body .measurement-dashboard .metric, html body .metric.metric { min-height: 0 !important; padding: 16px 18px !important; background: var(--rg-surface) !important; }
+  html body .metric .metric-detail { color: var(--rg-ink-3) !important; font: 500 var(--rg-text-xs)/1.4 var(--rg-font-sans) !important; text-transform: none !important; letter-spacing: 0 !important; }
+  html body .metric strong.score.pass { color: var(--rg-ok) !important; }
+  html body .metric strong.score.fail { color: var(--rg-danger) !important; }
+
+  /* Badges de verdict : statut sémantique discret */
+  html body .verdict-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px !important; border-radius: var(--rg-radius-xs) !important;
+    font: 800 .68rem/1.4 var(--rg-font-sans) !important; letter-spacing: .08em !important; border: 1px solid transparent;
+  }
+  html body .verdict-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  html body .verdict-badge.pass { color: var(--rg-ok) !important; background: var(--rg-ok-soft) !important; border-color: color-mix(in srgb, var(--rg-ok) 30%, transparent); }
+  html body .verdict-badge.fail { color: var(--rg-danger) !important; background: var(--rg-danger-soft) !important; border-color: color-mix(in srgb, var(--rg-danger) 30%, transparent); }
+  html body .verdict-badge.no_data { color: #5b5650 !important; background: #efece8 !important; border-color: #dcd7d1; }
+  html body .missing-time { display: block; margin-top: 4px; color: var(--rg-warn) !important; font: 600 var(--rg-text-xs)/1.4 var(--rg-font-sans) !important; }
+  html body .device-report-card.device-report-card { background: var(--rg-surface) !important; }
+  html body .device-report-heading span { color: var(--rg-taupe) !important; }
+  html body .analysis-duration-warning { color: var(--rg-warn) !important; background: var(--rg-warn-soft) !important; border: 1px solid color-mix(in srgb, var(--rg-warn) 35%, transparent) !important; border-radius: var(--rg-radius-sm); padding: 10px 14px; }
+}
+@media screen {
+  /* Les anciennes feuilles donnent width:100% + padding au body (débordement horizontal). */
+  html body { box-sizing: border-box !important; max-width: 100%; }
+}
+@media screen {
+  /* Administration : sections de page alignées sur les surfaces du thème */
+  html body.admin-page section {
+    color: var(--rg-ink) !important; background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important; border-radius: var(--rg-radius-md) !important;
+  }
+  html body.admin-page .row { border-top-color: var(--rg-line) !important; }
+  html body.admin-page .details span { color: var(--rg-ink-3) !important; }
+  html body.admin-page #status { color: var(--rg-danger) !important; }
+}
+@media screen {
+  /* Listes de minutes manquantes très longues : zone défilante, contenu intégral conservé */
+  html body .missing-time { max-height: 6.4em; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
 }

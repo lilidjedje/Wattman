@@ -85,7 +85,7 @@
     }
     function frame(now) {
       raf = 0;
-      const t = reduced() ? 0 : (now - t0) / 1000;
+      const t = reduced() ? 0 : Math.max(0, now - t0) / 1000;
       tilt.x += (target.x - tilt.x) * 0.06;
       tilt.y += (target.y - tilt.y) * 0.06;
       const rotY = -0.55 + Math.sin(t * 0.18) * 0.35 + tilt.x * 0.25;
@@ -106,7 +106,8 @@
       // Impulsions de courant le long du serpentin
       const pulses = 4, len = path.length - 1;
       for (let k = 0; k < pulses; k++) {
-        const u = ((t * 0.12 + k / pulses) % 1) * len;
+        // Modulo positif : l'horodatage du 1er frame peut précéder t0 (t < 0).
+        const u = ((((t * 0.12 + k / pulses) % 1) + 1) % 1) * len;
         const i = Math.floor(u), f = u - i;
         const p = path[i], q = path[Math.min(i + 1, len)];
         const pt = project(p[0] + (q[0] - p[0]) * f, p[1], p[2] + (q[2] - p[2]) * f, rotY, rotX);

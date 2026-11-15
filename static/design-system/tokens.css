@@ -9,7 +9,19 @@
    limité à un accent unique (--rg-accent), modifiable ici seulement.
    Les couleurs de données Excel (static/excel-colors.css) ne dépendent PAS de
    ces tokens et ne doivent jamais être remplacées.
+   Inspirations (sites publics consultés le 2026-11-15) : renault.fr (CTA noirs,
+   contours noirs, onglets en rail), renaultgroup.com et Brandhub (gris minéraux
+   chauds, filets taupe, panneaux arrondis), Polestar / Porsche (grandes
+   typographies, séparateurs fins, liens fléchés).
    ========================================================================== */
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url("/static/vendor/fonts/manrope-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 :root {
   /* Couleurs de marque */
   --rg-black: #000000;
@@ -28,6 +40,8 @@
   --rg-mineral-50: #f5f5f4;
   --rg-yellow: #efdf00;          /* accent — à valider avec la charte */
   --rg-yellow-ink: #1a1700;      /* texte posé sur l'accent */
+  --rg-taupe: #8a7b6c;           /* filets et libellés éditoriaux (Brandhub) */
+  --rg-taupe-soft: #e9e4de;
 
   /* Sémantique d'état (badges, messages — jamais des données Excel) */
   --rg-ok: #16794f;
@@ -53,7 +67,8 @@
 
   /* Typographie — police Renault propriétaire non embarquée (usage restreint) */
   --rg-font-sans: "Segoe UI Variable Text", "Segoe UI", Arial, system-ui, sans-serif;
-  --rg-font-display: "Segoe UI Variable Display", "Segoe UI", Arial, system-ui, sans-serif;
+  --rg-font-brand: "Manrope", "Segoe UI Variable Display", "Segoe UI", Arial, sans-serif; /* police libre OFL, géométrique */
+  --rg-font-display: "Manrope", "Segoe UI Variable Display", "Segoe UI", Arial, system-ui, sans-serif;
   --rg-font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
   --rg-text-xs: .75rem;
   --rg-text-sm: .8125rem;
@@ -77,9 +92,9 @@
 
   /* Formes : angles francs, inspirés des lignes tendues du design automobile */
   --rg-radius-xs: 2px;
-  --rg-radius-sm: 4px;
-  --rg-radius-md: 6px;
-  --rg-radius-lg: 10px;
+  --rg-radius-sm: 2px;            /* contrôles : quasi droits, comme renault.fr */
+  --rg-radius-md: 12px;           /* panneaux : arrondis Renault Group */
+  --rg-radius-lg: 18px;
   --rg-cut: 14px;                 /* chanfrein des cartes signature */
 
   /* Mouvement */
@@ -94,15 +109,15 @@
 
   /* ---- Thème clair (défaut) ---- */
   color-scheme: light;
-  --rg-canvas: #f3f3f1;
+  --rg-canvas: #f4f2ef;           /* grège clair (Brandhub) */
   --rg-surface: #ffffff;
-  --rg-surface-2: #f7f7f6;
-  --rg-surface-sunken: #ececea;
+  --rg-surface-2: #f8f7f5;
+  --rg-surface-sunken: #ebe8e4;
   --rg-ink: #0b0c0e;
-  --rg-ink-2: #3a3c41;
-  --rg-ink-3: #62656b;
-  --rg-line: #dcdcda;
-  --rg-line-strong: #b9bab8;
+  --rg-ink-2: #3b3936;
+  --rg-ink-3: #67625c;
+  --rg-line: #e1ddd8;
+  --rg-line-strong: #bdb7b0;
   --rg-primary: #0b0c0e;
   --rg-primary-hover: #2e3035;
   --rg-on-primary: #ffffff;
@@ -118,15 +133,17 @@
 /* ---- Thème sombre : graphite ---- */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --rg-canvas: #0b0c0e;
-  --rg-surface: #151619;
-  --rg-surface-2: #1b1c20;
-  --rg-surface-sunken: #101114;
-  --rg-ink: #f2f2f0;
-  --rg-ink-2: #c8c9cc;
-  --rg-ink-3: #9a9da3;
-  --rg-line: #2b2d32;
-  --rg-line-strong: #43464c;
+  --rg-canvas: #0c0b0a;
+  --rg-surface: #161513;
+  --rg-surface-2: #1d1c19;
+  --rg-surface-sunken: #100f0e;
+  --rg-ink: #f3f1ee;
+  --rg-ink-2: #cdc8c2;
+  --rg-ink-3: #9e978f;
+  --rg-line: #2d2b28;
+  --rg-line-strong: #47433e;
+  --rg-taupe: #b3a493;
+  --rg-taupe-soft: #2a2622;
   --rg-primary: #f2f2f0;
   --rg-primary-hover: #ffffff;
   --rg-on-primary: #0b0c0e;
