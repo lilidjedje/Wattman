@@ -22,6 +22,10 @@ let sequence = 0;
 let allowWindowClose = false;
 let closeSavePending = false;
 let rememberedSessionCookie = '';
+// Session sans « Se souvenir de moi » : gardée en mémoire jusqu'à la fermeture.
+// Chromium ne conserve pas les cookies du protocole app://, elle doit donc être
+// réinjectée comme la session mémorisée.
+let volatileSessionCookie = '';
 const pending = new Map();
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -139,11 +143,12 @@ async function handleAppRequest(request) {
     ? Buffer.alloc(0)
     : Buffer.from(await request.arrayBuffer());
   const headers = Object.fromEntries(request.headers.entries());
-  if (rememberedSessionCookie) {
+  const sessionCookie = rememberedSessionCookie || volatileSessionCookie;
+  if (sessionCookie) {
     for (const name of Object.keys(headers)) {
       if (name.toLowerCase() === 'cookie') delete headers[name];
     }
-    headers.cookie = rememberedSessionCookie;
+    headers.cookie = sessionCookie;
   }
   const result = await callBackend({
     path: `${url.pathname}${url.search}`,
@@ -162,6 +167,7 @@ async function handleAppRequest(request) {
         const expires = /(?:^|;)\s*Expires=/i.test(rawValue);
         const expired = /(?:^|;)\s*Max-Age=0(?:;|$)/i.test(rawValue);
         saveRememberedSession(expires && !expired ? cookieValue : '');
+        volatileSessionCookie = !expires && !expired ? cookieValue : '';
       } catch (error) {
         console.error('Impossible de mettre à jour la session mémorisée :', error);
       }
