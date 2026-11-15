@@ -76,14 +76,14 @@ test('un compte standard n’a pas accès à l’administration', async ({ page 
   });
   await go(page, '/admin');
   await expect(page).toHaveURL(url => new URL(url).pathname === '/');
-  await expect(page.locator('#admin-link')).toBeHidden();
+  await expect(page.locator('.rg-admin-link')).toBeHidden();
   const status = await page.evaluate(async () => (await fetch('/api/admin/accounts')).status);
   expect(status).toBe(403);
 });
 
 test('une session déconnectée renvoie vers l’authentification', async ({ page }) => {
   await go(page, '/');
-  await page.locator('#logout-button').click();
+  await page.locator('.rg-logout').click();
   await page.waitForURL(/\/auth/);
   await go(page, '/mode_selection');
   await expect(page).toHaveURL(/\/auth/);

@@ -8,8 +8,8 @@ test('l’accueil affiche la scène 3D, les outils et le compte connecté', asyn
   await go(page, '/');
   await expect(page.locator('.rg-appbar')).toBeVisible();
   await expect(page.locator('#home-title')).toHaveText('Engineering Calculator Hub');
-  await expect(page.locator('#account-name')).toHaveText('Admin E2E');
-  await expect(page.locator('#admin-link')).toBeVisible();
+  await expect(page.locator('.rg-user-name')).toHaveText('Admin E2E');
+  await expect(page.locator('.rg-admin-link')).toBeVisible();
   await expect(page.locator('.home-modules li')).toHaveCount(4);
   await expect(page.locator('canvas[data-rg-hero3d]')).toBeVisible();
   await expect(page.locator('.recent-empty')).toContainText('Aucun projet');
@@ -58,7 +58,7 @@ test('création d’un projet depuis un classeur Excel de référence', async ({
   await page.locator('[name="evArchitecture"]').selectOption('SUV');
   await page.locator('#project-form').evaluate(form => form.requestSubmit());
   await page.waitForURL(/select_components|mode_selection/, { timeout: 60000 });
-  await expect(page.locator('.rg-project-chip')).toHaveText('Projet E2E Playwright');
+  await expect(page.locator('.rg-nav-context')).toHaveText('Projet E2E Playwright');
 });
 
 test('le projet apparaît dans les récents et s’ouvre depuis la sélection', async ({ page }) => {

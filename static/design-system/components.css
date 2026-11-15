@@ -387,43 +387,139 @@
 @keyframes rg-page-in { from { opacity: 0; transform: translateY(6px); } }
 
 /* =========================================================================
-   Barre d'application (injectée par rg-ui.js)
+   Bannière globale Wattman Tool (injectée par rg-ui.js sur les pages
+   authentifiées ; absente des pages publiques marquées data-rg-no-appbar).
+   Graphite, filet lumineux discret, onglet actif « néon » jaune.
    ========================================================================= */
-html body .rg-appbar { position: fixed !important; inset: 0 0 auto 0 !important; z-index: 10000 !important;
-  height: var(--rg-appbar-h) !important;
-  display: flex !important; align-items: center !important; gap: 16px !important;
-  padding: 0 14px 0 18px !important;
-  color: var(--rg-appbar-ink) !important;
-  background: var(--rg-appbar-bg) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, .08) !important;
+html body .rg-appbar.rg-appbar {
+  position: fixed !important; inset: 0 0 auto 0 !important; z-index: 10000 !important;
+  height: var(--rg-appbar-h) !important; box-sizing: border-box !important;
+  display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto !important; align-items: center !important;
+  gap: 18px !important; padding: 0 14px 0 18px !important; margin: 0 !important;
+  color: #f4f2ef !important;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(239, 223, 0, .07), transparent 42%),
+    linear-gradient(90deg, rgba(10, 10, 12, .94), rgba(22, 19, 26, .92) 55%, rgba(12, 12, 15, .94)) !important;
+  border: 0 !important; border-bottom: 1px solid rgba(255, 255, 255, .07) !important; border-radius: 0 !important;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .9) !important;
+  backdrop-filter: blur(14px) saturate(1.3);
   font: 500 var(--rg-text-sm)/1 var(--rg-font-sans) !important;
-  }
-html body .rg-appbar::after { /* filet d'accent fin, signature discrète */
-  content: "" !important; position: absolute !important; left: 0 !important; bottom: -1px !important; width: 72px !important; height: 2px !important; background: var(--rg-yellow) !important; }
+  animation: none !important;
+}
+/* Filet lumineux bas : ligne fixe + reflet qui balaie lentement */
+html body .rg-appbar.rg-appbar::before {
+  content: "" !important; position: absolute !important; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, rgba(239, 223, 0, .85) 0, rgba(239, 223, 0, .25) 18%, rgba(120, 200, 255, .18) 60%, transparent 100%) !important;
+}
+html body .rg-appbar.rg-appbar::after {
+  content: "" !important; position: absolute !important; bottom: -1px; left: 0; width: 22%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 250, 190, .9), transparent) !important;
+  filter: drop-shadow(0 0 4px rgba(239, 223, 0, .8));
+  animation: rg-sweep 9s linear infinite; pointer-events: none;
+}
+@keyframes rg-sweep { from { transform: translateX(-100%); } to { transform: translateX(560%); } }
+:root[data-motion="reduced"] .rg-appbar::after { animation: none !important; opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .rg-appbar::after { animation: none !important; opacity: 0; } }
+
 html body .rg-appbar a { color: inherit !important; text-decoration: none !important; }
-html body .rg-brand { display: inline-flex !important; align-items: center !important; gap: 10px !important; font: 700 .82rem/1 var(--rg-font-display) !important; letter-spacing: .16em !important; text-transform: uppercase !important; }
-html body .rg-brand-mark { width: 18px !important; height: 18px !important; flex: none !important; }
-html body .rg-brand small { font-weight: 500 !important; letter-spacing: .1em !important; color: #9a9da3 !important; }
-html body .rg-crumb { display: flex !important; align-items: center !important; gap: 10px !important; min-width: 0 !important; color: #9a9da3 !important; }
-html body .rg-crumb::before { content: "" !important; width: 1px !important; height: 18px !important; background: rgba(255, 255, 255, .16) !important; }
-html body .rg-crumb strong { color: #f4f4f2 !important; font-weight: 600 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
-html body .rg-appbar-spacer { flex: 1 !important; }
-html body .rg-project-chip { display: inline-flex !important; align-items: center !important; gap: 8px !important; max-width: 280px !important;
-  padding: 6px 10px !important; border: 1px solid rgba(255, 255, 255, .14) !important; border-radius: var(--rg-radius-sm) !important;
-  color: #d6d7d9 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
-html body .rg-project-chip::before { content: "" !important; width: 6px !important; height: 6px !important; flex: none !important; background: var(--rg-yellow) !important; }
-html body .rg-appbar .rg-icon-btn.rg-icon-btn { display: inline-grid !important; place-items: center !important; width: 34px !important; height: 34px !important; padding: 0 !important;
-  color: #d6d7d9 !important; background: transparent !important; border: 1px solid transparent !important; border-radius: var(--rg-radius-sm) !important;
+
+/* Identité */
+html body .rg-appbar .rg-brand.rg-brand { display: inline-flex !important; align-items: center !important; gap: 10px !important; min-width: 0; }
+html body .rg-appbar .rg-brand-mark { width: 22px !important; height: 22px !important; flex: none !important; filter: drop-shadow(0 0 6px rgba(239, 223, 0, .35)); }
+html body .rg-appbar .rg-brand-text { display: grid !important; gap: 3px; line-height: 1 !important; }
+html body .rg-appbar .rg-brand-text strong { color: #fff !important; font: 800 .95rem/1 var(--rg-font-brand) !important; letter-spacing: .02em !important; white-space: nowrap; }
+html body .rg-appbar .rg-brand-text strong span { color: var(--rg-yellow) !important; }
+html body .rg-appbar .rg-brand-text small { color: rgba(244, 242, 239, .5) !important; font: 600 .62rem/1 var(--rg-font-sans) !important; letter-spacing: .14em !important; text-transform: uppercase; white-space: nowrap; }
+
+/* Navigation contextuelle */
+html body .rg-appbar .rg-nav { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0; height: 100%; }
+html body .rg-appbar .rg-nav-context {
+  display: inline-flex; align-items: center; gap: 8px; flex: none; max-width: 220px; height: 30px; padding: 0 10px 0 8px; margin-right: 6px;
+  color: rgba(244, 242, 239, .82) !important; border: 1px solid rgba(255, 255, 255, .12); border-radius: var(--rg-radius-sm);
+  background: rgba(255, 255, 255, .03); font: 600 .78rem/1 var(--rg-font-sans) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: border-color var(--rg-dur-base) ease, background var(--rg-dur-base) ease;
+}
+html body .rg-appbar a.rg-nav-context:hover { border-color: rgba(239, 223, 0, .5); background: rgba(239, 223, 0, .06); }
+html body .rg-appbar .rg-nav-context::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--rg-yellow); box-shadow: 0 0 8px rgba(239, 223, 0, .9); }
+html body .rg-appbar .rg-nav-module { flex: none; padding-right: 6px; color: rgba(244, 242, 239, .45) !important; font: 700 .64rem/1 var(--rg-font-sans) !important; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+html body .rg-appbar .rg-tabs {
+  position: relative; display: flex; align-items: stretch; gap: 2px; min-width: 0; height: 100%;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; scroll-behavior: smooth;
+}
+html body .rg-appbar .rg-tabs.has-more { mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+html body .rg-appbar .rg-tabs::-webkit-scrollbar { display: none; }
+html body .rg-appbar .rg-tab {
+  position: relative; display: inline-flex; align-items: center; flex: none; padding: 0 12px;
+  color: rgba(244, 242, 239, .66) !important; font: 600 .8rem/1 var(--rg-font-sans) !important; white-space: nowrap;
+  transition: color var(--rg-dur-base) ease, background var(--rg-dur-base) ease;
+}
+html body .rg-appbar .rg-tab:hover { color: #fff !important; background: linear-gradient(180deg, transparent, rgba(255, 255, 255, .05)); }
+html body .rg-appbar .rg-tab:focus-visible { outline: 2px solid var(--rg-yellow) !important; outline-offset: -4px !important; }
+html body .rg-appbar .rg-tab[aria-current="page"] { color: #fff !important; text-shadow: 0 0 12px rgba(239, 223, 0, .35); }
+/* Indicateur actif : glisse depuis l'onglet précédent (voir rg-ui.js) */
+html body .rg-appbar .rg-tab-indicator {
+  position: absolute; bottom: 0; left: 0; height: 2px; width: 0; pointer-events: none;
+  background: var(--rg-yellow); border-radius: 2px 2px 0 0;
+  box-shadow: 0 0 8px rgba(239, 223, 0, .9), 0 0 18px rgba(239, 223, 0, .45);
+  transition: transform 420ms var(--rg-ease-out), width 420ms var(--rg-ease-out);
+}
+
+/* Utilisateur et actions */
+html body .rg-appbar .rg-user { display: inline-flex; align-items: center; gap: 8px; }
+html body .rg-appbar .rg-user-name {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 200px; margin-right: 4px;
+  color: rgba(244, 242, 239, .8) !important; font: 600 .82rem/1 var(--rg-font-sans) !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+html body .rg-appbar .rg-user-name::before {
+  content: attr(data-initials); display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%;
+  color: var(--rg-yellow-ink); background: linear-gradient(135deg, #fff36a, var(--rg-yellow));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .2), 0 0 12px rgba(239, 223, 0, .35);
+  font: 800 .66rem/1 var(--rg-font-brand); letter-spacing: .02em;
+}
+html body .rg-appbar .rg-user-name:empty { display: none; }
+html body .rg-appbar .rg-action.rg-action.rg-action {
+  display: inline-flex !important; align-items: center !important; gap: 7px; height: 32px !important; min-height: 0 !important; padding: 0 12px !important;
+  color: #f4f2ef !important; background: rgba(255, 255, 255, .04) !important;
+  border: 1px solid rgba(255, 255, 255, .16) !important; border-radius: var(--rg-radius-sm) !important; box-shadow: none !important;
+  font: 700 .78rem/1 var(--rg-font-brand) !important; letter-spacing: .02em !important; cursor: pointer; white-space: nowrap;
+  transition: border-color var(--rg-dur-base) ease, background var(--rg-dur-base) ease, box-shadow var(--rg-dur-base) ease, color var(--rg-dur-base) ease !important;
+}
+html body .rg-appbar .rg-action.rg-action.rg-action svg { width: 15px; height: 15px; flex: none; }
+html body .rg-appbar .rg-action.rg-action.rg-action:hover {
+  color: #fff !important; border-color: rgba(239, 223, 0, .65) !important; background: rgba(239, 223, 0, .08) !important;
+  box-shadow: 0 0 0 1px rgba(239, 223, 0, .15), 0 0 16px -4px rgba(239, 223, 0, .6) !important;
+}
+html body .rg-appbar .rg-action.rg-action.rg-action:active { transform: scale(.96) !important; }
+html body .rg-appbar .rg-action.rg-action.rg-action:focus-visible { outline: 2px solid var(--rg-yellow) !important; outline-offset: 2px !important; }
+html body .rg-appbar .rg-action.rg-action.rg-action[hidden] { display: none !important; }
+html body .rg-appbar .rg-action[aria-current="page"] { border-color: rgba(239, 223, 0, .7) !important; color: var(--rg-yellow) !important; }
+html body .rg-appbar .rg-sep { width: 1px; height: 22px; margin: 0 4px; background: rgba(255, 255, 255, .12); }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn { display: inline-grid !important; place-items: center !important; width: 32px !important; height: 32px !important; min-height: 0 !important; padding: 0 !important;
+  color: rgba(244, 242, 239, .7) !important; background: transparent !important; border: 1px solid transparent !important; border-radius: var(--rg-radius-sm) !important; box-shadow: none !important;
   cursor: pointer !important; transition: background var(--rg-dur-fast) ease, color var(--rg-dur-fast) ease !important; }
 html body .rg-appbar .rg-icon-btn.rg-icon-btn:hover { color: #fff !important; background: rgba(255, 255, 255, .08) !important; }
 html body .rg-appbar .rg-icon-btn.rg-icon-btn:focus-visible { outline: 2px solid var(--rg-yellow) !important; outline-offset: 1px !important; }
 html body .rg-appbar .rg-icon-btn.rg-icon-btn[aria-pressed="true"] { color: var(--rg-yellow) !important; }
-html body .rg-appbar .rg-icon-btn.rg-icon-btn svg { width: 18px !important; height: 18px !important; }
-html body .rg-appbar .rg-icon-btn.rg-icon-btn:active { transform: scale(.94) !important; }
-html body .rg-brand { color: #f4f4f2 !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn svg { width: 17px !important; height: 17px !important; }
+
+/* Fenêtres étroites : libellés compacts, le sommaire défile horizontalement */
+html body .rg-appbar.is-compact .rg-brand-text small, html body .rg-appbar.is-compact .rg-nav-module { display: none !important; }
+html body .rg-appbar.is-compact .rg-user-name { max-width: 34px; font-size: 0 !important; margin: 0; }
+@media (max-width: 1360px) {
+  html body .rg-appbar .rg-nav-module { display: none !important; }
+}
+@media (max-width: 1180px) {
+  html body .rg-appbar .rg-brand-text small { display: none !important; }
+  html body .rg-appbar .rg-user-name { max-width: 34px; font-size: 0 !important; margin: 0; }
+}
+@media (max-width: 1080px) {
+  html body .rg-appbar .rg-action .rg-act-label { display: none; }
+  html body .rg-appbar .rg-action.rg-action.rg-action { padding: 0 9px !important; }
+  html body .rg-appbar .rg-nav-context { max-width: 130px; }
+}
 @media (max-width: 760px) {
-  html body .rg-crumb, html body .rg-brand small { display: none !important; }
-  html body .rg-project-chip { max-width: 140px !important; }
+  html body .rg-appbar .rg-brand-text { display: none !important; }
+  html body .rg-appbar .rg-nav-context { display: none; }
 }
 @media print { .rg-appbar, .rg-chart-toolbar, .rg-grid-toolbar { display: none !important; } }
 
@@ -631,7 +727,7 @@ table.rg-grid td.rg-num { text-align: right; font-variant-numeric: tabular-nums;
   .rg-link-arrow:hover::after { transform: translateX(4px); }
 
   /* Barre d'application : police de marque */
-  html body .rg-brand.rg-brand { font-family: var(--rg-font-brand) !important; font-weight: 800 !important; }
+  
 }
 
 /* ---- Data grid : regroupement, extrêmes, réorganisation ---- */

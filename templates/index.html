@@ -23,17 +23,6 @@
             text-align: left; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; overflow-x: clip;
         }
         .home-intro { display: flex; flex-direction: column; justify-content: center; gap: 28px; padding: clamp(32px, 6vw, 88px); }
-        .home-account { display: flex; align-items: center; gap: 6px; font-size: var(--rg-text-sm); color: var(--rg-ink-3); }
-        .home-account #account-name { font-weight: 600; color: var(--rg-ink); margin-right: 6px; }
-        html body .home-account.account-bar :is(a, button):is(a, button) {
-            min-height: 0 !important; padding: 6px 10px !important; cursor: pointer; text-decoration: none !important;
-            color: var(--rg-ink-2) !important; background: transparent !important; border: 1px solid var(--rg-line) !important;
-            border-radius: var(--rg-radius-sm) !important; font: 600 var(--rg-text-sm)/1.2 var(--rg-font-sans) !important;
-            transition: background var(--rg-dur-fast) ease, border-color var(--rg-dur-fast) ease !important;
-        }
-        html body .home-account.account-bar :is(a, button):is(a, button):hover { color: var(--rg-ink) !important; background: var(--rg-surface) !important; border-color: var(--rg-ink-3) !important; }
-        .home-account :is(a, button):focus-visible { outline: 2px solid var(--rg-focus); outline-offset: 2px; }
-        .home-account a[hidden] { display: none; }
         .home-eyebrow { display: inline-flex; align-items: center; gap: 10px; color: var(--rg-ink-3); font: 600 var(--rg-text-xs)/1 var(--rg-font-sans); letter-spacing: var(--rg-tracking-caps); text-transform: uppercase; }
         .home-eyebrow::before { content: ""; width: 28px; height: 2px; background: var(--rg-yellow); }
         html body .home-intro h1 { margin: 0; font-size: clamp(2.2rem, 4.2vw, 3.6rem) !important; line-height: 1 !important; letter-spacing: -.035em !important; font-weight: 700; max-width: 13ch; }
@@ -95,11 +84,6 @@
 <body class="rg-home">
     <main class="home" id="home-main">
         <section class="home-intro" aria-labelledby="home-title">
-            <nav class="home-account account-bar" aria-label="Compte">
-                <span id="account-name"></span>
-                <a id="admin-link" href="/admin" hidden>Administration</a>
-                <button type="button" id="logout-button">Déconnexion</button>
-            </nav>
             <span class="home-eyebrow rg-reveal-item">Renault Group · Ingénierie électrique véhicule</span>
             <h1 id="home-title" class="rg-reveal-item">Engineering Calculator Hub</h1>
             <p class="home-lede rg-reveal-item">Dimensionnement, autonomie batterie et analyse de mesures réunis dans un même projet, avec des calculs identiques aux classeurs Excel de référence.</p>
@@ -162,28 +146,15 @@
         const projectsContainer = document.getElementById('projects');
         const searchInput = document.getElementById('search-input');
         const typeFilter = document.getElementById('type-filter');
-        const accountName = document.getElementById('account-name');
-        const adminLink = document.getElementById('admin-link');
         const recentContainer = document.getElementById('recent-projects');
         const projectCount = document.getElementById('project-count');
 
         let allProjects = [];
 
+        // Utilisateur, Administration et Déconnexion : bannière globale (rg-ui.js).
         fetch('/api/auth/me').then(response => response.json()).then(({ user }) => {
-            if (!user) { window.location.href = '/auth'; return; }
-            localStorage.setItem('engineeringAuthUser', JSON.stringify(user));
-            accountName.textContent = `${user.firstName} ${user.lastName}`;
-            adminLink.hidden = user.role !== 'admin';
+            if (!user) window.location.href = '/auth';
         }).catch(() => { window.location.href = '/auth'; });
-
-        document.getElementById('logout-button').addEventListener('click', async () => {
-            await ProjectStorage.saveActiveProject();
-            await fetch('/api/auth/logout', { method: 'POST' });
-            localStorage.removeItem('engineeringAuthUser');
-            localStorage.removeItem('activeProject');
-            sessionStorage.clear();
-            window.location.href = '/auth';
-        });
 
         function projectTypeText(project) {
             const iceLabel = project.projectType === 'ICE' && project.iceProject === 'VU' && project.iceSubproject

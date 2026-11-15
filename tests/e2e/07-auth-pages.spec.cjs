@@ -87,8 +87,8 @@ test('inscription réussie puis le compteur de Wattmen augmente', async ({ page 
   await form.locator('[name=passwordConfirm]').fill('auth-e2e-password');
   await form.locator('button[type=submit]').click();
   await page.waitForURL(url => new URL(url).pathname === '/');
-  await expect(page.locator('#account-name')).toHaveText('Auth Testeur');
-  await page.locator('#logout-button').click();
+  await expect(page.locator('.rg-user-name')).toHaveText('Auth Testeur');
+  await page.locator('.rg-logout').click();
   await page.waitForURL(/\/auth$/);
   await expect(page.locator('[data-stat="accounts"]')).toHaveText(String(before + 1));
 });
@@ -107,5 +107,5 @@ test('connexion : erreurs puis succès avec un compte existant', async ({ page, 
   await form.locator('[name=password]').fill(app.password);
   await form.locator('button[type=submit]').click();
   await page.waitForURL(url => new URL(url).pathname === '/');
-  await expect(page.locator('#admin-link')).toBeVisible();
+  await expect(page.locator('.rg-admin-link')).toBeVisible();
 });
