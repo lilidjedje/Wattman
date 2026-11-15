@@ -10,11 +10,15 @@
     "test:profiles": "electron tests/electron_homologation_profiles.cjs && electron tests/electron_auxiliary_profiles.cjs",
     "test:calculations": "python tests/run_calculation_audit.py",
     "test:all": "python tests/run_calculation_audit.py --all",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report outputs/playwright-report",
+    "test:design": "electron tests/electron_design_system.cjs",
     "start": "electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File desktop/build-backend.ps1",
     "dist": "powershell -ExecutionPolicy Bypass -File desktop/build-installer.ps1"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "electron": "43.8.7",
     "electron-builder": "26.18.0"
   },
@@ -40,7 +44,11 @@
       {
         "from": "can_server/esp32C3-multi-INA226-copie",
         "to": "firmware/esp32C3-multi-INA226-copie",
-        "filter": ["*.ino", "*.h", "*.md"]
+        "filter": [
+          "*.ino",
+          "*.h",
+          "*.md"
+        ]
       }
     ],
     "win": {

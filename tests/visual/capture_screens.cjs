@@ -14,6 +14,12 @@ fs.mkdirSync(outDir, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'wattman-visual-'));
 app.setPath('userData', profile);
 process.env.ENGINEERING_APP_DATA = path.join(profile, 'backend');
+// Référentiel théorique de démonstration (même principe que electron_offline_dashboard.cjs).
+const canData = path.join(profile, 'backend', 'can_data');
+fs.mkdirSync(canData, { recursive: true });
+fs.writeFileSync(path.join(canData, 'esp32_connection.json'), JSON.stringify({ base_url: 'http://127.0.0.1:9' }));
+fs.writeFileSync(path.join(canData, 'theory_snapshot.json'), JSON.stringify({ project: { id: 'visual', name: 'Projet démonstration' },
+  devices: [{ id: 'd1', name: 'ECU démonstration A', kind: 'dcdc', nominal_A: 1 }, { id: 'd2', name: 'ECU démonstration B', kind: 'dcdc', nominal_A: 0.5 }] }));
 
 const ROUTES = [
   ['auth', '/auth'],
@@ -84,4 +90,46 @@ async function run(win) {
     try { await go(route); await shot(name); }
     catch (error) { console.error(`FAIL ${name}: ${error.message}`); }
   }
+  if (!only || only.includes('logs-dashboard-data')) {
+    try {
+      await openMeasuredDashboard(win, js, go);
+      await shot('logs-dashboard-data');
+      for (const [i, y] of [[2, 1100], [3, 2200], [4, 3300]]) {
+        await js(`window.scrollTo(0, ${y})`); await new Promise(r => setTimeout(r, 500)); await shot(`logs-dashboard-data-${i}`);
+      }
+    }
+    catch (error) { console.error(`FAIL logs-dashboard-data: ${error.message}`); }
+  }
 }
+
+// Importe un vrai fichier ASC versionné (test_asc) puis ouvre le dashboard DCDC.
+async function openMeasuredDashboard(win, js, go) {
+  const until = async (expression, timeout = 60000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) { if (await js(expression)) return; await new Promise(r => setTimeout(r, 150)); }
+    const page = await js("location.pathname + ' | ' + document.body.innerText.slice(0, 700).replace(/\\s+/g, ' ')");
+    throw new Error(`Timeout : ${expression} :: ${page}`);
+  };
+  const file = path.join(__dirname, '..', '..', 'test_asc', 'mesures_courant_%Date%_%Time%_L213.asc');
+  const b64 = fs.readFileSync(file).toString('base64');
+  await go('/analyse_logs/');
+  const status = await js(`(async () => {
+    const bytes = Uint8Array.from(atob(${JSON.stringify(b64)}), c => c.charCodeAt(0));
+    const body = new FormData();
+    body.append('files', new File([bytes], 'L213.asc'));
+    const response = await fetch('/analyse_logs/api/upload_and_ingest_measures', { method: 'POST', body });
+    return response.status;
+  })()`);
+  if (status !== 200) throw new Error(`import ASC ${status}`);
+  await go('/analyse_logs/dashboard/import');
+  await until("document.getElementById('continueButton') && !document.getElementById('continueButton').disabled");
+  await js("document.getElementById('continueButton').click()");
+  await until("location.pathname === '/analyse_logs/dashboard/setup'");
+  await js(`document.querySelector('[data-mode=dcdc]').click();
+    document.querySelector('input[name=dashboardChannelMode][value=AB]').click();
+    document.querySelectorAll('#deviceList input[type=checkbox], [id*=device] input[type=checkbox]').forEach(i => { if (!i.checked) i.click(); });
+    document.getElementById('setupForm').requestSubmit()`);
+  await until("location.pathname === '/analyse_logs/dashboard' && !document.getElementById('dashboardContent').hidden");
+  await new Promise(r => setTimeout(r, 1500));
+}
+module.exports = { openMeasuredDashboard };

@@ -14,6 +14,8 @@ donnée et aucune règle métier.
 | `static/design-system/rg-charts.js` | Plugin Chart.js global : thème, réticule, zoom/déplacement, export PNG/CSV |
 | `static/design-system/rg-grid.js` | Data grid progressif sur les tableaux en lecture seule |
 | `static/design-system/rg-hero3d.js` | Scène 3D filaire de l'accueil (Canvas 2D, sans dépendance) |
+| `static/vendor/fonts/manrope-latin-wght-normal.woff2` | Police libre Manrope (OFL, embarquée, hors ligne) pour titres et boutons |
+| `static/vendor/canvas2svg.js` | Export SVG vectoriel des graphiques (MIT), chargé uniquement lors d'un export |
 
 Ordre de chargement : feuilles historiques → `tokens.css` → `components.css`.
 `rg-charts.js` est inséré juste après chaque librairie Chart.js.
@@ -33,6 +35,17 @@ interprétation **à faire valider par la charte officielle**.
   indiqué par le Brandhub).
 - Le logotype et le monogramme Renault ne sont pas reproduits. La marque de la
   barre d'application est un pictogramme original.
+
+### Inspirations (sites publics consultés le 2026-11-15)
+
+| Source | Repris dans Wattman |
+| --- | --- |
+| renault.fr | CTA noirs pleins, secondaires à contour noir, coins quasi droits (2 px), onglets en rail (trait fin, actif épais) |
+| renaultgroup.com, Brandhub | Gris minéraux chauds (fond grège), filets et libellés taupe, panneaux arrondis (12 px) |
+| Polestar | Indicateurs façon fiche technique (grand chiffre, unité discrète), liens fléchés |
+| Porsche | Grandes typographies serrées, séparateurs fins |
+
+ampere.cars a renvoyé une erreur 503 lors de la consultation.
 
 ## Règles de données (non négociables)
 
@@ -56,9 +69,20 @@ ligne d'en-tête, aucune cellule fusionnée, aucun champ de saisie dans le corps
 au moins 4 lignes.
 Pour forcer : `data-rg-grid="on"`. Pour exclure : `data-rg-grid="off"`.
 
-Fonctions : recherche globale, tri 3 états (nombres au format FR reconnus, vides en
-bas), masquage et redimensionnement des colonnes, densité, en-tête fixe, sélection
-(Ctrl/Maj + clic), copie au format tableur, export CSV (sélection ou vue filtrée).
+Fonctions :
+- recherche globale ;
+- tri 3 états, qui tient compte des **unités physiques** (« 50,00 µA » < « 1,25 mA »,
+  préfixes SI, min/h/j) et place les cellules vides en bas ;
+- réorganisation des colonnes par glisser-déposer (ou Alt + flèches au clavier) ;
+- masquage et redimensionnement des colonnes, densité, en-tête fixe ;
+- regroupement par colonne catégorielle, avec effectif et min/max par groupe.
+  Ces valeurs sont **marquées « dérivé »** et affichent le texte exact des cellules
+  min/max, sans recalcul ni nouvel arrondi. Les lignes de groupe ne sont jamais
+  exportées ;
+- encadrement des extrêmes par colonne, par un anneau qui ne remplace jamais le
+  fond Excel ;
+- sélection (Ctrl/Maj + clic), copie au format tableur ;
+- export CSV au choix : tableau complet, vue filtrée ou sélection.
 Les préférences sont enregistrées par page et par tableau (`localStorage`, clé
 `rg-grid:*`).
 
@@ -72,6 +96,14 @@ Les préférences sont enregistrées par page et par tableau (`localStorage`, cl
 | Maj + glisser | Sélection d'une plage |
 | Double-clic / bouton ↺ | Vue initiale |
 | Survol | Réticule et coordonnées exactes sur les axes |
+| Ctrl + clic | Curseurs A/B accrochés au point mesuré le plus proche, avec ΔX / ΔY |
+| Bouton seuils | Affiche ou masque les séries seuil / limite / consigne |
+| Bouton ⇄ | Synchronise l'axe horizontal des graphiques de même axe (ex. canaux A et B) |
+| PNG / SVG / PDF / CSV | Image, vectoriel, PDF A4 avec métadonnées (projet, axes, vue, séries), valeurs sources |
+
+Le PDF est produit par le processus principal Electron (`export-chart-pdf`). Le SVG
+reçu est validé (taille, absence de script ou de gestionnaire d'événement) puis
+rendu dans une fenêtre isolée où JavaScript est désactivé.
 
 Le dashboard de mesure (`can_server/templates/dashboard.html`) garde sa propre
 navigation. Le plugin n'ajoute que le thème, le réticule et les exports.
@@ -81,17 +113,38 @@ Pour désactiver le plugin sur un graphique : `options.plugins.rgStudio = false`
 
 - `prefers-reduced-motion` et le bouton « Animations réduites » de la barre
   coupent les transitions, les apparitions et la rotation 3D (image fixe).
-- Transitions de page : View Transitions natives de Chromium (fondu de 140 à
-  220 ms).
+- Entrée de page : fondu CSS de 240 ms. Les View Transitions inter-documents ont
+  été écartées : sous le protocole `app://` d'Electron, elles bloquaient
+  `requestAnimationFrame` (anomalie détectée par Playwright).
 - Focus visible sur tous les contrôles. Les en-têtes triables sont accessibles au
   clavier (Entrée / Espace).
 
 ## Tests
 
 ```powershell
-npx electron tests/electron_design_system.cjs            # non-régression visuelle et données
-npx electron tests/visual/capture_screens.cjs --out=outputs/screens [--theme=dark] [--only=home,synthesis]
+npm run test:e2e        # Playwright : 36 scénarios sur la vraie application Electron
+npm run test:design     # contrôle rapide du design system (Electron)
+npm run test:all        # calculs et tests unitaires Python / JS (31 suites)
+npx electron tests/visual/capture_screens.cjs --out=outputs/screens [--theme=dark] [--only=home,synthesis,logs-dashboard-data]
 ```
+
+Playwright (`tests/e2e/`) couvre :
+- l'accueil, la création d'un projet depuis `DCDC - Test calcul.xlsx` et la sélection
+  de projets ;
+- l'administration et les permissions, la navigation sur 26 routes sans erreur
+  console, trois tailles de fenêtre ;
+- les tableaux (tri, filtre, colonnes, groupes, extrêmes, sélection, copie, CSV) ;
+- les graphiques (zoom, plage, curseurs, seuils, synchronisation sur un vrai fichier
+  ASC, exports PNG/SVG/PDF/CSV) ;
+- les exports Excel et PDF de l'application, relus avec openpyxl ou par leur
+  signature ;
+- les performances (200 000 points, 3 000 lignes), les animations (≥ 30 images/s,
+  mouvement réduit) et des captures claires et sombres (`outputs/e2e-screens`).
+
+Les boîtes « Enregistrer sous » et les téléchargements sont redirigés vers le profil
+temporaire du test. `tests/test_chart_decimation.py` démontre sur 60 séries
+aléatoires les garanties de la décimation du backend : borne respectée, points
+sources inchangés, extrémités conservées, min/max globaux et locaux conservés.
 
 Sous VS Code, lancez `$env:ELECTRON_RUN_AS_NODE=$null` avant ces commandes : le
 terminal intégré définit cette variable, et Electron démarre alors en mode Node.
