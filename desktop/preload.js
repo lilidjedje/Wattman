@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('desktopEnvironment', Object.freeze({
   saveSynthesisExcel(fileName, bytes) {
     return ipcRenderer.invoke('save-synthesis-excel', fileName, bytes);
   },
+  exportChartPdf(meta, svg) {
+    return ipcRenderer.invoke('export-chart-pdf', meta, svg);
+  },
   projectStore(operation, payload) {
     const result = ipcRenderer.sendSync('project-store', operation, payload);
     if (result.error) throw new Error(result.error);

@@ -533,6 +533,40 @@ app.whenReady().then(async () => {
     fs.writeFileSync(result.filePath, data);
     return { canceled: false, filePath: result.filePath };
   });
+  // Export PDF d'un graphique : SVG vectoriel produit par la page, rendu dans une
+  // fenêtre cachée isolée (JavaScript désactivé), puis « Enregistrer sous ».
+  ipcMain.handle('export-chart-pdf', async (event, meta, svg) => {
+    if (!event.senderFrame.url.startsWith('app://local/')) throw new Error('Origine non autorisée.');
+    if (typeof svg !== 'string' || svg.length > 20 * 1024 * 1024 || !/^<svg[\s>]/.test(svg.trimStart())) throw new Error('Graphique SVG invalide.');
+    if (/<script|<foreignObject|\son\w+\s*=|javascript:/i.test(svg)) throw new Error('Graphique SVG refusé.');
+    const text = value => String(value ?? '').slice(0, 300).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+    const info = meta && typeof meta === 'object' ? meta : {};
+    const safeName = String(info.title || 'graphique').replace(/[<>:"/\\|?*\x00-\x1f]+/g, '-').trim().slice(0, 100) || 'graphique';
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Exporter le graphique en PDF',
+      defaultPath: `${safeName}.pdf`,
+      filters: [{ name: 'Document PDF', extensions: ['pdf'] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    const html = `<!doctype html><html lang="fr"><meta charset="utf-8">
+      <style>@page{size:A4 landscape;margin:14mm}body{margin:0;font-family:"Segoe UI",Arial,sans-serif;color:#0b0c0e}
+      header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0b0c0e;padding-bottom:8px;margin-bottom:10px}
+      h1{font-size:18px;margin:0}small{color:#555;font-size:10px}svg{width:100%;height:auto;max-height:150mm}
+      dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:10px;margin:10px 0 0}dt{color:#555}dd{margin:0}</style>
+      <header><h1>${text(info.title)}</h1><small>Wattman Engineering · ${text(info.exportedAt)}</small></header>
+      ${svg}
+      <dl>${[['Projet', info.project], ['Axes', info.axes], ['Vue', info.view], ['Séries', info.series], ['Page', info.page]]
+        .filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${text(v)}</dd>`).join('')}</dl></html>`;
+    const printer = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    try {
+      await printer.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+      const pdf = await printer.webContents.printToPDF({ printBackground: true, landscape: true, pageSize: 'A4' });
+      fs.writeFileSync(result.filePath, pdf);
+    } finally {
+      printer.destroy();
+    }
+    return { canceled: false, filePath: result.filePath };
+  });
   const projectStore = createProjectStore(path.join(app.getPath('userData'), 'projects'));
   ipcMain.on('project-store', (event, operation, payload) => {
     try {
