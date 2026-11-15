@@ -1,0 +1,576 @@
+/* =============================================================================
+   Wattman — couche composants du design system Renault Engineering.
+   Chargée APRÈS industrial-theme.css / modern-ui.css : elle remplace leur rendu
+   à l'écran uniquement (@media screen), sans toucher l'impression ni les PDF.
+   Règles intangibles :
+   - les classes .xl-* (static/excel-colors.css) conservent leurs couleurs ;
+   - les tableaux de données restent une « feuille » claire, même en thème
+     sombre, pour que les codes couleur Excel gardent leur contraste d'origine ;
+   - aucun style ne masque ni ne modifie une valeur numérique.
+   ========================================================================== */
+@media screen {
+  html { background: var(--rg-canvas) !important; }
+  html body {
+    color: var(--rg-ink) !important;
+    background: var(--rg-canvas) !important;
+    font-family: var(--rg-font-sans) !important;
+    font-size: var(--rg-text-md);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  html body :is(button, input, select, textarea) { font-family: var(--rg-font-sans) !important; }
+
+  /* Bandeau historique remplacé par la barre d'application (rg-ui.js) */
+  html.rg-has-appbar body::before { display: none !important; content: none !important; }
+  html.rg-has-appbar body { padding-top: calc(var(--rg-appbar-h) + 20px) !important; }
+
+  /* ---------------------------------------------------------------- Titres */
+  html body :is(h1, h2, h3, h4):not(table *, .chart-shell *, .chart-box *) {
+    color: var(--rg-ink) !important;
+    font-family: var(--rg-font-display) !important;
+    font-weight: 650;
+    letter-spacing: -.02em !important;
+    text-shadow: none !important;
+  }
+  html body h1:not(table *) { font-size: var(--rg-text-2xl); line-height: 1.12; }
+  html body :is(.subtitle, .intro, .note, .description, .card-desc, .option-description,
+      .mode-desc, .analysis-note, .form-intro, .sensor-details, .placeholder,
+      .project-info span, .feeding-card-caption, .methodology p):not(table *) {
+    color: var(--rg-ink-3) !important;
+  }
+  html body :is(.eyebrow, .module-index) {
+    color: var(--rg-ink-3) !important;
+    font: 600 var(--rg-text-xs)/1.4 var(--rg-font-sans) !important;
+    letter-spacing: var(--rg-tracking-caps) !important;
+    text-transform: uppercase;
+  }
+  html body :is(.card-title, .option-title, .mode-title, .modal-title, .project-info strong,
+      .action-card .card-title):not(table *, .chart-shell *, .chart-box *, .chart-container *) {
+    color: var(--rg-ink) !important;
+  }
+  html body :is(.action-card, .option-card, .mode-card, .modal-content, dialog)
+      :is(.card-desc, .option-description, .mode-desc, .description, .intro, .note):not(table *, .chart-shell *, .chart-box *, .chart-container *) {
+    color: var(--rg-ink-2) !important;
+  }
+
+  /* ------------------------------------------------------- Surfaces/cartes */
+  html body :is(.container, .main-container, .content, .panel, .card, .modal-content,
+      .setup-box, .stepper, .tech-wake-panel, .option-card, .mode-card,
+      .dash-card, .summary-card, .section-card, .analysis, .creator,
+      .project-card, .selection-box, .profile, .profile-heading, .empty-state,
+      .upload, .type-option span, .synthesis-card, .action-card, .module-card,
+      .history-card, .device-report-card, details.data-choice,
+      .autonomy-profile-bar, .homologation-profile-bar):not(table *, .chart-shell *, .chart-box *) {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-md) !important;
+    box-shadow: var(--rg-shadow-1) !important;
+  }
+  html body > :is(main, .page, .container, .main-container):not(.table-shell):not(#analysis-list) {
+    color: var(--rg-ink) !important;
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  html body :is(.header, .topbar, .page-header, .toolbar, .results-header, .workstation-header),
+  html body > header {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-md) !important;
+    box-shadow: var(--rg-shadow-1) !important;
+  }
+  html body .workstation-header { border-radius: 0 !important; border-width: 0 0 1px !important; }
+  html body .panel-title {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface-2) !important;
+    border-color: var(--rg-line) !important;
+  }
+
+  /* Cartes interactives : ligne d'accent qui se trace au survol */
+  html body :is(.option-card, .mode-card, .project-card, .action-card, .history-card, .module-card):not(table *) {
+    position: relative;
+    transition: border-color var(--rg-dur-base) var(--rg-ease-out),
+                box-shadow var(--rg-dur-base) var(--rg-ease-out),
+                transform var(--rg-dur-base) var(--rg-ease-out) !important;
+  }
+  html body :is(.option-card, .mode-card, .action-card, .history-card, .module-card):not(table *)::after {
+    content: "";
+    position: absolute;
+    left: -1px; right: -1px; bottom: -1px;
+    height: 3px;
+    background: var(--rg-yellow);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--rg-dur-slow) var(--rg-ease-out);
+    pointer-events: none;
+  }
+  @media (hover: hover) {
+    html body :is(.option-card, .mode-card, .project-card, .action-card, .history-card, .module-card):not(table *):hover {
+      background: var(--rg-surface) !important;
+      border-color: var(--rg-line-strong) !important;
+      box-shadow: var(--rg-shadow-2) !important;
+      transform: translateY(-2px) !important;
+    }
+    html body :is(.option-card, .mode-card, .action-card, .history-card, .module-card):not(table *):hover::after { transform: scaleX(1); }
+  }
+
+  /* ---------------------------------------------------------------- Liens */
+  html body a:not(table *, .button, .btn, [class*="btn-"], .action-card, .history-card, .rg-appbar *, .rg-home *) {
+    color: var(--rg-ink) !important;
+    text-decoration-color: var(--rg-line-strong);
+    text-underline-offset: 3px;
+  }
+
+  /* -------------------------------------------------------------- Boutons */
+  html body :is(button, .btn, .button, .action, [class*="btn-"], [class$="-button"],
+      .step, .card-tab, .return-menu):not(table *, .chart-shell *, .chart-box *, .rg-appbar *, .rg-chip, .rg-grid-toolbar *, .rg-chart-toolbar *) {
+    min-height: 40px;
+    padding: 9px 18px;
+    color: var(--rg-on-primary) !important;
+    background: var(--rg-primary) !important;
+    border: 1px solid var(--rg-primary) !important;
+    border-radius: var(--rg-radius-sm) !important;
+    box-shadow: none !important;
+    font: 600 var(--rg-text-md)/1.35 var(--rg-font-sans) !important;
+    letter-spacing: .005em !important;
+    text-decoration: none !important;
+    cursor: pointer;
+    transition: background var(--rg-dur-fast) ease, border-color var(--rg-dur-fast) ease,
+                color var(--rg-dur-fast) ease, transform var(--rg-dur-fast) ease !important;
+  }
+  html body :is(button, .btn, .button, .action, [class*="btn-"], [class$="-button"], .step, .card-tab):not(table *, .rg-appbar *, .rg-chip, .rg-grid-toolbar *, .rg-chart-toolbar *):hover {
+    background: var(--rg-primary-hover) !important;
+    border-color: var(--rg-primary-hover) !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  html body :is(button, .btn, .button, .action, [class*="btn-"], [class$="-button"], .step, .card-tab):not(table *, :disabled):active {
+    transform: scale(.97) !important;
+  }
+  /* Secondaire : contour */
+  html body :is(.secondary, .btn-back, .btn-home, .menu-back, .menu-home, .close,
+      .action:not(.primary), .step:not(.active), .card-tab:not(.active)):not(table *, .rg-appbar *) {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border-color: var(--rg-line-strong) !important;
+  }
+  html body :is(.secondary, .btn-back, .btn-home, .menu-back, .menu-home, .close,
+      .action:not(.primary), .step:not(.active), .card-tab:not(.active)):not(table *, .rg-appbar *):hover {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface-2) !important;
+    border-color: var(--rg-ink) !important;
+  }
+  /* États actifs (onglets, bascules 30/90 jours…) : texte toujours lisible */
+  html body :is(.step.active, .card-tab.active, .active:is(button, .btn, .button), [aria-pressed="true"]:is(button, .btn), [aria-selected="true"]:is(button, .btn)):not(table *, .rg-appbar *) {
+    color: var(--rg-on-primary) !important;
+    background: var(--rg-primary) !important;
+    border-color: var(--rg-primary) !important;
+    box-shadow: inset 0 -3px 0 var(--rg-yellow) !important;
+  }
+  html body :is(.success, .btn-save, .menu-save):not(table *) {
+    color: #fff !important; background: var(--rg-ok) !important; border-color: var(--rg-ok) !important;
+  }
+  html body :is(.danger, .btn-delete, .btn-reset, .menu-reset, .device-delete-confirm):not(table *) {
+    color: var(--rg-danger) !important; background: var(--rg-danger-soft) !important; border-color: color-mix(in srgb, var(--rg-danger) 35%, transparent) !important;
+  }
+  html body :is(.danger, .btn-delete, .btn-reset, .menu-reset, .device-delete-confirm):not(table *):hover {
+    color: #fff !important; background: var(--rg-danger) !important; border-color: var(--rg-danger) !important;
+  }
+  html body :is(button:disabled, .disabled-link, [aria-disabled="true"]):not(table *) {
+    opacity: .45 !important; cursor: not-allowed !important; transform: none !important;
+  }
+
+  /* ----------------------------------------------------------- Formulaires */
+  html body :is(input, select, textarea):not(table *, [type="checkbox"], [type="radio"], [type="hidden"], [type="range"], [type="file"]) {
+    min-height: 40px;
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line-strong) !important;
+    border-radius: var(--rg-radius-sm) !important;
+    box-shadow: inset 0 -1px 0 transparent !important;
+    transition: border-color var(--rg-dur-fast) ease, box-shadow var(--rg-dur-fast) ease !important;
+  }
+  html body :is(input, select, textarea):not(table *, [type="checkbox"], [type="radio"]):hover { border-color: var(--rg-ink-3) !important; }
+  html body :is(input, select, textarea):not(table *, [type="checkbox"], [type="radio"]):focus {
+    border-color: var(--rg-ink) !important;
+    box-shadow: inset 0 -2px 0 var(--rg-yellow) !important;
+    outline: none !important;
+  }
+  html body :is(input, textarea):not(table *)::placeholder { color: var(--rg-ink-3) !important; }
+  html body :is(input, select, textarea):disabled:not(table *) { background: var(--rg-surface-sunken) !important; color: var(--rg-ink-3) !important; }
+  html body input:is([type="checkbox"], [type="radio"]):not(table *) { accent-color: var(--rg-primary); }
+  html body label:not(table *) { color: var(--rg-ink-2); }
+  html body :is(button, a, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--rg-focus) !important;
+    outline-offset: 2px !important;
+  }
+
+  /* --------------------------------------------------------------- Dialogs */
+  html body :is(dialog, .industrial-confirm-dialog) {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-lg) !important;
+    box-shadow: var(--rg-shadow-3) !important;
+  }
+  html body dialog[open] { animation: rg-dialog-in var(--rg-dur-slow) var(--rg-ease-out); }
+  html body dialog::backdrop { background: rgba(11, 12, 14, .48) !important; backdrop-filter: blur(4px); }
+  @keyframes rg-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+
+  /* ---------------------------------------------------------- Sommaire */
+  html body .retractable-menu.app-summary summary {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line-strong) !important;
+    border-radius: var(--rg-radius-sm) !important;
+    box-shadow: none !important;
+    font: 600 var(--rg-text-md)/1.35 var(--rg-font-sans) !important;
+  }
+  html body .retractable-menu.app-summary summary::before {
+    background: repeating-linear-gradient(to bottom, var(--rg-ink) 0 2px, transparent 2px 6px) !important;
+  }
+  html body .retractable-menu.app-summary summary::after { border-color: var(--rg-ink-3) !important; }
+  html body .retractable-menu.app-summary summary:hover,
+  html body .retractable-menu.app-summary details[open] > summary {
+    background: var(--rg-surface-2) !important;
+    border-color: var(--rg-ink) !important;
+    box-shadow: none !important;
+  }
+  html body .retractable-menu.app-summary .menu-content {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-md) !important;
+    box-shadow: var(--rg-shadow-3) !important;
+    animation: rg-pop var(--rg-dur-base) var(--rg-ease-out);
+    transform-origin: top right;
+  }
+  html body .retractable-menu.app-summary .menu-content::before { color: var(--rg-ink-3) !important; }
+  html body .retractable-menu.app-summary .btn-menu {
+    color: var(--rg-ink-2) !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: var(--rg-radius-sm) !important;
+    font: 500 var(--rg-text-md)/1.35 var(--rg-font-sans) !important;
+  }
+  html body .retractable-menu.app-summary .btn-menu:hover {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface-2) !important;
+    border-color: var(--rg-line) !important;
+    box-shadow: inset 3px 0 0 var(--rg-yellow) !important;
+  }
+  html body .retractable-menu.app-summary .btn-reset { color: var(--rg-danger) !important; }
+  html body .retractable-menu.app-summary hr { border-top-color: var(--rg-line) !important; }
+  @keyframes rg-pop { from { opacity: 0; transform: scale(.97) translateY(-4px); } }
+
+  /* Sommaire isolé du dashboard de mesure (était marron) */
+  html body .workstation-header :is(.summary-toggle, .menu-toggle, [class*="summary"]) > summary,
+  html body .workstation-header .retractable-menu summary {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line-strong) !important;
+  }
+
+  /* ------------------------------------------ Contrôles segmentés / puces */
+  html body a.view-day, html body .view-check {
+    color: var(--rg-ink) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line-strong) !important;
+    border-radius: var(--rg-radius-sm) !important;
+    text-decoration: none !important;
+    transition: border-color var(--rg-dur-fast) ease, background var(--rg-dur-fast) ease !important;
+  }
+  html body a.view-day:hover, html body .view-check:hover { border-color: var(--rg-ink) !important; }
+  html body a.view-day[aria-current="page"] {
+    color: var(--rg-on-primary) !important;
+    background: var(--rg-primary) !important;
+    border-color: var(--rg-primary) !important;
+    box-shadow: inset 0 -3px 0 var(--rg-yellow) !important;
+  }
+  html body .view-title { color: var(--rg-ink-2) !important; }
+
+  /* ---------------------------------------------- Sélecteurs et métriques */
+  html body :is(.mode-selector-button, .analysis-mode) {
+    color: var(--rg-ink) !important; background: var(--rg-surface) !important;
+    border-color: var(--rg-line) !important; border-radius: var(--rg-radius-sm) !important;
+  }
+  html body :is(.mode-selector-button, .analysis-mode):hover,
+  html body :is(.mode-selector-button, .analysis-mode).selected {
+    color: var(--rg-ink) !important; background: var(--rg-surface-2) !important;
+    border-color: var(--rg-ink) !important; box-shadow: inset 3px 0 0 var(--rg-yellow) !important;
+  }
+  html body :is(.channel-config, .channel-choice, .device-choice, .dashboard-channel-choices label,
+      .metric, .channel-box, .system-strip, .empty-notice, .sleep-current-summary > div) {
+    color: var(--rg-ink-2) !important; background: var(--rg-surface-2) !important;
+    border-color: var(--rg-line) !important; border-radius: var(--rg-radius-sm) !important;
+  }
+  html body :is(.metric strong, .countdown, .channel-box strong) {
+    color: var(--rg-ink) !important;
+    font-family: var(--rg-font-display) !important;
+    font-variant-numeric: tabular-nums;
+  }
+  html body .metric span { color: var(--rg-ink-3) !important; }
+  html body .message { color: var(--rg-ink-2) !important; background: var(--rg-surface-2) !important; border-color: var(--rg-line-strong) !important; border-radius: var(--rg-radius-sm); }
+  html body .message.ok { color: var(--rg-ok) !important; background: var(--rg-ok-soft) !important; border-color: var(--rg-ok) !important; }
+  html body .message.error { color: var(--rg-danger) !important; background: var(--rg-danger-soft) !important; border-color: var(--rg-danger) !important; }
+  html body .progress-shell { background: var(--rg-surface-sunken); border-color: var(--rg-line); border-radius: 0; }
+  html body .progress-fill { background: var(--rg-ink); border-radius: 0; }
+  html body :is(.type-badge, .badge-h, .badge-s):not(table *) {
+    color: var(--rg-ink) !important; background: var(--rg-surface-sunken) !important;
+    border: 1px solid var(--rg-line) !important; border-radius: var(--rg-radius-xs) !important;
+    font: 600 var(--rg-text-xs)/1.5 var(--rg-font-sans) !important; letter-spacing: .04em;
+  }
+  html body .saved-status { color: var(--rg-ok) !important; }
+
+  /* ---------------------------------------------------- Tableaux (feuille)
+     Les tableaux restent une feuille claire dans les deux thèmes : les codes
+     couleur Excel (.xl-*) et les couleurs de cellule en ligne sont conservés. */
+  html body table {
+    --rg-sheet-bg: #ffffff;
+    --rg-sheet-ink: #111214;
+    --rg-sheet-head: #f1f1ef;
+    --rg-sheet-line: #d3d4d2;
+    color-scheme: light;
+    color: var(--rg-sheet-ink);
+    font-family: var(--rg-font-sans) !important;
+    font-variant-numeric: tabular-nums;
+    border-collapse: collapse;
+  }
+  html body table :is(th, td) { border-color: var(--rg-sheet-line) !important; }
+  html body table th:not([style*="background"]):not([class*="xl-"]) {
+    color: #2b2d31 !important;
+    background-color: var(--rg-sheet-head) !important;
+    font-weight: 650 !important;
+  }
+  html body :is(.table-container, .table-wrap, .table-scroll, .table-shell, .excel-container) {
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-md) !important;
+    box-shadow: var(--rg-shadow-1) !important;
+  }
+  :root[data-theme="dark"] body :is(.table-container, .table-wrap, .table-scroll, .table-shell, .excel-container) {
+    background: #ffffff !important;
+  }
+
+  /* ------------------------------------------------------- Graphiques */
+  html body :is(.chart-shell, .chart-box, .chart-container, .chart-card) {
+    position: relative;
+  }
+  :root[data-theme="dark"] body :is(.chart-shell, .chart-box, .chart-container, .chart-card) {
+    background: var(--rg-surface) !important;
+    border-color: var(--rg-line) !important;
+  }
+
+  /* --------------------------------------------- Entrées progressives */
+  .rg-reveal { animation: rg-reveal var(--rg-dur-slow) var(--rg-ease-out) both; animation-delay: calc(var(--rg-i, 0) * 45ms); }
+  @keyframes rg-reveal { from { opacity: 0; transform: translateY(10px); } }
+
+  /* Réduction des mouvements */
+  :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after {
+    animation-duration: 0ms !important; animation-delay: 0ms !important;
+    transition-duration: 0ms !important; scroll-behavior: auto !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0ms !important; animation-delay: 0ms !important; transition-duration: 0ms !important; }
+  }
+}
+
+/* Transitions de page natives (même origine app://local) : fondu court, la
+   barre d'application reste immobile. Désactivées si mouvements réduits. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+}
+::view-transition-old(root) { animation: 140ms ease both rg-vt-out; }
+::view-transition-new(root) { animation: 220ms var(--rg-ease-out) both rg-vt-in; }
+::view-transition-group(rg-appbar) { animation: none; }
+:root[data-motion="reduced"]::view-transition-group(*),
+:root[data-motion="reduced"]::view-transition-old(*),
+:root[data-motion="reduced"]::view-transition-new(*) { animation: none !important; }
+@keyframes rg-vt-out { to { opacity: 0; } }
+@keyframes rg-vt-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* =========================================================================
+   Barre d'application (injectée par rg-ui.js)
+   ========================================================================= */
+html body .rg-appbar { position: fixed !important; inset: 0 0 auto 0 !important; z-index: 10000 !important;
+  height: var(--rg-appbar-h) !important;
+  display: flex !important; align-items: center !important; gap: 16px !important;
+  padding: 0 14px 0 18px !important;
+  color: var(--rg-appbar-ink) !important;
+  background: var(--rg-appbar-bg) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, .08) !important;
+  font: 500 var(--rg-text-sm)/1 var(--rg-font-sans) !important;
+  view-transition-name: rg-appbar !important; }
+html body .rg-appbar::after { /* filet d'accent fin, signature discrète */
+  content: "" !important; position: absolute !important; left: 0 !important; bottom: -1px !important; width: 72px !important; height: 2px !important; background: var(--rg-yellow) !important; }
+html body .rg-appbar a { color: inherit !important; text-decoration: none !important; }
+html body .rg-brand { display: inline-flex !important; align-items: center !important; gap: 10px !important; font: 700 .82rem/1 var(--rg-font-display) !important; letter-spacing: .16em !important; text-transform: uppercase !important; }
+html body .rg-brand-mark { width: 18px !important; height: 18px !important; flex: none !important; }
+html body .rg-brand small { font-weight: 500 !important; letter-spacing: .1em !important; color: #9a9da3 !important; }
+html body .rg-crumb { display: flex !important; align-items: center !important; gap: 10px !important; min-width: 0 !important; color: #9a9da3 !important; }
+html body .rg-crumb::before { content: "" !important; width: 1px !important; height: 18px !important; background: rgba(255, 255, 255, .16) !important; }
+html body .rg-crumb strong { color: #f4f4f2 !important; font-weight: 600 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+html body .rg-appbar-spacer { flex: 1 !important; }
+html body .rg-project-chip { display: inline-flex !important; align-items: center !important; gap: 8px !important; max-width: 280px !important;
+  padding: 6px 10px !important; border: 1px solid rgba(255, 255, 255, .14) !important; border-radius: var(--rg-radius-sm) !important;
+  color: #d6d7d9 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+html body .rg-project-chip::before { content: "" !important; width: 6px !important; height: 6px !important; flex: none !important; background: var(--rg-yellow) !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn { display: inline-grid !important; place-items: center !important; width: 34px !important; height: 34px !important; padding: 0 !important;
+  color: #d6d7d9 !important; background: transparent !important; border: 1px solid transparent !important; border-radius: var(--rg-radius-sm) !important;
+  cursor: pointer !important; transition: background var(--rg-dur-fast) ease, color var(--rg-dur-fast) ease !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn:hover { color: #fff !important; background: rgba(255, 255, 255, .08) !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn:focus-visible { outline: 2px solid var(--rg-yellow) !important; outline-offset: 1px !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn[aria-pressed="true"] { color: var(--rg-yellow) !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn svg { width: 18px !important; height: 18px !important; }
+html body .rg-appbar .rg-icon-btn.rg-icon-btn:active { transform: scale(.94) !important; }
+html body .rg-brand { color: #f4f4f2 !important; }
+@media (max-width: 760px) {
+  html body .rg-crumb, html body .rg-brand small { display: none !important; }
+  html body .rg-project-chip { max-width: 140px !important; }
+}
+@media print { .rg-appbar, .rg-chart-toolbar, .rg-grid-toolbar { display: none !important; } }
+
+/* =========================================================================
+   Chart toolbar (rg-charts.js)
+   ========================================================================= */
+.rg-chart-toolbar {
+  position: absolute; top: 6px; right: 6px; z-index: 5;
+  display: flex; gap: 2px; padding: 3px;
+  background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: var(--rg-radius-sm);
+  box-shadow: var(--rg-shadow-1);
+  opacity: 0; transform: translateY(-2px);
+  transition: opacity var(--rg-dur-base) ease, transform var(--rg-dur-base) var(--rg-ease-out);
+}
+.rg-chart-host:hover > .rg-chart-toolbar, .rg-chart-host:focus-within > .rg-chart-toolbar, .rg-chart-toolbar.is-zoomed { opacity: 1; transform: none; }
+.rg-chart-toolbar button {
+  all: unset; box-sizing: border-box; display: inline-grid; place-items: center;
+  min-width: 28px; height: 26px; padding: 0 7px; border-radius: 3px; cursor: pointer;
+  color: var(--rg-ink-2); font: 600 11px/1 var(--rg-font-sans); letter-spacing: .02em;
+}
+.rg-chart-toolbar button:hover { color: var(--rg-ink); background: var(--rg-surface-2); }
+.rg-chart-toolbar button:focus-visible { outline: 2px solid var(--rg-focus); }
+.rg-chart-toolbar button[aria-pressed="true"] { color: var(--rg-ink); background: var(--rg-surface-sunken); }
+.rg-chart-toolbar svg { width: 15px; height: 15px; }
+.rg-chart-toolbar .rg-sep { width: 1px; margin: 3px 2px; background: var(--rg-line); }
+.rg-chart-hint {
+  position: absolute; left: 10px; bottom: 6px; z-index: 4; pointer-events: none;
+  color: var(--rg-ink-3); font: 500 11px/1 var(--rg-font-sans);
+  opacity: 0; transition: opacity var(--rg-dur-base) ease;
+}
+.rg-chart-host:hover > .rg-chart-hint { opacity: 1; }
+
+/* =========================================================================
+   Data grid (rg-grid.js)
+   ========================================================================= */
+.rg-grid-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 0 0 8px; padding: 8px;
+  color: var(--rg-ink-2); background: var(--rg-surface); border: 1px solid var(--rg-line);
+  border-radius: var(--rg-radius-md); font: 500 var(--rg-text-sm)/1.2 var(--rg-font-sans);
+}
+.rg-grid-toolbar .rg-grid-search {
+  flex: 1 1 220px; min-height: 32px !important; padding: 6px 10px 6px 30px !important;
+  font-size: var(--rg-text-sm) !important;
+  background: var(--rg-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2375787e' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 9px 50% / 14px !important;
+}
+.rg-grid-toolbar button, .rg-grid-toolbar summary {
+  all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 10px; border: 1px solid var(--rg-line); border-radius: var(--rg-radius-sm);
+  color: var(--rg-ink-2); background: var(--rg-surface); cursor: pointer; white-space: nowrap;
+  transition: border-color var(--rg-dur-fast) ease, background var(--rg-dur-fast) ease;
+}
+.rg-grid-toolbar :is(button, summary):hover { color: var(--rg-ink); border-color: var(--rg-ink-3); background: var(--rg-surface-2); }
+.rg-grid-toolbar :is(button, summary):focus-visible { outline: 2px solid var(--rg-focus); }
+.rg-grid-toolbar summary::-webkit-details-marker { display: none; }
+.rg-grid-toolbar details { position: relative; }
+.rg-grid-toolbar .rg-pop {
+  position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 230px; max-height: 320px; overflow: auto;
+  padding: 6px; background: var(--rg-surface); border: 1px solid var(--rg-line); border-radius: var(--rg-radius-md);
+  box-shadow: var(--rg-shadow-3); animation: rg-pop var(--rg-dur-base) var(--rg-ease-out);
+}
+.rg-grid-toolbar .rg-pop label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 3px; color: var(--rg-ink-2); cursor: pointer; }
+.rg-grid-toolbar .rg-pop label:hover { background: var(--rg-surface-2); }
+.rg-grid-toolbar .rg-pop button { width: 100%; border: 0; height: 30px; }
+.rg-grid-count { margin-left: auto; color: var(--rg-ink-3); font-variant-numeric: tabular-nums; }
+.rg-grid-status { color: var(--rg-ok); }
+table.rg-grid thead th { position: sticky; top: 0; z-index: 2; }
+table.rg-grid th.rg-sortable { cursor: pointer; user-select: none; padding-right: 22px !important; position: sticky; }
+table.rg-grid th.rg-sortable::after {
+  content: ""; position: absolute; right: 8px; top: 50%; width: 0; height: 0; margin-top: -6px;
+  border: 4px solid transparent; border-bottom-color: #b9bab8; border-top: 0; opacity: .7;
+}
+table.rg-grid th.rg-sortable[aria-sort="ascending"]::after { border-bottom-color: #111214; opacity: 1; }
+table.rg-grid th.rg-sortable[aria-sort="descending"]::after { border-bottom: 0; border-top: 4px solid #111214; margin-top: -1px; opacity: 1; }
+table.rg-grid th .rg-resize { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; z-index: 3; }
+table.rg-grid th .rg-resize:hover, table.rg-grid th .rg-resize.is-active { background: linear-gradient(90deg, transparent 3px, #111214 3px 4px, transparent 4px); }
+table.rg-grid tbody tr { transition: background-color var(--rg-dur-fast) ease; }
+table.rg-grid tbody tr:hover > td:not([class*="xl-"]):not([style*="background"]) { background-color: #f6f6f4 !important; }
+table.rg-grid tbody tr.rg-selected > td { box-shadow: inset 0 0 0 9999px rgba(239, 223, 0, .16); }
+table.rg-grid tbody tr.rg-selected > td:first-child { box-shadow: inset 3px 0 0 #111214, inset 0 0 0 9999px rgba(239, 223, 0, .16); }
+table.rg-grid[data-density="compact"] :is(th, td) { padding-top: 3px !important; padding-bottom: 3px !important; font-size: .8125rem; }
+table.rg-grid[data-density="comfortable"] :is(th, td) { padding-top: 12px !important; padding-bottom: 12px !important; }
+table.rg-grid td.rg-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rg-grid-empty { padding: 18px; color: var(--rg-ink-3); text-align: center; }
+
+/* =========================================================================
+   Renforts de spécificité : les anciennes feuilles ciblent `button` avec
+   :not(.chart-shell *) (spécificité 0,2,1) et !important. Les composants
+   du design system doivent rester compacts et neutres.
+   ========================================================================= */
+@media screen {
+  html body .rg-grid-toolbar.rg-grid-toolbar.rg-grid-toolbar :is(button, summary),
+  html body .rg-chart-toolbar.rg-chart-toolbar.rg-chart-toolbar button {
+    min-height: 0 !important;
+    height: 30px !important;
+    padding: 0 10px !important;
+    color: var(--rg-ink-2) !important;
+    background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important;
+    border-radius: var(--rg-radius-sm) !important;
+    box-shadow: none !important;
+    font: 600 var(--rg-text-xs)/1 var(--rg-font-sans) !important;
+    letter-spacing: .01em !important;
+    transform: none !important;
+  }
+  html body .rg-chart-toolbar.rg-chart-toolbar.rg-chart-toolbar button {
+    height: 26px !important; min-width: 28px !important; padding: 0 6px !important;
+    border-color: transparent !important; background: transparent !important;
+  }
+  html body .rg-grid-toolbar.rg-grid-toolbar.rg-grid-toolbar :is(button, summary):hover,
+  html body .rg-chart-toolbar.rg-chart-toolbar.rg-chart-toolbar button:hover {
+    color: var(--rg-ink) !important; background: var(--rg-surface-2) !important; border-color: var(--rg-ink-3) !important;
+  }
+  html body .rg-chart-toolbar.rg-chart-toolbar.rg-chart-toolbar button[aria-pressed="true"] {
+    color: var(--rg-ink) !important; background: var(--rg-surface-sunken) !important;
+  }
+  html body .rg-grid-toolbar.rg-grid-toolbar.rg-grid-toolbar .rg-pop button { width: 100% !important; border: 0 !important; }
+  html body .rg-grid-toolbar .rg-grid-search.rg-grid-search {
+    min-height: 30px !important; height: 30px !important; padding: 4px 10px 4px 30px !important;
+    font-size: var(--rg-text-sm) !important;
+    background: var(--rg-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2375787e' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 9px 50% / 14px !important;
+  }
+  html body .rg-grid-toolbar { gap: 6px !important; padding: 6px !important; }
+
+  /* Cartes de choix rendues en <button> : surfaces, pas boutons principaux */
+  html body :is(.mode-selector-button.mode-selector-button, .analysis-mode.analysis-mode):not(table *) {
+    color: var(--rg-ink) !important; background: var(--rg-surface) !important;
+    border: 1px solid var(--rg-line) !important; border-radius: var(--rg-radius-sm) !important;
+    box-shadow: none !important; text-align: left;
+  }
+  html body :is(.mode-selector-button.mode-selector-button, .analysis-mode.analysis-mode):not(table *):is(:hover, .selected) {
+    color: var(--rg-ink) !important; background: var(--rg-surface-2) !important;
+    border-color: var(--rg-ink) !important; box-shadow: inset 3px 0 0 var(--rg-yellow) !important;
+  }
+  html body :is(.mode-selector-button.mode-selector-button, .analysis-mode.analysis-mode) :is(strong, span, small, p) { color: inherit !important; }
+}
+@media screen {
+  /* Titres de section des synthèses (étaient blancs sur fond clair) */
+  html body .section-title.section-title {
+    color: var(--rg-ink) !important;
+    font: 650 var(--rg-text-xl)/1.2 var(--rg-font-display) !important;
+    letter-spacing: -.015em !important;
+    border-bottom-color: var(--rg-line) !important;
+  }
+}

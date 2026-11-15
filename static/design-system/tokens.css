@@ -1,0 +1,154 @@
+/* =============================================================================
+   Wattman — Renault Group Engineering design tokens
+   -----------------------------------------------------------------------------
+   Source : Brandhub Renault Group (page publique, consultée le 2026-11-15) :
+   « palette primaire noir et blanc », gris minéral, police propriétaire à usage
+   restreint (fallback documenté : Arial). Aucun code couleur n'y est publié en
+   texte : les valeurs ci-dessous sont une interprétation à valider avec la
+   charte officielle. Le jaune n'est PAS mentionné par le Brandhub : il est
+   limité à un accent unique (--rg-accent), modifiable ici seulement.
+   Les couleurs de données Excel (static/excel-colors.css) ne dépendent PAS de
+   ces tokens et ne doivent jamais être remplacées.
+   ========================================================================== */
+:root {
+  /* Couleurs de marque */
+  --rg-black: #000000;
+  --rg-white: #ffffff;
+  --rg-graphite-950: #0b0c0e;
+  --rg-graphite-900: #131417;
+  --rg-graphite-850: #1a1b1f;
+  --rg-graphite-800: #222428;
+  --rg-graphite-700: #2e3035;
+  --rg-mineral-600: #55585e;
+  --rg-mineral-500: #75787e;
+  --rg-mineral-400: #9a9da3;
+  --rg-mineral-300: #c3c5c9;
+  --rg-mineral-200: #dcdddf;
+  --rg-mineral-100: #ececed;
+  --rg-mineral-50: #f5f5f4;
+  --rg-yellow: #efdf00;          /* accent — à valider avec la charte */
+  --rg-yellow-ink: #1a1700;      /* texte posé sur l'accent */
+
+  /* Sémantique d'état (badges, messages — jamais des données Excel) */
+  --rg-ok: #16794f;
+  --rg-ok-soft: #e6f4ed;
+  --rg-warn: #9a6400;
+  --rg-warn-soft: #fff4d6;
+  --rg-danger: #b42318;
+  --rg-danger-soft: #fdecea;
+  --rg-info: #1f5fbf;
+  --rg-info-soft: #e8f0fb;
+
+  /* Palette de séries (Okabe-Ito adaptée, distinguable par daltoniens).
+     Ordre stable : la même série garde la même couleur sur toutes les pages. */
+  --rg-series-1: #1f5fbf;
+  --rg-series-2: #d55e00;
+  --rg-series-3: #009e73;
+  --rg-series-4: #cc79a7;
+  --rg-series-5: #8a6d00;
+  --rg-series-6: #56b4e9;
+  --rg-series-7: #5c5f66;
+  --rg-threshold: #b42318;        /* seuils / limites */
+  --rg-setpoint: #8a6d00;         /* consignes / valeurs théoriques */
+
+  /* Typographie — police Renault propriétaire non embarquée (usage restreint) */
+  --rg-font-sans: "Segoe UI Variable Text", "Segoe UI", Arial, system-ui, sans-serif;
+  --rg-font-display: "Segoe UI Variable Display", "Segoe UI", Arial, system-ui, sans-serif;
+  --rg-font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  --rg-text-xs: .75rem;
+  --rg-text-sm: .8125rem;
+  --rg-text-md: .9375rem;
+  --rg-text-lg: 1.125rem;
+  --rg-text-xl: 1.5rem;
+  --rg-text-2xl: clamp(1.75rem, 2.6vw, 2.375rem);
+  --rg-text-hero: clamp(2.4rem, 5vw, 4.25rem);
+  --rg-tracking-caps: .12em;
+
+  /* Espacements (grille de 4 px) */
+  --rg-space-1: 4px;
+  --rg-space-2: 8px;
+  --rg-space-3: 12px;
+  --rg-space-4: 16px;
+  --rg-space-5: 20px;
+  --rg-space-6: 24px;
+  --rg-space-8: 32px;
+  --rg-space-10: 40px;
+  --rg-space-12: 48px;
+
+  /* Formes : angles francs, inspirés des lignes tendues du design automobile */
+  --rg-radius-xs: 2px;
+  --rg-radius-sm: 4px;
+  --rg-radius-md: 6px;
+  --rg-radius-lg: 10px;
+  --rg-cut: 14px;                 /* chanfrein des cartes signature */
+
+  /* Mouvement */
+  --rg-ease-out: cubic-bezier(.22, 1, .36, 1);
+  --rg-ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --rg-dur-fast: 120ms;
+  --rg-dur-base: 200ms;
+  --rg-dur-slow: 360ms;
+
+  /* Dimensions d'application */
+  --rg-appbar-h: 48px;
+
+  /* ---- Thème clair (défaut) ---- */
+  color-scheme: light;
+  --rg-canvas: #f3f3f1;
+  --rg-surface: #ffffff;
+  --rg-surface-2: #f7f7f6;
+  --rg-surface-sunken: #ececea;
+  --rg-ink: #0b0c0e;
+  --rg-ink-2: #3a3c41;
+  --rg-ink-3: #62656b;
+  --rg-line: #dcdcda;
+  --rg-line-strong: #b9bab8;
+  --rg-primary: #0b0c0e;
+  --rg-primary-hover: #2e3035;
+  --rg-on-primary: #ffffff;
+  --rg-focus: #0b0c0e;
+  --rg-shadow-1: 0 1px 2px rgba(11, 12, 14, .06);
+  --rg-shadow-2: 0 2px 6px rgba(11, 12, 14, .06), 0 10px 24px -12px rgba(11, 12, 14, .14);
+  --rg-shadow-3: 0 18px 48px -16px rgba(11, 12, 14, .28);
+  --rg-grid-line: rgba(11, 12, 14, .08);
+  --rg-appbar-bg: #0b0c0e;
+  --rg-appbar-ink: #f4f4f2;
+}
+
+/* ---- Thème sombre : graphite ---- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --rg-canvas: #0b0c0e;
+  --rg-surface: #151619;
+  --rg-surface-2: #1b1c20;
+  --rg-surface-sunken: #101114;
+  --rg-ink: #f2f2f0;
+  --rg-ink-2: #c8c9cc;
+  --rg-ink-3: #9a9da3;
+  --rg-line: #2b2d32;
+  --rg-line-strong: #43464c;
+  --rg-primary: #f2f2f0;
+  --rg-primary-hover: #ffffff;
+  --rg-on-primary: #0b0c0e;
+  --rg-focus: #efdf00;
+  --rg-shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --rg-shadow-2: 0 2px 8px rgba(0, 0, 0, .35), 0 12px 28px -12px rgba(0, 0, 0, .6);
+  --rg-shadow-3: 0 24px 60px -16px rgba(0, 0, 0, .75);
+  --rg-grid-line: rgba(242, 242, 240, .08);
+  --rg-appbar-bg: #000000;
+  --rg-ok-soft: #10261c;
+  --rg-warn-soft: #2a2108;
+  --rg-danger-soft: #2c1210;
+  --rg-info-soft: #0f1d33;
+  --rg-series-1: #6aa1f0;
+  --rg-series-5: #d9b52b;
+  --rg-series-7: #a7aab0;
+  --rg-threshold: #f2766b;
+  --rg-setpoint: #d9b52b;
+}
+
+/* Réduction des mouvements : système OU préférence enregistrée dans l'app */
+@media (prefers-reduced-motion: reduce) {
+  :root { --rg-dur-fast: 0ms; --rg-dur-base: 0ms; --rg-dur-slow: 0ms; }
+}
+:root[data-motion="reduced"] { --rg-dur-fast: 0ms; --rg-dur-base: 0ms; --rg-dur-slow: 0ms; }
