@@ -6,6 +6,7 @@
     <title>Dashboard de mesure</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
     <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+    <script src="/static/design-system/rg-charts.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <style>
         .measurement-dashboard [hidden] { display: none !important; }
@@ -45,6 +46,11 @@
 
     </style>
     <script src="{{ url_for('shared_current_units') }}"></script>
+    <!-- Design system Renault Engineering -->
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-grid.js" defer></script>
 </head>
 <body class="measurement-dashboard">
     <header class="workstation-header">

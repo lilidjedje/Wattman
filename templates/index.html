@@ -4,76 +4,136 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Engineering Calculator Hub</title>
-    <style>
-        :root { --ink: #152c4a; --muted: #64748b; --primary: #4f46e5; --surface: #ffffff; --canvas: #f3f6fb; }
-        * { box-sizing: border-box; }
-        body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; font-family: "Segoe UI", Tahoma, sans-serif; color: var(--ink); background: var(--canvas); }
-        main { width: min(760px, 100%); text-align: center; }
-        .mark { display: grid; place-items: center; width: 76px; height: 76px; margin: 0 auto 24px; color: #fff; font-size: 38px; font-weight: 800; background: linear-gradient(145deg, #ffb15b, #ff5f4d); clip-path: polygon(54% 0, 20% 53%, 47% 53%, 40% 100%, 81% 42%, 55% 42%); }
-        h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: 0; }
-        p { color: var(--muted); font-size: 1.12rem; margin: 14px 0 38px; }
-        .actions { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
-        .action { min-width: 235px; border: 1px solid #dce3ee; border-radius: 8px; padding: 20px 26px; color: var(--ink); background: var(--surface); box-shadow: 0 6px 18px rgba(21, 44, 74, .08); font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer; transition: transform .2s, box-shadow .2s; }
-        .action:hover { transform: translateY(-3px); box-shadow: 0 12px 25px rgba(21, 44, 74, .15); }
-        .action.primary { color: #fff; border-color: var(--primary); background: var(--primary); }
-        
-        /* DIALOGUE & RECHERCHE */
-        dialog { width: min(680px, calc(100% - 32px)); border: 0; border-radius: 12px; padding: 28px; box-shadow: 0 24px 80px rgba(15, 23, 42, .3); }
-        dialog::backdrop { background: rgba(15, 23, 42, .42); }
-        dialog h2 { margin: 0 0 18px; text-align: left; color: var(--ink); }
-        
-        .search-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-        .search-filters input, .search-filters select { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; font-size: 0.92rem; outline-color: var(--primary); }
-        .search-filters input { flex: 2; min-width: 180px; }
-        .search-filters select { flex: 1; min-width: 140px; }
-
-        #projects { display: grid; gap: 10px; max-height: 50vh; overflow-y: auto; padding-right: 4px; }
-        
-        .project-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid #dce3ee; border-radius: 8px; background: #fff; text-align: left; transition: all 0.2s; }
-        .project-card:hover { border-color: var(--primary); background: #f8fafc; }
-        
-        .project-info { flex: 1; cursor: pointer; }
-        .project-info strong { display: block; font-size: 1.05rem; color: var(--ink); }
-        .project-info span { display: block; margin-top: 4px; color: var(--muted); font-size: .88rem; }
-        .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: bold; background: #e0e7ff; color: #3730a3; margin-top: 5px; }
-
-        .btn-delete { border: 0; background: #fee2e2; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
-        .btn-delete:hover { background: #fca5a5; }
-
-        .empty { padding: 24px 0; color: var(--muted); text-align: center; }
-        .close { margin-top: 18px; float: right; border: 0; background: transparent; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; }
-        .account-bar { position:fixed; top:52px; right:18px; z-index:10001; display:flex; align-items:center; gap:10px; padding:6px 8px; border:1px solid #dce3ee; border-radius:8px; color:var(--muted); background:#fff; box-shadow:0 4px 12px rgba(21,44,74,.1); font-size:.9rem; }
-        .account-bar button,.account-bar a { border:0; border-radius:6px; padding:8px 10px; color:#fff; background:var(--primary); font:inherit; font-weight:650; text-decoration:none; cursor:pointer; }
-        .account-bar a[hidden] { display:none; }
-        @media (max-width: 560px) { .action { width: 100%; } .search-filters { flex-direction: column; } }
-    </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="/static/current_units.js"></script>
     <script src="/static/wattman_current.js"></script>
+    <!-- Design system Renault Engineering -->
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-grid.js" defer></script>
+    <script src="/static/design-system/rg-hero3d.js" defer></script>
+    <style>
+        @media screen {
+        html body.rg-home { padding: var(--rg-appbar-h) 0 0 !important; min-height: 100vh; display: block; }
+        .rg-home main.home#home-main {
+            display: grid !important; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+            min-height: calc(100vh - var(--rg-appbar-h)); padding: 0 !important; margin: 0 !important;
+            text-align: left; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; overflow-x: clip;
+        }
+        .home-intro { display: flex; flex-direction: column; justify-content: center; gap: 28px; padding: clamp(32px, 6vw, 88px); }
+        .home-account { display: flex; align-items: center; gap: 6px; font-size: var(--rg-text-sm); color: var(--rg-ink-3); }
+        .home-account #account-name { font-weight: 600; color: var(--rg-ink); margin-right: 6px; }
+        html body .home-account.account-bar :is(a, button):is(a, button) {
+            min-height: 0 !important; padding: 6px 10px !important; cursor: pointer; text-decoration: none !important;
+            color: var(--rg-ink-2) !important; background: transparent !important; border: 1px solid var(--rg-line) !important;
+            border-radius: var(--rg-radius-sm) !important; font: 600 var(--rg-text-sm)/1.2 var(--rg-font-sans) !important;
+            transition: background var(--rg-dur-fast) ease, border-color var(--rg-dur-fast) ease !important;
+        }
+        html body .home-account.account-bar :is(a, button):is(a, button):hover { color: var(--rg-ink) !important; background: var(--rg-surface) !important; border-color: var(--rg-ink-3) !important; }
+        .home-account :is(a, button):focus-visible { outline: 2px solid var(--rg-focus); outline-offset: 2px; }
+        .home-account a[hidden] { display: none; }
+        .home-eyebrow { display: inline-flex; align-items: center; gap: 10px; color: var(--rg-ink-3); font: 600 var(--rg-text-xs)/1 var(--rg-font-sans); letter-spacing: var(--rg-tracking-caps); text-transform: uppercase; }
+        .home-eyebrow::before { content: ""; width: 28px; height: 2px; background: var(--rg-yellow); }
+        html body .home-intro h1 { margin: 0; font-size: clamp(2.2rem, 4.2vw, 3.6rem) !important; line-height: 1 !important; letter-spacing: -.035em !important; font-weight: 700; max-width: 13ch; }
+        .home-intro { gap: 22px !important; }
+        .home-lede { margin: 0; max-width: 52ch; color: var(--rg-ink-2); font-size: var(--rg-text-lg); line-height: 1.55; }
+        .home-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+        html body .home-actions .action { min-height: 52px; padding: 14px 26px; font-size: 1rem !important; display: inline-flex; align-items: center; gap: 12px; }
+        .home-actions .action svg { width: 18px; height: 18px; transition: transform var(--rg-dur-base) var(--rg-ease-out); }
+        .home-actions .action:hover svg { transform: translateX(3px); }
+        .home-modules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 8px 0 0; padding: 0; list-style: none; background: var(--rg-line); border: 1px solid var(--rg-line); max-width: 640px; }
+        .home-modules li { padding: 14px 16px; background: var(--rg-canvas); }
+        .home-modules strong { display: block; font-size: var(--rg-text-sm); color: var(--rg-ink); }
+        .home-modules span { display: block; margin-top: 3px; font-size: var(--rg-text-xs); color: var(--rg-ink-3); line-height: 1.45; }
+        .home-stage { position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px clamp(24px, 4vw, 56px); overflow: hidden; background: var(--rg-surface); border-left: 1px solid var(--rg-line); }
+        .home-stage canvas { position: absolute; inset: 0 0 34% 0; width: 100%; height: 66%; }
+        .home-stage::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 35%, color-mix(in srgb, var(--rg-yellow) 9%, transparent), transparent 70%); pointer-events: none; }
+        .stage-caption { position: absolute; top: 24px; left: clamp(24px, 4vw, 56px); right: 24px; display: flex; justify-content: space-between; color: var(--rg-ink-3); font: 500 var(--rg-text-xs)/1.3 var(--rg-font-mono); letter-spacing: .04em; }
+        .recent { position: relative; z-index: 1; }
+        .recent-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+        html body .recent-head h2 { margin: 0; font-size: var(--rg-text-sm) !important; letter-spacing: var(--rg-tracking-caps) !important; text-transform: uppercase; color: var(--rg-ink-3) !important; font-family: var(--rg-font-sans) !important; }
+        .recent-head span { font-size: var(--rg-text-xs); color: var(--rg-ink-3); font-variant-numeric: tabular-nums; }
+        #recent-projects { display: grid; gap: 6px; }
+        .recent-item {
+            all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px;
+            padding: 12px 14px; cursor: pointer; background: var(--rg-canvas); border: 1px solid var(--rg-line); border-radius: var(--rg-radius-sm);
+            transition: border-color var(--rg-dur-fast) ease, transform var(--rg-dur-base) var(--rg-ease-out), box-shadow var(--rg-dur-base) ease;
+        }
+        .recent-item:hover { border-color: var(--rg-ink); box-shadow: inset 3px 0 0 var(--rg-yellow); }
+        .recent-item:active { transform: scale(.99); }
+        .recent-item:focus-visible { outline: 2px solid var(--rg-focus); outline-offset: 2px; }
+        .recent-item strong { display: block; font-size: var(--rg-text-md); color: var(--rg-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .recent-item small { display: block; margin-top: 2px; color: var(--rg-ink-3); font-size: var(--rg-text-xs); }
+        .recent-item .type-badge { margin: 0 !important; }
+        .recent-empty { padding: 16px; color: var(--rg-ink-3); border: 1px dashed var(--rg-line-strong); border-radius: var(--rg-radius-sm); font-size: var(--rg-text-sm); }
+
+        /* Boîte de dialogue des projets */
+        dialog#project-dialog { width: min(720px, calc(100% - 32px)); padding: 28px; }
+        dialog h2 { margin: 0 0 18px; text-align: left; }
+        .search-filters { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .search-filters input { flex: 2; min-width: 180px; }
+        .search-filters select { flex: 1; min-width: 140px; }
+        #projects { display: grid; gap: 8px; max-height: 50vh; overflow-y: auto; padding-right: 4px; }
+        .project-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px !important; text-align: left; }
+        .project-info { flex: 1; cursor: pointer; }
+        .project-info strong { display: block; font-size: 1.02rem; }
+        .project-info span { display: block; margin-top: 4px; font-size: .86rem; }
+        .type-badge { display: inline-block; padding: 2px 8px; margin-top: 6px; }
+        .empty { padding: 24px 0; color: var(--rg-ink-3); text-align: center; }
+        .close { margin-top: 18px; float: right; }
+
+        @media (max-width: 980px) {
+            .rg-home main.home#home-main { grid-template-columns: 1fr; }
+            .home-stage { min-height: 460px; border-left: 0; border-top: 1px solid var(--rg-line); }
+        }
+        @media (max-width: 560px) { .home-actions .action { width: 100%; justify-content: center; } .home-modules { grid-template-columns: 1fr; } .search-filters { flex-direction: column; } }
+        }
+    </style>
 </head>
-<body>
-    <nav class="account-bar">
-        <span id="account-name"></span>
-        <a id="admin-link" href="/admin" hidden>Administration</a>
-        <button type="button" id="logout-button">Déconnexion</button>
-    </nav>
-    <main>
-        <div class="mark" aria-hidden="true">+</div>
-        <h1>Engineering Calculator Hub</h1>
-        <p>Automotive Engineering Tools</p>
-        <div class="actions">
-            <button class="action primary" type="button" onclick="window.location.href='/import_project'">Nouveau projet</button>
-            <button class="action" type="button" id="load-project">Sélectionner un projet existant</button>
-        </div>
+<body class="rg-home">
+    <main class="home" id="home-main">
+        <section class="home-intro" aria-labelledby="home-title">
+            <nav class="home-account account-bar" aria-label="Compte">
+                <span id="account-name"></span>
+                <a id="admin-link" href="/admin" hidden>Administration</a>
+                <button type="button" id="logout-button">Déconnexion</button>
+            </nav>
+            <span class="home-eyebrow rg-reveal-item">Renault Group · Ingénierie électrique véhicule</span>
+            <h1 id="home-title" class="rg-reveal-item">Engineering Calculator Hub</h1>
+            <p class="home-lede rg-reveal-item">Dimensionnement, autonomie batterie et analyse de mesures réunis dans un même projet, avec des calculs identiques aux classeurs Excel de référence.</p>
+            <div class="home-actions actions rg-reveal-item">
+                <button class="action primary" type="button" onclick="window.location.href='/import_project'">
+                    Nouveau projet
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </button>
+                <button class="action" type="button" id="load-project">Sélectionner un projet existant</button>
+            </div>
+            <ul class="home-modules rg-reveal-item" aria-label="Outils disponibles">
+                <li><strong>DCDC Sizing / WLTC (-7 °C)</strong><span>Bilans de courant, alternateur, PAO et GMV par profil d'homologation</span></li>
+                <li><strong>Autonomie batterie</strong><span>Modes DM, client, consommation fixe et veille</span></li>
+                <li><strong>Biberonnage</strong><span>Analyses 30 et 90 jours, SOC et recharges</span></li>
+                <li><strong>Analyse de logs</strong><span>Acquisition ESP32-C3 multi INA226, CAN et numérique</span></li>
+            </ul>
+        </section>
+
+        <section class="home-stage" aria-label="Projets récents">
+            <canvas data-rg-hero3d aria-hidden="true"></canvas>
+            <div class="stage-caption" aria-hidden="true"><span>MODULE 12 V · VUE FILAIRE</span><span>ILLUSTRATION</span></div>
+            <div class="recent">
+                <div class="recent-head"><h2>Projets récents</h2><span id="project-count"></span></div>
+                <div id="recent-projects"></div>
+            </div>
+        </section>
     </main>
 
     <dialog id="project-dialog">
-        <h2> Projets existants</h2>
-        
+        <h2>Projets existants</h2>
+
         <!-- BARRE DE RECHERCHE ET FILTRES -->
         <div class="search-filters">
-            <input type="text" id="search-input" placeholder=" Rechercher par nom, pilote, jalon...">
+            <input type="text" id="search-input" placeholder="Rechercher par nom, pilote, jalon…">
             <select id="type-filter">
                 <option value="">Tous les types</option>
                 <option value="ICE">ICE</option>
@@ -104,6 +164,8 @@
         const typeFilter = document.getElementById('type-filter');
         const accountName = document.getElementById('account-name');
         const adminLink = document.getElementById('admin-link');
+        const recentContainer = document.getElementById('recent-projects');
+        const projectCount = document.getElementById('project-count');
 
         let allProjects = [];
 
@@ -123,6 +185,71 @@
             window.location.href = '/auth';
         });
 
+        function projectTypeText(project) {
+            const iceLabel = project.projectType === 'ICE' && project.iceProject === 'VU' && project.iceSubproject
+                ? `VU - ${project.iceSubproject}`
+                : project.iceProject || '';
+            const evLabel = project.evArchitecture === 'VU' && project.evSubproject
+                ? `VU - ${project.evSubproject}`
+                : project.evArchitecture || 'Non spécifié';
+            return project.projectType === 'EV'
+                ? `EV (${evLabel})`
+                : project.projectType === 'ICE' && iceLabel
+                    ? `ICE (${iceLabel})`
+                    : (project.projectType || 'ICE');
+        }
+
+        // Ouverture d'un projet : logique d'origine, partagée par la liste et les récents.
+        async function openProject(project, statusElement) {
+            if (statusElement) statusElement.textContent = 'Chargement des données...';
+            try {
+                const restored = await ProjectStorage.restoreProject(project);
+                sessionStorage.setItem('openedExistingProject', '1');
+                window.location.href = restored.sourceRecovered ? '/select_components' : '/mode_selection';
+            } catch (error) {
+                alert(`Impossible de charger le projet : ${error.message}`);
+            }
+        }
+
+        function renderRecent() {
+            const projects = ProjectStorage.getProjects()
+                .slice()
+                .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+            projectCount.textContent = projects.length
+                ? `${projects.length} projet${projects.length > 1 ? 's' : ''} sur ce poste`
+                : '';
+            recentContainer.replaceChildren();
+            if (!projects.length) {
+                const empty = document.createElement('p');
+                empty.className = 'recent-empty';
+                empty.textContent = 'Aucun projet enregistré sur ce poste. Créez un nouveau projet pour commencer.';
+                recentContainer.append(empty);
+                return;
+            }
+            projects.slice(0, 4).forEach((project, index) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'recent-item rg-reveal-item';
+                const text = document.createElement('span');
+                const name = document.createElement('strong');
+                name.textContent = project.name || 'Projet sans nom';
+                const meta = document.createElement('small');
+                const updated = project.updatedAt ? new Date(project.updatedAt) : null;
+                meta.textContent = [
+                    project.milestone && `Jalon ${project.milestone}`,
+                    project.pilotWattman && `Pilote ${project.pilotWattman}`,
+                    updated && !Number.isNaN(updated.valueOf()) && `Modifié le ${updated.toLocaleDateString('fr-FR')}`
+                ].filter(Boolean).join(' · ') || 'Ouvrir le projet';
+                text.append(name, meta);
+                const badge = document.createElement('span');
+                badge.className = 'type-badge';
+                badge.textContent = projectTypeText(project);
+                item.append(text, badge);
+                item.addEventListener('click', () => openProject(project, meta));
+                recentContainer.append(item);
+            });
+        }
+
         function renderProjects() {
             const query = searchInput.value.trim().toLowerCase();
             const selectedType = typeFilter.value;
@@ -138,7 +265,7 @@
                 const iceSubproject = project.iceSubproject || '';
 
                 const matchesQuery = !query || name.includes(query) || pilot.includes(query) || milestone.includes(query);
-                
+
                 let matchesType = true;
                 if (selectedType === 'ICE') matchesType = type === 'ICE';
                 else if (selectedType === 'ICE-VU') matchesType = type === 'ICE' && iceProject === 'VU';
@@ -178,54 +305,30 @@
                 const details = document.createElement('span');
                 details.textContent = `Date : ${project.date || 'N/C'} | Pilote : ${project.pilotWattman || 'N/C'} | Fiche : ${project.serverFilename || project.filename || 'Aucune'}`;
 
-                const iceLabel = project.projectType === 'ICE' && project.iceProject === 'VU' && project.iceSubproject
-                    ? `VU - ${project.iceSubproject}`
-                    : project.iceProject || '';
-                const evLabel = project.evArchitecture === 'VU' && project.evSubproject
-                    ? `VU - ${project.evSubproject}`
-                    : project.evArchitecture || 'Non spécifié';
-                const typeText = project.projectType === 'EV'
-                    ? `EV (${evLabel})`
-                    : project.projectType === 'ICE' && iceLabel
-                        ? `ICE (${iceLabel})`
-                        : (project.projectType || 'ICE');
                 const badge = document.createElement('span');
                 badge.className = 'type-badge';
-                badge.textContent = typeText;
+                badge.textContent = projectTypeText(project);
 
                 info.append(name, details, badge);
 
                 // Clic sur les détails -> Charger le projet
-                info.addEventListener('click', async () => {
-                    info.querySelector('span').textContent = 'Chargement des données...';
-                    try {
-                        const restored = await ProjectStorage.restoreProject(project);
-                        sessionStorage.setItem('openedExistingProject', '1');
-                        window.location.href = restored.sourceRecovered ? '/select_components' : '/mode_selection';
-                    } catch (error) {
-                        alert(`Impossible de charger le projet : ${error.message}`);
-                    }
-                });
+                info.addEventListener('click', () => openProject(project, info.querySelector('span')));
 
                 // Bouton de suppression
-               // Bouton de suppression
-const deleteBtn = document.createElement('button');
-deleteBtn.className = 'btn-delete';
-deleteBtn.textContent = ' Supprimer';
-deleteBtn.title = 'Supprimer ce projet';
-deleteBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (confirm(`Voulez-vous vraiment supprimer définitivement le projet "${project.name}" ?`)) {
-        // CORRECTION : On passe l'objet project entier (ou son id/name)
-        await ProjectStorage.deleteProject(project);
-        
-        // Recharge la liste fraîche depuis le stockage local
-        allProjects = ProjectStorage.getProjects();
-        
-        // Rafraîchit l'affichage et les filtres de recherche
-        renderProjects();
-    }
-});
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn-delete';
+                deleteBtn.textContent = 'Supprimer';
+                deleteBtn.title = 'Supprimer ce projet';
+                deleteBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (confirm(`Voulez-vous vraiment supprimer définitivement le projet "${project.name}" ?`)) {
+                        await ProjectStorage.deleteProject(project);
+                        // Recharge la liste fraîche depuis le stockage local
+                        allProjects = ProjectStorage.getProjects();
+                        renderProjects();
+                        renderRecent();
+                    }
+                });
 
                 card.append(info, deleteBtn);
                 projectsContainer.appendChild(card);
@@ -244,6 +347,7 @@ deleteBtn.addEventListener('click', async (e) => {
         typeFilter.addEventListener('change', renderProjects);
 
         document.getElementById('close-dialog').addEventListener('click', () => dialog.close());
+        renderRecent();
     </script>
 </body>
 </html>

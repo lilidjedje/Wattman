@@ -80,11 +80,26 @@
         }
         .btn-back:hover { background: #f7fafc; color: #4a5568; border-color: #4a5568; }
         .pdf-export-button { position: fixed; top: 62px; right: 22px; z-index: 200; padding: 12px 20px; text-decoration: none; }
+        /* Design system : cartes de mode numérotées, alignées à gauche */
+        html body .mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin: 28px 0 8px; }
+        html body .mode-card { align-items: flex-start !important; text-align: left; gap: 10px !important; padding: 26px 24px 28px !important; min-width: 0 !important; font: inherit; }
+        html body .mode-index { color: var(--rg-ink-3); font: 600 var(--rg-text-xs)/1 var(--rg-font-sans); letter-spacing: var(--rg-tracking-caps); text-transform: uppercase; }
+        html body .mode-icon { display: grid; place-items: center; width: 44px; height: 44px; margin: 8px 0 6px; color: var(--rg-ink); border: 1px solid var(--rg-line); border-radius: var(--rg-radius-sm); background: var(--rg-surface-2); transition: background var(--rg-dur-base) ease, color var(--rg-dur-base) ease; }
+        html body .mode-icon svg { width: 22px; height: 22px; }
+        html body .mode-card:hover .mode-icon { color: var(--rg-yellow-ink); background: var(--rg-yellow); border-color: var(--rg-yellow); }
+        html body .mode-title { font-size: 1.2rem !important; }
+        html body .mode-desc { font-size: var(--rg-text-sm) !important; }
+        html body .container { text-align: left; }
     </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="/static/current_units.js"></script>
     <script src="/static/wattman_current.js"></script>
+    <!-- Design system Renault Engineering -->
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-grid.js" defer></script>
 </head>
 <body>
     <a class="button pdf-export-button" href="/export_synthesis_pdf?auto=1">Exporter la synthèse globale (PDF / Excel)</a>
@@ -94,20 +109,25 @@
 
         <div class="mode-grid">
             <!-- Mode 1 : DCDC Sizing / WLTC -->
-            <div class="mode-card" onclick="window.location.href='/homologation_configuration'">
-                <div class="mode-icon"></div>
+            <div class="mode-card" onclick="window.location.href='/homologation_configuration'" role="link" tabindex="0">
+                <span class="mode-index">01 / Homologation</span>
+                <div class="mode-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="1"/><path d="M7 10h3M8.5 8.5v3M14 10h3M7 15h10"/></svg></div>
                 <div class="mode-title">DCDC Sizing / WLTC (-7 °C)</div>
+                <div class="mode-desc">Bilans de courant, alternateur, PAO et GMV par profil, et synthèse homologation</div>
             </div>
 
             <!-- Mode 2 : Autonomie Batterie (Désactivé pour l'instant) -->
             <!-- Dans templates/mode_selection.html, trouve la deuxième carte et remplace-la par : -->
-<div class="mode-card" onclick="window.location.href='/battery_configuration'">
-    <div class="mode-icon"></div>
-    <div class="mode-title">Autonomie Batterie</div>
-</div>
+            <div class="mode-card" onclick="window.location.href='/battery_configuration'" role="link" tabindex="0">
+                <span class="mode-index">02 / Batterie</span>
+                <div class="mode-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="1"/><path d="M22 10v4M6 10v4M10 10v4M14 10v4"/></svg></div>
+                <div class="mode-title">Autonomie Batterie</div>
+                <div class="mode-desc">Modes DM et client, consommation fixe et veille, biberonnage 30 / 90 jours</div>
+            </div>
 
             <button class="mode-card" type="button" onclick="openCanServer()" aria-label="Ouvrir le CAN Server hébergé sur le Raspberry Pi">
-                <div class="mode-icon"></div>
+                <span class="mode-index">03 / Mesure</span>
+                <div class="mode-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 3 5-7"/></svg></div>
                 <div class="mode-title">Analyse de logs</div>
                 <div class="mode-desc">Accès au CAN Server : acquisition ESP32-C3 multi INA226 et analyse</div>
             </button>
@@ -116,6 +136,7 @@
         <button class="btn-back" type="button" id="project-back-button">← Changer de fichier d'entrée</button>
     </div>
     <script src="{{ url_for('static', filename='project_storage.js') }}"></script>
+    <script>document.querySelectorAll('.mode-card[role="link"]').forEach(card => card.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); card.click(); } }));</script>
     <script src="{{ url_for('static', filename='homologation_defaults.js') }}"></script>
     <script src="{{ url_for('static', filename='sleep_current.js') }}"></script>
     <script src="{{ url_for('device_display_script') }}"></script>

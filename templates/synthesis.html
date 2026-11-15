@@ -8,6 +8,7 @@
     <title>Synthèse Homologation</title>
     <!-- Intégration de Chart.js pour les graphiques dynamiques -->
     <script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+    <script src="/static/design-system/rg-charts.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -125,6 +126,11 @@
     <script src="/static/wattman_current.js"></script>
     <script src="/static/excel_colors.js"></script>
     <link rel="stylesheet" href="/static/excel-colors.css">
+    <!-- Design system Renault Engineering -->
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-grid.js" defer></script>
 </head>
 <body class="homologation-step-page synthesis-page preserve-table-colors">
     <div class="header">
