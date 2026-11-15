@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr" data-rg-auth data-rg-no-appbar>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion — Wattman Tool</title>
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <link rel="stylesheet" href="/static/design-system/auth.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/auth.js" defer></script>
+</head>
+<body>
+    <div class="auth-bg" aria-hidden="true"></div>
+    <div class="auth-veil" aria-hidden="true"></div>
+    <main class="auth-page">
+        <section class="auth-card auth-glass auth-rise" aria-labelledby="login-title">
+            <a class="auth-back" href="/auth">← Retour à l'accueil</a>
+            <p class="auth-brand">Wattman Tool</p>
+            <h1 id="login-title">Connexion</h1>
+            <p>Accédez à vos projets, calculs et mesures.</p>
+            <form class="auth-form" id="login-form" data-form="login" novalidate>
+                <label class="auth-field">Adresse e-mail
+                    <input name="email" type="email" autocomplete="email" required>
+                    <small class="field-error" aria-live="polite"></small>
+                </label>
+                <label class="auth-field">Mot de passe
+                    <span class="auth-password"><input name="password" type="password" autocomplete="current-password" required></span>
+                    <small class="field-error" aria-live="polite"></small>
+                </label>
+                <label class="auth-remember"><input name="rememberMe" type="checkbox" value="true"> Se souvenir de moi sur cet ordinateur pendant 30 jours</label>
+                <div class="auth-alert" role="alert"></div>
+                <button class="auth-btn auth-btn-accent" type="submit">Se connecter</button>
+            </form>
+            <p class="auth-switch">Pas encore de compte ? <a href="/auth?page=register">S'inscrire</a></p>
+        </section>
+    </main>
+</body>
+</html>

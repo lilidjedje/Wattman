@@ -152,11 +152,22 @@ def auth_page():
     account = current_account()
     if account:
         return redirect(url_for('index'))
-    return render_template(
-        'auth.html',
-        setup_required=account_count() == 0,
-        admin_email=ADMIN_EMAIL,
-    )
+    if account_count() == 0:
+        # Premier lancement : création du compte administrateur (inchangé).
+        return render_template('auth.html', setup_required=True, admin_email=ADMIN_EMAIL)
+    # Accueil public, puis pages distinctes de connexion et d'inscription.
+    template = {
+        'login': 'auth_login.html',
+        'register': 'auth_register.html',
+    }.get(request.args.get('page'), 'auth_landing.html')
+    return render_template(template)
+
+@app.route('/api/auth/stats')
+def auth_stats():
+    """Compteur public agrégé : aucune donnée personnelle."""
+    response = jsonify({"accounts": account_count()})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 @app.route('/api/auth/me')
 def auth_me():

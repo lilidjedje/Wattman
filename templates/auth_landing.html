@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr" data-rg-auth data-rg-no-appbar>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wattman Tool</title>
+    <link rel="preload" as="image" href="/static/img/ampere-background.webp" type="image/webp">
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <link rel="stylesheet" href="/static/design-system/auth.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/auth.js" defer></script>
+</head>
+<body>
+    <div class="auth-bg" aria-hidden="true"></div>
+    <div class="auth-veil" aria-hidden="true"></div>
+    <main class="auth-landing">
+        <section aria-labelledby="landing-title">
+            <p class="auth-eyebrow auth-rise">Ingénierie électrique véhicule</p>
+            <h1 id="landing-title" class="auth-title auth-rise" style="--d:1">Wattman <span>Tool</span></h1>
+            <p class="auth-lede auth-rise" style="--d:2">Plateforme d'ingénierie dédiée à l'automatisation des calculs et à l'analyse des consommations électriques automobiles. Wattman Tool permet de calculer les profils de consommation en courant des différents projets véhicules, de collecter les mesures réalisées directement sur véhicule et de comparer les résultats théoriques aux données mesurées pour faciliter leur analyse et leur validation.</p>
+            <div class="auth-actions auth-rise" style="--d:3">
+                <a class="auth-btn auth-btn-accent" id="go-login" href="/auth?page=login">
+                    Connexion
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </a>
+                <a class="auth-btn auth-btn-ghost" id="go-register" href="/auth?page=register">Inscription</a>
+            </div>
+        </section>
+        <aside class="auth-stats auth-glass auth-rise" style="--d:2" aria-label="Chiffres de la plateforme">
+            <div class="auth-stat is-loading">
+                <strong data-stat="accounts">—</strong>
+                <span>Wattmen inscrits</span>
+            </div>
+            <div class="auth-stat is-loading">
+                <strong data-stat="projects">—</strong>
+                <span>Projets enregistrés</span>
+            </div>
+        </aside>
+    </main>
+</body>
+</html>

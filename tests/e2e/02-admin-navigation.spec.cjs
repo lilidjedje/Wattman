@@ -90,8 +90,8 @@ test('une session déconnectée renvoie vers l’authentification', async ({ pag
 });
 
 test('connexion sans « Se souvenir de moi » : la session reste ouverte jusqu’à la fermeture', async ({ page, app }) => {
-  await go(page, '/auth');
-  const form = page.locator('#login-panel');
+  await go(page, '/auth?page=login');
+  const form = page.locator('#login-form');
   await form.locator('[name=email]').fill(app.adminEmail);
   await form.locator('[name=password]').fill(app.password);
   await expect(form.locator('[name=rememberMe]')).not.toBeChecked();

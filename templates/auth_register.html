@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr" data-rg-auth data-rg-no-appbar>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inscription — Wattman Tool</title>
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <link rel="stylesheet" href="/static/design-system/auth.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/auth.js" defer></script>
+</head>
+<body>
+    <div class="auth-bg" aria-hidden="true"></div>
+    <div class="auth-veil" aria-hidden="true"></div>
+    <main class="auth-page">
+        <section class="auth-card auth-card-wide auth-glass auth-rise" aria-labelledby="register-title">
+            <a class="auth-back" href="/auth">← Retour à l'accueil</a>
+            <p class="auth-brand">Wattman Tool</p>
+            <h1 id="register-title">Créer un compte</h1>
+            <p>Le compte est créé sur ce poste ; un administrateur peut ensuite gérer son rôle.</p>
+            <form class="auth-form" id="register-form" data-form="register" novalidate>
+                <div class="auth-row">
+                    <label class="auth-field">Nom
+                        <input name="lastName" type="text" autocomplete="family-name" maxlength="100" required>
+                        <small class="field-error" aria-live="polite"></small>
+                    </label>
+                    <label class="auth-field">Prénom
+                        <input name="firstName" type="text" autocomplete="given-name" maxlength="100" required>
+                        <small class="field-error" aria-live="polite"></small>
+                    </label>
+                </div>
+                <label class="auth-field">Adresse e-mail
+                    <input name="email" type="email" autocomplete="email" required>
+                    <small class="field-error" aria-live="polite"></small>
+                </label>
+                <div class="auth-row">
+                    <label class="auth-field">Mot de passe (8 caractères minimum)
+                        <span class="auth-password"><input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></span>
+                        <small class="field-error" aria-live="polite"></small>
+                    </label>
+                    <label class="auth-field">Confirmation
+                        <span class="auth-password"><input name="passwordConfirm" type="password" autocomplete="new-password" required></span>
+                        <small class="field-error" aria-live="polite"></small>
+                    </label>
+                </div>
+                <div class="auth-alert" role="alert"></div>
+                <button class="auth-btn auth-btn-accent" type="submit">Créer mon compte</button>
+            </form>
+            <p class="auth-switch">Déjà un compte ? <a href="/auth?page=login">Se connecter</a></p>
+        </section>
+    </main>
+</body>
+</html>

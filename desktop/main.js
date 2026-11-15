@@ -568,6 +568,11 @@ app.whenReady().then(async () => {
     return { canceled: false, filePath: result.filePath };
   });
   const projectStore = createProjectStore(path.join(app.getPath('userData'), 'projects'));
+  // Compteur public de l'accueil : renvoie uniquement un nombre, jamais les métadonnées.
+  ipcMain.handle('project-count', event => {
+    if (!event.senderFrame.url.startsWith('app://local/')) throw new Error('Origine non autorisée.');
+    return projectStore.list().length;
+  });
   ipcMain.on('project-store', (event, operation, payload) => {
     try {
       if (!event.senderFrame.url.startsWith('app://local/')) throw new Error('Origine non autorisée.');
