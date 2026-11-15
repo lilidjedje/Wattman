@@ -1,121 +1,121 @@
-/* Wattman — scène 3D d'accueil : véhicule en vue éclatée filaire (création
-   originale, silhouette générique, aucun logo). Canvas 2D + projection
-   perspective, sans dépendance.
-   - la caisse se soulève (vue éclatée) pour révéler l'intérieur : plancher,
-     sièges, pack batterie, calculateurs (ECU) et faisceau ;
-   - impulsions jaunes = courant circulant de la batterie 12 V vers les ECU ;
-   - balayage de scan, halo des ECU actifs, rotation lente + parallaxe ;
+/* Wattman — scène 3D d'accueil : Renault 5 E-Tech « en verre » (Canvas 2D,
+   sans dépendance). Carrosserie en panneaux semi-transparents ombrés, vitrages
+   teintés, roues pleines ; l'intérieur reste visible au travers : plancher,
+   pack batterie, sièges, boîtiers ECU reliés par le faisceau.
+   Silhouette d'après les proportions publiques du véhicule (L 3,92 m,
+   empattement 2,54 m, H 1,50 m) : capot court, ceinture haute, ailes élargies,
+   phares ronds, écope de capot, hayon vertical, becquet. Aucun logo dessiné.
+   - impulsions jaunes = courant 12 V circulant entre les ECU ;
+   - rotation lente, parallaxe, reflet balayant la caisse ;
    - image fixe si mouvements réduits ; pause hors écran / onglet masqué. */
 (function () {
   'use strict';
 
-  // Repère : x = longueur (avant négatif), y = hauteur, z = largeur.
-  const PROFILE = [ // [x, haut de caisse, demi-largeur]
-    [-2.25, 0.58, 0.70], [-2.05, 0.68, 0.82], [-1.55, 0.78, 0.86], [-1.05, 0.84, 0.88],
-    [-0.75, 1.02, 0.86], [-0.45, 1.30, 0.80], [0.10, 1.38, 0.78], [0.80, 1.36, 0.78],
-    [1.45, 1.26, 0.80], [1.85, 1.08, 0.82], [2.15, 0.86, 0.80], [2.28, 0.66, 0.72]
+  // Repère : x = longueur (avant négatif), y = hauteur, z = largeur (mètres).
+  const PROFILE = [ // [x, haut, demi-largeur]
+    [-1.96, 0.60, 0.72], [-1.91, 0.72, 0.80], [-1.72, 0.80, 0.86], [-1.45, 0.84, 0.89],
+    [-1.10, 0.87, 0.89], [-0.86, 0.90, 0.88], [-0.70, 0.99, 0.87], [-0.40, 1.30, 0.83],
+    [-0.12, 1.46, 0.81], [0.45, 1.49, 0.81], [1.05, 1.48, 0.83], [1.48, 1.45, 0.87],
+    [1.70, 1.30, 0.89], [1.84, 1.04, 0.89], [1.93, 0.84, 0.86], [1.97, 0.62, 0.78]
   ];
-  const BELT = 0.82;   // ligne de ceinture : au-dessus, la caisse est « éclatée »
-  const FLOOR = 0.30;
-  const WHEELS = [[-1.42, -0.86], [-1.42, 0.86], [1.38, -0.86], [1.38, 0.86]];
+  const BELT = 0.98, SILL = 0.20;
+  const WHEELS = [[-1.27, -0.80], [-1.27, 0.80], [1.27, -0.80], [1.27, 0.80]];
+  const WR = 0.35;
   const ECUS = [
-    { id: '12V', pos: [-1.78, 0.52, 0.48], size: [0.30, 0.20, 0.22] },
-    { id: 'ECM', pos: [-1.75, 0.56, -0.38], size: [0.26, 0.12, 0.20] },
-    { id: 'GW', pos: [-0.62, 0.62, 0.00], size: [0.20, 0.08, 0.16] },
-    { id: 'BCM', pos: [-0.78, 0.60, 0.58], size: [0.22, 0.08, 0.16] },
-    { id: 'HVAC', pos: [-0.92, 0.66, -0.50], size: [0.24, 0.10, 0.18] },
-    { id: 'DCDC', pos: [0.10, 0.36, 0.00], size: [0.28, 0.08, 0.22] },
-    { id: 'ADAS', pos: [-0.30, 1.20, 0.00], size: [0.18, 0.06, 0.14], lifted: true },
-    { id: 'TCU', pos: [1.70, 0.62, 0.48], size: [0.20, 0.08, 0.16] }
+    { pos: [-1.52, 0.56, 0.42], size: [0.26, 0.18, 0.20] },
+    { pos: [-1.50, 0.62, -0.36], size: [0.24, 0.10, 0.18] },
+    { pos: [-0.56, 0.72, 0.00], size: [0.18, 0.07, 0.14] },
+    { pos: [-0.62, 0.68, 0.56], size: [0.20, 0.07, 0.14] },
+    { pos: [-0.72, 0.76, -0.48], size: [0.22, 0.09, 0.16] },
+    { pos: [0.20, 0.32, 0.00], size: [0.26, 0.07, 0.20] },
+    { pos: [-0.30, 1.34, 0.00], size: [0.16, 0.05, 0.12] },
+    { pos: [1.50, 0.80, 0.46], size: [0.18, 0.07, 0.14] }
   ];
-  // Faisceau : 12 V → passerelle → calculateurs.
-  const HARNESS = [['12V', 'ECM'], ['12V', 'GW'], ['GW', 'BCM'], ['GW', 'HVAC'], ['GW', 'DCDC'], ['GW', 'ADAS'], ['DCDC', 'TCU']];
+  const HARNESS = [[0, 1], [0, 2], [2, 3], [2, 4], [2, 5], [2, 6], [5, 7]];
 
-  function css(name, fallback) {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = v => { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+
+  // Section transversale à 10 points : bas de caisse → flanc → ceinture → épaule → pavillon (et symétrique).
+  function section([x, top, half]) {
+    const flare = WHEELS.some(([wx]) => Math.abs(x - wx) < 0.5) ? 0.03 : 0; // ailes élargies
+    const h = half + flare;
+    const greenhouse = top > BELT + 0.03;
+    const shoulderY = greenhouse ? BELT + 0.05 : top;
+    const roofY = greenhouse ? top : top + 0.005;
+    const side = s => [
+      [x, SILL, s * h * 0.93], [x, 0.48, s * h], [x, Math.min(BELT, top - 0.02), s * h * 0.99],
+      [x, shoulderY, s * h * (greenhouse ? 0.9 : 0.9)], [x, roofY, s * h * (greenhouse ? 0.74 : 0.62)]
+    ];
+    const left = side(-1), right = side(1).reverse();
+    return { pts: [...left, ...right], greenhouse };
   }
 
   function buildModel() {
-    const segs = []; // { a:[x,y,z], b:[x,y,z], w, kind }
-    const add = (a, b, w, kind) => segs.push({ a, b, w, kind });
-    // Sections transversales (couples) + lisses longitudinales.
-    const ring = ([x, top, half]) => {
-      const t = Math.max(top, BELT + 0.04);
-      const roof = top > 1.0;
-      return [
-        [x, 0.24, -half], [x, BELT, -half - 0.02], [x, t, -(roof ? half * 0.78 : half * 0.94)],
-        [x, t, roof ? half * 0.78 : half * 0.94], [x, BELT, half + 0.02], [x, 0.24, half]
-      ];
-    };
-    const rings = PROFILE.map(ring);
-    rings.forEach((r, i) => {
-      for (let k = 0; k < r.length; k++) add(r[k], r[(k + 1) % r.length], i % 3 === 0 ? 0.9 : 0.45, 'body');
-      if (i > 0) rings[i - 1].forEach((p, k) => add(p, r[k], k === 2 || k === 3 ? 0.9 : 0.6, 'body'));
-    });
-    // Montants de vitrage (A, B, C).
-    [-0.62, 0.45, 1.6].forEach(x => {
-      const p = PROFILE.reduce((a, b) => (Math.abs(b[0] - x) < Math.abs(a[0] - x) ? b : a));
-      [-1, 1].forEach(s => add([x, BELT, s * p[2]], [x, p[1], s * p[2] * 0.8], 0.8, 'body'));
-    });
-    // Roues : jantes + moyeux.
-    WHEELS.forEach(([x, z]) => {
-      const n = 22, r = 0.34, y0 = 0.34;
-      for (let k = 0; k < n; k++) {
-        const a0 = (k / n) * Math.PI * 2, a1 = ((k + 1) / n) * Math.PI * 2;
-        add([x + Math.cos(a0) * r, y0 + Math.sin(a0) * r, z], [x + Math.cos(a1) * r, y0 + Math.sin(a1) * r, z], 1, 'wheel');
-        if (k % 4 === 0) add([x, y0, z], [x + Math.cos(a0) * r * 0.62, y0 + Math.sin(a0) * r * 0.62, z], 0.4, 'wheel');
+    const sections = PROFILE.map(section);
+    const panels = []; // { pts, kind }
+    for (let i = 1; i < sections.length; i++) {
+      const a = sections[i - 1], b = sections[i];
+      for (let k = 0; k < 9; k++) {
+        const glass = (k === 3 || k === 5) && a.greenhouse && b.greenhouse; // vitres latérales
+        const roof = k === 4;
+        const windscreen = roof && (!a.greenhouse || !b.greenhouse);
+        const clad = k === 0 || k === 8; // protections noires de bas de caisse (signature R5)
+        panels.push({ pts: [a.pts[k], b.pts[k], b.pts[k + 1], a.pts[k + 1]], kind: windscreen ? 'glass' : glass ? 'glass' : roof && a.greenhouse ? 'roof' : clad ? 'clad' : 'body' });
       }
-    });
-    // Plancher, pack batterie (cellules) et sièges.
-    const rect = (x0, x1, y, z0, z1, w, kind) => {
-      add([x0, y, z0], [x1, y, z0], w, kind); add([x1, y, z0], [x1, y, z1], w, kind);
-      add([x1, y, z1], [x0, y, z1], w, kind); add([x0, y, z1], [x0, y, z0], w, kind);
-    };
-    rect(-1.1, 1.2, FLOOR, -0.72, 0.72, 0.5, 'chassis');
-    rect(-0.95, 1.05, 0.26, -0.62, 0.62, 0.9, 'pack');
-    for (let i = 1; i < 8; i++) { const x = -0.95 + i * 0.25; add([x, 0.26, -0.62], [x, 0.26, 0.62], 0.3, 'pack'); }
-    add([-0.95, 0.26, 0], [1.05, 0.26, 0], 0.3, 'pack');
-    const seat = (x, z) => {
-      add([x, FLOOR + 0.14, z - 0.2], [x, FLOOR + 0.14, z + 0.2], 0.6, 'chassis');
-      add([x - 0.32, FLOOR + 0.14, z - 0.2], [x - 0.32, FLOOR + 0.14, z + 0.2], 0.6, 'chassis');
-      add([x, FLOOR + 0.14, z], [x - 0.32, FLOOR + 0.14, z], 0.6, 'chassis');
-      add([x, FLOOR + 0.14, z - 0.2], [x + 0.08, FLOOR + 0.62, z - 0.18], 0.6, 'chassis');
-      add([x, FLOOR + 0.14, z + 0.2], [x + 0.08, FLOOR + 0.62, z + 0.18], 0.6, 'chassis');
-      add([x + 0.08, FLOOR + 0.62, z - 0.18], [x + 0.08, FLOOR + 0.62, z + 0.18], 0.6, 'chassis');
-    };
-    seat(-0.05, -0.38); seat(-0.05, 0.38); seat(0.95, -0.38); seat(0.95, 0.38);
-    // Sol d'atelier.
-    for (let g = -5; g <= 5; g++) {
-      add([g * 0.6, 0, -1.9], [g * 0.6, 0, 1.9], 0.16, 'grid');
-      add([-3.0, 0, g * 0.38], [3.0, 0, g * 0.38], 0.16, 'grid');
     }
-    // Calculateurs.
-    ECUS.forEach(e => {
+    // Boucliers avant / arrière (éventail).
+    [sections[0], sections[sections.length - 1]].forEach(s => {
+      for (let k = 1; k < 9; k++) panels.push({ pts: [s.pts[0], s.pts[k], s.pts[k + 1]], kind: 'body' });
+    });
+    // Arêtes vives (lignes de caractère).
+    const edges = [];
+    for (let k = 0; k < 10; k++) edges.push({ pts: sections.map(s => s.pts[k]), w: k === 2 || k === 7 ? 1.1 : k === 4 || k === 5 ? 0.9 : 0.5 });
+    [0, sections.length - 1].forEach(i => edges.push({ pts: [...sections[i].pts, sections[i].pts[0]], w: 0.9 }));
+    // Montants de vitrage.
+    [6, 9, 12].forEach(i => { const s = sections[i]; edges.push({ pts: [s.pts[2], s.pts[3], s.pts[4]], w: 0.9 }); edges.push({ pts: [s.pts[7], s.pts[6], s.pts[5]], w: 0.9 }); });
+    // Becquet, écope de capot, phares ronds, feux arrière.
+    const details = [];
+    details.push({ pts: [[1.50, 1.47, -0.66], [1.50, 1.47, 0.66], [1.62, 1.42, 0.66], [1.62, 1.42, -0.66], [1.50, 1.47, -0.66]], w: 1.2 });
+    details.push({ pts: [[-1.42, 0.86, 0.08], [-1.22, 0.875, 0.08], [-1.22, 0.875, 0.30], [-1.42, 0.86, 0.30], [-1.42, 0.86, 0.08]], w: 1.1 });
+    const circle = (cx, cy, z, r, n) => Array.from({ length: n + 1 }, (_, k) => { const a = (k / n) * Math.PI * 2; return [cx, cy + Math.sin(a) * r, z + Math.cos(a) * r]; });
+    const lights = [];
+    [-0.52, 0.52].forEach(z => lights.push({ pts: circle(-1.945, 0.70, z, 0.085, 18), kind: 'head' }));
+    [-0.66, 0.66].forEach(z => lights.push({ pts: [[1.94, 0.82, z - 0.05], [1.94, 0.82, z + 0.05], [1.93, 1.0, z + 0.05], [1.93, 1.0, z - 0.05]], kind: 'tail' }));
+    // Intérieur.
+    const interior = [];
+    const rect = (x0, x1, y, z0, z1) => [[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1], [x0, y, z0]];
+    interior.push({ pts: rect(-0.95, 1.15, 0.28, -0.72, 0.72), kind: 'floor' });
+    interior.push({ pts: rect(-0.85, 0.95, 0.22, -0.62, 0.62), kind: 'pack' });
+    for (let i = 1; i < 7; i++) { const x = -0.85 + i * 0.257; interior.push({ pts: [[x, 0.22, -0.62], [x, 0.22, 0.62]], kind: 'pack' }); }
+    const seat = (x, z) => {
+      interior.push({ pts: [[x, 0.42, z - 0.19], [x, 0.42, z + 0.19], [x - 0.3, 0.42, z + 0.19], [x - 0.3, 0.42, z - 0.19], [x, 0.42, z - 0.19]], kind: 'seat' });
+      interior.push({ pts: [[x, 0.42, z - 0.18], [x + 0.08, 0.92, z - 0.16], [x + 0.08, 0.92, z + 0.16], [x, 0.42, z + 0.18]], kind: 'seat' });
+    };
+    seat(0.0, -0.36); seat(0.0, 0.36); seat(0.95, -0.36); seat(0.95, 0.36);
+    interior.push({ pts: circle(-0.55, 1.02, 0.36, 0.17, 20).map(p => [p[0] + (p[1] - 1.02) * 0.4, p[1], p[2]]), kind: 'seat' }); // volant
+    // ECU (boîtes) et faisceau.
+    const boxes = ECUS.map(e => {
       const [x, y, z] = e.pos, [w, h, d] = e.size.map(v => v / 2);
-      const c = [[x - w, y - h, z - d], [x + w, y - h, z - d], [x + w, y - h, z + d], [x - w, y - h, z + d],
+      return [[x - w, y - h, z - d], [x + w, y - h, z - d], [x + w, y - h, z + d], [x - w, y - h, z + d],
         [x - w, y + h, z - d], [x + w, y + h, z - d], [x + w, y + h, z + d], [x - w, y + h, z + d]];
-      [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]
-        .forEach(([i, j]) => add(c[i], c[j], 1, e.lifted ? 'ecu-lifted' : 'ecu'));
     });
-    // Faisceau : chemins en L (le long du plancher), utilisés aussi par les impulsions.
-    const byId = Object.fromEntries(ECUS.map(e => [e.id, e]));
-    const paths = HARNESS.map(([from, to]) => {
-      const a = byId[from].pos, b = byId[to].pos;
-      const mid = [b[0], Math.min(a[1], b[1], 0.5), a[2]];
-      return { to, lifted: !!byId[to].lifted, pts: [a, [a[0], mid[1], a[2]], mid, [b[0], mid[1], b[2]], b] };
+    const paths = HARNESS.map(([i, j]) => {
+      const a = ECUS[i].pos, b = ECUS[j].pos, y = Math.min(a[1], b[1], 0.5);
+      return [a, [a[0], y, a[2]], [b[0], y, a[2]], [b[0], y, b[2]], b];
     });
-    paths.forEach(p => { for (let i = 0; i < p.pts.length - 1; i++) add(p.pts[i], p.pts[i + 1], 0.9, p.lifted && i === p.pts.length - 2 ? 'harness-lifted' : 'harness'); });
-    return { segs, paths };
+    return { panels, edges, details, lights, interior, boxes, paths };
   }
 
   function start(canvas) {
     const ctx = canvas.getContext('2d');
-    const { segs, paths } = buildModel();
+    const model = buildModel();
     const reduced = () => (window.RGUI ? window.RGUI.reducedMotion() : false);
     let w = 0, h = 0, dpr = 1, raf = 0, visible = true;
     const t0 = performance.now();
     let target = { x: 0, y: 0 }; const tilt = { x: 0, y: 0 };
+    const LIGHT = norm([-0.4, 0.9, -0.5]);
 
     function resize() {
       const rect = canvas.getBoundingClientRect();
@@ -125,101 +125,143 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (!raf) frame(performance.now());
     }
-    function project(x, y, z, rotY, rotX) {
-      const cy = Math.cos(rotY), sy = Math.sin(rotY);
-      let X = x * cy - z * sy, Z = x * sy + z * cy;
-      const cx = Math.cos(rotX), sx = Math.sin(rotX);
-      const Y = (y - 0.6) * cx - Z * sx; Z = (y - 0.6) * sx + Z * cx;
-      const dist = 9, f = Math.min(w * 1.05, h * 1.9);
-      const s = f / (dist + Z);
-      return [w / 2 + X * s, h * 0.55 - Y * s, Z];
-    }
-    // Soulèvement de la caisse (vue éclatée).
-    const lift = (p, e) => (p[1] > BELT - 0.001 ? [p[0], p[1] + e, p[2]] : p);
 
     function frame(now) {
       raf = 0;
       const t = reduced() ? 0 : Math.max(0, now - t0) / 1000;
       tilt.x += (target.x - tilt.x) * 0.06;
       tilt.y += (target.y - tilt.y) * 0.06;
-      const rotY = -0.62 + Math.sin(t * 0.16) * 0.28 + tilt.x * 0.25;
-      const rotX = 0.36 + tilt.y * 0.1;
-      const explode = reduced() ? 0.42 : 0.34 + 0.12 * (0.5 - 0.5 * Math.cos(t * 0.45));
-      const scanX = reduced() ? 99 : ((t * 0.55) % 6) - 3; // plan de scan le long du véhicule
-      const ink = '#e9e6e1';
-      const accent = css('--rg-yellow', '#efdf00');
+      const rotY = 0.62 + Math.sin(t * 0.16) * 0.3 + tilt.x * 0.25; // 3/4 avant
+      const rotX = 0.38 + tilt.y * 0.08;
+      const cy = Math.cos(rotY), sy = Math.sin(rotY), cx = Math.cos(rotX), sx = Math.sin(rotX);
+      const dist = 7.6, f = Math.min(w * 1.2, h * 2.15);
+      const view = p => { // repère caméra
+        const X = p[0] * cy - p[2] * sy, Z0 = p[0] * sy + p[2] * cy;
+        const Y = (p[1] - 0.66) * cx + Z0 * sx, Z = -(p[1] - 0.66) * sx + Z0 * cx; // caméra au-dessus
+        return [X, Y, Z];
+      };
+      const proj = p => { const v = view(p); const s = f / (dist + v[2]); return [w / 2 + v[0] * s, h * 0.5 - v[1] * s, v[2]]; };
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--rg-yellow').trim() || '#efdf00';
+      const sheen = reduced() ? -9 : ((t * 0.35) % 4) - 2; // reflet balayant
       ctx.clearRect(0, 0, w, h);
-      ctx.lineCap = 'round';
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-      for (const s of segs) {
-        let a = s.a, b = s.b;
-        if (s.kind === 'body' || s.kind === 'ecu-lifted' || s.kind === 'harness-lifted') { a = lift(a, explode); b = lift(b, explode); }
-        const pa = project(a[0], a[1], a[2], rotY, rotX), pb = project(b[0], b[1], b[2], rotY, rotX);
-        const depth = Math.max(0.18, Math.min(1, 0.78 - (pa[2] + pb[2]) * 0.08));
-        const near = Math.abs((a[0] + b[0]) / 2 - scanX) < 0.18;
-        let color = ink, alpha = depth * s.w * 0.55, width = 0.7;
-        if (s.kind === 'grid') { alpha = 0.12; }
-        else if (s.kind === 'wheel') { alpha = depth * 0.55; }
-        else if (s.kind === 'chassis') { alpha = depth * 0.35; }
-        else if (s.kind === 'pack') { color = '#7fd3ff'; alpha = depth * 0.45; }
-        else if (s.kind.startsWith('ecu')) { color = accent; alpha = 0.9; width = 1.2; }
-        else if (s.kind.startsWith('harness')) { color = accent; alpha = 0.32; width = 1; }
-        if (near && s.kind !== 'grid') { alpha = Math.min(1, alpha + 0.35); }
+      // Sol : ombre douce + grille.
+      const c0 = proj([0, 0, 0]);
+      const shadow = ctx.createRadialGradient(c0[0], c0[1], 0, c0[0], c0[1], w * 0.32);
+      shadow.addColorStop(0, 'rgba(0,0,0,.55)'); shadow.addColorStop(1, 'transparent');
+      ctx.fillStyle = shadow; ctx.beginPath(); ctx.ellipse(c0[0], c0[1], w * 0.32, h * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#e9e6e1'; ctx.lineWidth = 0.6; ctx.globalAlpha = 0.07;
+      for (let g = -5; g <= 5; g++) {
+        let a = proj([g * 0.6, 0, -1.8]), b = proj([g * 0.6, 0, 1.8]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+        a = proj([-3, 0, g * 0.36]); b = proj([3, 0, g * 0.36]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+
+      // Panneaux : normale, orientation, profondeur.
+      const camPos = [0, 0, -dist];
+      const faces = model.panels.map(pn => {
+        const vs = pn.pts.map(view);
+        let n = norm(cross(sub(vs[1], vs[0]), sub(vs[vs.length - 1], vs[0])));
+        const c = vs.reduce((acc, v) => [acc[0] + v[0] / vs.length, acc[1] + v[1] / vs.length, acc[2] + v[2] / vs.length], [0, 0, 0]);
+        // Normale orientée vers l'extérieur de la caisse (centre approx. en 0, 0.75, 0).
+        const out = sub(c, view([0, 0.75, 0]));
+        if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0) n = [-n[0], -n[1], -n[2]];
+        const toCam = sub(camPos, c);
+        const front = n[0] * toCam[0] + n[1] * toCam[1] + n[2] * toCam[2] > 0;
+        const lightN = view([0, 0, 0]); // (non utilisé : éclairage dans le repère caméra)
+        void lightN;
+        const shade = 0.35 + 0.65 * Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
+        const worldX = pn.pts.reduce((s, p) => s + p[0], 0) / pn.pts.length;
+        return { pn, pts: pn.pts.map(proj), z: c[2], front, shade, worldX };
+      }).sort((a, b) => b.z - a.z);
+
+      const paint = (f) => {
+        const glass = f.pn.kind === 'glass', roof = f.pn.kind === 'roof', clad = f.pn.kind === 'clad';
+        const sh = f.shade + (Math.abs(f.worldX - sheen) < 0.25 ? 0.35 : 0);
+        const base = glass ? [60, 85, 110] : roof || clad ? [34, 38, 46] : [150, 178, 205];
+        const alpha = glass ? (f.front ? 0.2 : 0.28) : roof ? (f.front ? 0.5 : 0.55) : clad ? (f.front ? 0.55 : 0.35) : (f.front ? 0.2 : 0.3);
         ctx.globalAlpha = alpha;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = width;
-        ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
-      }
-      // Liens pointillés entre la caisse soulevée et le soubassement (lecture « éclatée »).
-      ctx.setLineDash([2, 4]);
-      ctx.globalAlpha = 0.28;
-      ctx.strokeStyle = ink;
-      [[-1.55, -0.86], [-1.55, 0.86], [1.85, -0.82], [1.85, 0.82]].forEach(([x, z]) => {
-        const p = project(x, BELT, z, rotY, rotX), q = project(x, BELT + explode, z, rotY, rotX);
-        ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+        ctx.fillStyle = `rgb(${Math.round(base[0] * sh)},${Math.round(base[1] * sh)},${Math.round(base[2] * sh)})`;
+        ctx.beginPath(); ctx.moveTo(f.pts[0][0], f.pts[0][1]);
+        for (let i = 1; i < f.pts.length; i++) ctx.lineTo(f.pts[i][0], f.pts[i][1]);
+        ctx.closePath(); ctx.fill();
+      };
+      const wheel = ([x, z], near) => {
+        const pts = Array.from({ length: 28 }, (_, k) => { const a = (k / 28) * Math.PI * 2; return proj([x + Math.cos(a) * WR, 0.35 + Math.sin(a) * WR, z]); });
+        ctx.globalAlpha = near ? 0.92 : 0.28; ctx.fillStyle = '#0d0f12';
+        ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.fill();
+        const rim = Array.from({ length: 24 }, (_, k) => { const a = (k / 24) * Math.PI * 2; return proj([x + Math.cos(a) * WR * 0.68, 0.35 + Math.sin(a) * WR * 0.68, z + Math.sign(z) * 0.02]); });
+        ctx.globalAlpha = near ? 0.9 : 0.25; ctx.strokeStyle = '#d6cfa0'; ctx.lineWidth = 1.2;
+        ctx.beginPath(); rim.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.stroke();
+        const hub = proj([x, 0.35, z + Math.sign(z) * 0.02]);
+        for (let k = 0; k < 10; k++) { const p = rim[Math.round(k * 2.4) % 24]; ctx.beginPath(); ctx.moveTo(hub[0], hub[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); }
+      };
+      const nearSide = view([0, 0.35, 1])[2] < view([0, 0.35, -1])[2] ? 1 : -1;
+
+      // 1) Faces arrière + roues éloignées.
+      WHEELS.filter(([, z]) => Math.sign(z) !== nearSide).forEach(wh => wheel(wh, false));
+      faces.filter(f => !f.front).forEach(paint);
+
+      // 2) Intérieur visible au travers.
+      const line = (pts, color, alpha, width) => {
+        const ps = pts.map(proj); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+        ctx.beginPath(); ps.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.stroke();
+      };
+      model.interior.forEach(it => line(it.pts, it.kind === 'pack' ? '#7fd3ff' : '#e9e6e1', it.kind === 'pack' ? 0.45 : it.kind === 'floor' ? 0.22 : 0.4, 0.8));
+      model.paths.forEach(p => line(p, accent, 0.4, 1.1));
+      model.boxes.forEach(c => {
+        const p = c.map(proj);
+        ctx.globalAlpha = 0.28; ctx.fillStyle = accent;
+        ctx.beginPath(); [4, 5, 6, 7].forEach((i, k) => (k ? ctx.lineTo(p[i][0], p[i][1]) : ctx.moveTo(p[i][0], p[i][1]))); ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 0.95; ctx.strokeStyle = accent; ctx.lineWidth = 1.2;
+        [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(([i, j]) => { ctx.beginPath(); ctx.moveTo(p[i][0], p[i][1]); ctx.lineTo(p[j][0], p[j][1]); ctx.stroke(); });
       });
-      ctx.setLineDash([]);
-
-      // Plan de scan.
-      if (scanX < 2.6 && scanX > -2.6) {
-        const top = project(scanX, 1.45 + explode, 0, rotY, rotX), bottom = project(scanX, 0, 0, rotY, rotX);
-        const g = ctx.createLinearGradient(top[0], top[1], bottom[0], bottom[1]);
-        g.addColorStop(0, 'transparent'); g.addColorStop(0.5, 'rgba(239,223,0,.28)'); g.addColorStop(1, 'transparent');
-        ctx.globalAlpha = 1; ctx.strokeStyle = g; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(top[0], top[1]); ctx.lineTo(bottom[0], bottom[1]); ctx.stroke();
-      }
-
-      // Halos des ECU et étiquettes.
-      ctx.font = '600 9px Consolas, monospace';
       ECUS.forEach((e, i) => {
-        const p = e.lifted ? lift(e.pos, explode) : e.pos;
-        const pt = project(p[0], p[1], p[2], rotY, rotX);
+        const pt = proj(e.pos);
         const pulse = reduced() ? 0.6 : 0.45 + 0.35 * Math.sin(t * 2.2 + i * 1.3);
-        const g = ctx.createRadialGradient(pt[0], pt[1], 0, pt[0], pt[1], 22);
-        g.addColorStop(0, `rgba(239,223,0,${0.28 * pulse})`); g.addColorStop(1, 'transparent');
-        ctx.globalAlpha = 1; ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(pt[0], pt[1], 22, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 0.75; ctx.fillStyle = '#f4f2ef';
-        ctx.fillText(e.id, pt[0] + 10, pt[1] - 9);
+        const g = ctx.createRadialGradient(pt[0], pt[1], 0, pt[0], pt[1], 24);
+        g.addColorStop(0, `rgba(239,223,0,${0.32 * pulse})`); g.addColorStop(1, 'transparent');
+        ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(pt[0], pt[1], 24, 0, Math.PI * 2); ctx.fill();
       });
-
-      // Impulsions de courant le long du faisceau.
-      paths.forEach((p, i) => {
-        const pts = p.pts.map((q, k) => (p.lifted && k === p.pts.length - 1 ? lift(q, explode) : q));
+      model.paths.forEach((pts, i) => {
         const lens = []; let total = 0;
-        for (let k = 0; k < pts.length - 1; k++) { const d = Math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1], pts[k + 1][2] - pts[k][2]); lens.push(d); total += d; }
+        for (let k = 0; k < pts.length - 1; k++) { const d = Math.hypot(...sub(pts[k + 1], pts[k])); lens.push(d); total += d; }
         for (let n = 0; n < 2; n++) {
           let u = ((((t * 0.42 + i * 0.17 + n * 0.5) % 1) + 1) % 1) * total;
           let k = 0; while (k < lens.length - 1 && u > lens[k]) { u -= lens[k]; k += 1; }
-          const f = lens[k] ? Math.min(1, u / lens[k]) : 0;
+          const fr = lens[k] ? Math.min(1, u / lens[k]) : 0;
           const a = pts[k], b = pts[k + 1];
-          const pt = project(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, rotY, rotX);
+          const pt = proj([a[0] + (b[0] - a[0]) * fr, a[1] + (b[1] - a[1]) * fr, a[2] + (b[2] - a[2]) * fr]);
           const g = ctx.createRadialGradient(pt[0], pt[1], 0, pt[0], pt[1], 12);
           g.addColorStop(0, accent); g.addColorStop(1, 'transparent');
-          ctx.globalAlpha = 0.85; ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(pt[0], pt[1], 12, 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 1; ctx.fillStyle = '#fffbd0';
-          ctx.beginPath(); ctx.arc(pt[0], pt[1], 2.1, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 0.85; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(pt[0], pt[1], 12, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = 1; ctx.fillStyle = '#fffbd0'; ctx.beginPath(); ctx.arc(pt[0], pt[1], 2.1, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+
+      // 3) Faces avant translucides + roues proches.
+      faces.filter(f => f.front).forEach(paint);
+      WHEELS.filter(([, z]) => Math.sign(z) === nearSide).forEach(wh => wheel(wh, true));
+
+      // Élargisseurs d'ailes noirs autour des roues visibles.
+      WHEELS.filter(([, z]) => Math.sign(z) === nearSide).forEach(([x, z]) => {
+        const arch = Array.from({ length: 19 }, (_, k) => { const a = Math.PI * (k / 18); return [x + Math.cos(a) * 0.47, 0.35 + Math.sin(a) * 0.45, z * 1.14]; });
+        line(arch, '#1b1e23', 0.9, 5);
+        line(arch, '#f2f6ff', 0.35, 0.8);
+      });
+      // 4) Arêtes brillantes, détails, optiques.
+      model.edges.forEach(e => line(e.pts, '#f2f6ff', 0.32 * e.w, 0.8));
+      model.details.forEach(d => line(d.pts, '#f2f6ff', 0.75, d.w));
+      model.lights.forEach(l => {
+        const ps = l.pts.map(proj);
+        ctx.globalAlpha = l.kind === 'head' ? 0.9 : 0.7;
+        ctx.fillStyle = l.kind === 'head' ? 'rgba(255,250,215,.85)' : 'rgba(255,90,80,.7)';
+        ctx.beginPath(); ps.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.fill();
+        if (l.kind === 'head') {
+          const c = ps.reduce((a, p) => [a[0] + p[0] / ps.length, a[1] + p[1] / ps.length], [0, 0]);
+          const g = ctx.createRadialGradient(c[0], c[1], 0, c[0], c[1], 26);
+          g.addColorStop(0, 'rgba(255,248,200,.5)'); g.addColorStop(1, 'transparent');
+          ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c[0], c[1], 26, 0, Math.PI * 2); ctx.fill();
         }
       });
       ctx.globalAlpha = 1;

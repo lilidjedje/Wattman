@@ -13,7 +13,7 @@ test('illustration 3D : véhicule éclaté animé, fluide, figé en mouvement r�
     localStorage.setItem('engineeringAuthUser', JSON.stringify((await response.json()).user));
   }, { email: app.adminEmail, password: app.password });
   await go(page, '/');
-  await expect(page.locator('.stage-caption')).toContainText('ARCHITECTURE ÉLECTRIQUE · VUE ÉCLATÉE');
+  await expect(page.locator('.stage-caption, .stage-legend')).toHaveCount(0); // ni titre ni légende
   const canvas = page.locator('canvas[data-rg-hero3d]');
   await expect(canvas).toBeVisible();
   const sample = () => canvas.evaluate(c => c.toDataURL('image/png').length);
@@ -33,12 +33,18 @@ test('cartes outils : dépliage animé des sections réelles, une seule ouverte'
   await go(page, '/');
   const tools = page.locator('.hub-tool');
   await expect(tools).toHaveCount(4);
+  // Les quatre cartes ont exactement la même taille.
+  const sizes = await tools.evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)}`; }));
+  expect(new Set(sizes).size).toBe(1);
   await tools.nth(0).click();
   await expect(tools.nth(0)).toHaveAttribute('aria-expanded', 'true');
   await expect(tools.nth(0).locator('.hub-tool-detail li')).toHaveText(['Configuration', 'DCDC Sizing', 'WLTC (-7 °C)', 'PAO', 'GMV', 'Synthèse']);
   await expect(tools.nth(0).locator('.hub-tool-detail li').first()).toBeVisible();
   await tools.nth(3).click();
   await expect(tools.nth(3)).toHaveAttribute('aria-expanded', 'true');
+  // La carte ouverte n'agrandit pas les autres : les trois cartes fermées restent identiques.
+  const closed = await tools.evaluateAll(els => els.filter(e => e.getAttribute('aria-expanded') !== 'true').map(e => { const r = e.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)}`; }));
+  expect(new Set(closed).size).toBe(1);
   await expect(tools.nth(0)).toHaveAttribute('aria-expanded', 'false');
   const accent = await tools.nth(3).evaluate(el => getComputedStyle(el).getPropertyValue('--acc').trim());
   expect(accent).not.toBe('');
@@ -63,8 +69,9 @@ test('cartes projets : couleur par type, puces, badge, animation d’ouverture',
   await expect(ev.locator('.hub-badge')).toHaveAttribute('title', 'EV (SUV)');
   await expect(ice.locator('.hub-badge')).toHaveAttribute('title', 'ICE (VU - XDD)');
   await expect(ev.locator('.hub-chip')).toHaveText(['JalonA', 'PilotePilote A', /^Modifié\d{2}\/\d{2}\/\d{4}$/]);
-  const [evColor, iceColor] = await Promise.all([ev, ice].map(l => l.evaluate(el => getComputedStyle(el).getPropertyValue('--acc').trim())));
-  expect(evColor).not.toBe(iceColor);
+  // Néon jaune Renault sur toutes les cartes projets.
+  const accents = await Promise.all([ev, ice].map(l => l.evaluate(el => getComputedStyle(el).borderLeftColor + '|' + getComputedStyle(el, '::before').backgroundColor)));
+  accents.forEach(a => expect(a.split('|')[1]).toBe('rgb(239, 223, 0)'));
   await page.locator('.rg-appbar .rg-icon-btn[aria-label*="sombre"]').click();
   await page.waitForTimeout(600);
   await page.screenshot({ path: path.join(SHOTS, 'hub-dark.png') });

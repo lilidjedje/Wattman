@@ -12,11 +12,16 @@
   }
 
   /* ------------------------------------------------------- Cartes outils */
-  .hub-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 680px; margin: 6px 0 0; padding: 0; list-style: none; }
+  .hub-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; align-items: start; gap: 12px; max-width: 680px; margin: 6px 0 0; padding: 0; list-style: none; }
+  .hub-tools > li { display: flex; }
+  /* Taille identique pour les cartes fermées ; la carte ouverte occupe toute la ligne. */
+  html body .hub-tool.hub-tool.hub-tool:not([aria-expanded="true"]) { height: 176px; }
+  .hub-tools > li:has(> .hub-tool[aria-expanded="true"]) { grid-column: 1 / -1; }
+  html body .hub-tool .hub-tool-desc { display: -webkit-box !important; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
   .hub-tool { --acc: var(--rg-yellow); }
   html body .hub-tool.hub-tool.hub-tool {
     position: relative; display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 4px 14px;
-    width: 100%; min-height: 0; padding: 16px 16px 16px 14px; overflow: hidden; isolation: isolate;
+    width: 100%; height: 100%; min-height: 0; padding: 16px 16px 16px 14px; overflow: hidden; isolation: isolate; align-content: start;
     color: var(--rg-ink) !important; text-align: left; cursor: pointer;
     background:
       radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--acc) 13%, transparent), transparent 55%),
@@ -93,7 +98,7 @@
   /* ------------------------------------------------------- Scène 3D (sombre) */
   html body.rg-home .home-stage.home-stage {
     position: relative; display: flex; flex-direction: column; justify-content: flex-start; overflow: hidden;
-    padding: 84px clamp(24px, 4vw, 56px) 32px; color: #f4f2ef;
+    padding: 28px clamp(24px, 4vw, 56px) 32px; color: #f4f2ef;
     background:
       radial-gradient(70% 55% at 50% 38%, rgba(239, 223, 0, .07), transparent 70%),
       radial-gradient(60% 50% at 85% 10%, rgba(54, 214, 255, .06), transparent 70%),
@@ -101,10 +106,6 @@
     border-left: 1px solid rgba(255, 255, 255, .06);
   }
   .home-stage canvas { position: relative; display: block; flex: none; width: calc(100% + 2 * clamp(24px, 4vw, 56px)); height: clamp(300px, 46vh, 520px); margin: 0 calc(-1 * clamp(24px, 4vw, 56px)) 12px; }
-  .stage-caption { position: absolute; top: 24px; left: clamp(24px, 4vw, 56px); right: 24px; display: flex; justify-content: space-between; color: rgba(244, 242, 239, .55); font: 600 .72rem/1.3 var(--rg-font-mono); letter-spacing: .08em; }
-  .stage-caption span:first-child::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 9px; border-radius: 50%; background: var(--rg-yellow); box-shadow: 0 0 10px var(--rg-yellow); vertical-align: 1px; }
-  .stage-legend { position: absolute; top: 48px; left: clamp(24px, 4vw, 56px); display: flex; gap: 14px; color: rgba(244, 242, 239, .5); font: 600 .66rem/1 var(--rg-font-sans); letter-spacing: .1em; text-transform: uppercase; }
-  .stage-legend i { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: 3px; }
 
   /* ------------------------------------------------------- Projets récents */
   .recent { position: relative; z-index: 1; }
@@ -112,7 +113,7 @@
   html body.rg-home .recent-head h2 { margin: 0; color: rgba(244, 242, 239, .62) !important; font: 700 .74rem/1 var(--rg-font-sans) !important; letter-spacing: .16em !important; text-transform: uppercase; }
   .recent-head span { color: rgba(244, 242, 239, .5); font-size: .74rem; font-variant-numeric: tabular-nums; }
   #recent-projects { display: grid; gap: 8px; }
-  .hub-project { --acc: var(--acc-ev); }
+  .hub-project { --acc: var(--rg-yellow); } /* néon jaune Renault, quel que soit le type */
   html body.rg-home .hub-project.hub-project {
     position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 16px; width: 100%;
     padding: 13px 16px 13px 18px; overflow: hidden; cursor: pointer; text-align: left;
@@ -123,7 +124,6 @@
     animation: hub-in 480ms var(--rg-ease-out) both; animation-delay: calc(var(--i, 0) * 70ms);
     transition: transform 240ms var(--rg-ease-out), border-color 220ms ease, box-shadow 240ms ease, background 220ms ease !important;
   }
-  .hub-project[data-type="ice"] { --acc: var(--acc-ice); }
   html body.rg-home .hub-project.hub-project::before {
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--acc); box-shadow: 0 0 14px var(--acc);
   }
@@ -171,8 +171,7 @@
 
   /* Liste « Projets existants » (dialogue) : mêmes repères visuels */
   html body.rg-home #projects .project-card.project-card { position: relative; border-left: 3px solid var(--acc, var(--acc-ev)) !important; transition: transform 200ms var(--rg-ease-out), box-shadow 200ms ease, border-color 200ms ease !important; }
-  html body.rg-home #projects .project-card[data-type="ice"] { --acc: var(--acc-ice); }
-  html body.rg-home #projects .project-card[data-type="ev"] { --acc: var(--acc-ev); }
+  html body.rg-home #projects .project-card { --acc: var(--rg-yellow); }
   @media (hover: hover) {
     html body.rg-home #projects .project-card.project-card:hover { transform: translateX(3px) !important; box-shadow: 0 10px 24px -16px var(--acc) !important; }
   }
