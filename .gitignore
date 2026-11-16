@@ -67,3 +67,8 @@ outputs/
 
 # Test and diagnostic artefacts
 tmp/
+
+# Local tooling / FreeCAD backups
+*.FCBak
+.agents/
+skills-lock.json
