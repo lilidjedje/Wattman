@@ -263,6 +263,29 @@ html body .cal-run.panel.multi { grid-column: 1 / -1; }
 .cal-channel-block .cal-readings legend { color: var(--ch-color); }
 .cal-channel-switch { margin-left: auto; }
 
+/* Valeurs lues dans la mesure (lecture seule) */
+.cal-readonly { display: grid; gap: 7px; }
+.cal-readonly > span { color: var(--rg-ink); font-weight: 700; }
+.cal-readonly output {
+    display: flex; align-items: center; min-height: 44px; padding: 8px 11px;
+    border: 1px dashed var(--rg-line-strong); border-radius: var(--rg-radius-sm, 6px);
+    background: var(--rg-surface-sunken, var(--rg-surface-2)); color: var(--rg-ink);
+    font: 650 .92rem var(--rg-font-mono, Consolas, monospace);
+}
+.cal-values {
+    display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--rg-radius-sm, 6px);
+    border: 1px solid color-mix(in srgb, var(--ch-color, var(--run-color)) 30%, var(--rg-line)); background: var(--rg-surface-2);
+}
+.cal-values-title { margin: 0 0 6px; color: var(--ch-color, var(--run-color)); font-weight: 750; font-size: .85rem; }
+.cal-value-row {
+    display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 10px;
+    padding: 7px 0; border-top: 1px solid var(--rg-line);
+}
+.cal-value-row:first-of-type { border-top: 0; }
+.cal-value-row > span { color: var(--rg-ink-2); font-weight: 650; font-size: .85rem; }
+.cal-value-row output { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.cal-value-row output b { color: var(--rg-ink); font: 700 .95rem var(--rg-font-mono, Consolas, monospace); }
+
 /* Synthèse */
 .cal-verdict {
     display: flex; align-items: center; gap: 22px; padding: 20px 24px; border-radius: var(--rg-radius-lg, 16px);

@@ -446,7 +446,7 @@
                     <select name="source_file">${sourceOptions(run.source_file)}</select>
                 </label>
                 <div class="cal-grid-2">
-                    <label class="field">Début (s) <input name="start_offset_s" inputmode="decimal" value="${fromAmpsRaw(run.start_offset_s)}" placeholder="0" title="Décalage depuis le premier échantillon de la mesure"></label>
+                    <div class="field cal-readonly"><span>Début</span><output data-start title="Date et heure du premier échantillon analysé, lues dans la mesure">—</output></div>
                     <label class="field">Éch. relevés <input name="samples_reported" inputmode="numeric" value="${run.samples_reported ?? ''}" placeholder="${count(expected)}"></label>
                 </div>
                 <div class="cal-channel-blocks">${campaignChannels().map(channel => channelBlock(index, channel, channelRun(run, channel), protocol)).join('')}</div>
@@ -473,16 +473,13 @@
                             <option value="10" ${flukeInput(run) === 10 ? 'selected' : ''}>A · 10 A max</option>
                         </select>
                     </label>
-                    <fieldset class="cal-readings">
-                        <legend>Relevés Fluke (${state.unit})</legend>
+                    <div class="cal-values" role="list" aria-label="Valeurs relevées dans la mesure, canal ${channel}">
+                        <p class="cal-values-title">Valeurs relevées dans la mesure</p>
                         ${protocol.checkpoints_s.map(cp => `
-                        <div class="cal-reading"><label for="ref_${id}_${cp}">I à ${count(cp)} s</label>
-                            <input id="ref_${id}_${cp}" data-checkpoint="${cp}" inputmode="decimal" autocomplete="off" value="${fromAmps(run.reference?.[String(cp)])}">
-                            <em data-cp-status="${cp}"></em>
-                        </div>`).join('')}
-                        <div class="cal-reading"><label for="min_${id}">MIN</label><input id="min_${id}" name="fluke_min_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_min_A)}"><em data-ext-status="min"></em></div>
-                        <div class="cal-reading"><label for="max_${id}">MAX</label><input id="max_${id}" name="fluke_max_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_max_A)}"><em data-ext-status="max"></em></div>
-                    </fieldset>
+                        <div class="cal-value-row" role="listitem"><span>I à ${count(cp)} s</span><output data-cp-value="${cp}">—</output></div>`).join('')}
+                        <div class="cal-value-row" role="listitem"><span>MIN</span><output data-ext-value="min">—</output></div>
+                        <div class="cal-value-row" role="listitem"><span>MAX</span><output data-ext-value="max">—</output></div>
+                    </div>
                     <div class="cal-run-live" data-live></div>
                 </section>`;
     }
@@ -505,24 +502,21 @@
             if (Number.isNaN(value)) throw new Error(`Valeur invalide : ${label}.`);
             return value;
         };
+        const stored = runData(Number(card.dataset.run));
         const channels = {};
         card.querySelectorAll('[data-channel-block]').forEach(section => {
             const channel = section.dataset.channelBlock;
-            const reference = {};
-            section.querySelectorAll('[data-checkpoint]').forEach(input => {
-                const value = number(input, true, `canal ${channel} à ${input.dataset.checkpoint} s`);
-                if (value != null) reference[input.dataset.checkpoint] = value;
-            });
+            const view = channelRun(stored, channel);
             channels[channel] = {
-                reference,
+                reference: view.reference || {},
                 fluke_range_A: section.querySelector('[name="fluke_range_A"]').value || null,
-                fluke_min_A: number(section.querySelector('[name="fluke_min_A"]'), true, `MIN canal ${channel}`),
-                fluke_max_A: number(section.querySelector('[name="fluke_max_A"]'), true, `MAX canal ${channel}`),
+                fluke_min_A: view.fluke_min_A ?? null,
+                fluke_max_A: view.fluke_max_A ?? null,
             };
         });
         const common = {
             source_file: field('source_file').value || null,
-            start_offset_s: number(field('start_offset_s'), false, 'début'),
+            start_offset_s: field('source_file').value === stored.source_file ? (stored.start_offset_s || 0) : 0,
             samples_reported: field('samples_reported').value.replace(/\s/g, '') || null,
             ambient_c: number(field('ambient_c'), false, 'température ambiante'),
             notes: field('notes').value,
@@ -565,52 +559,48 @@
     });
 
     function incomplete(slot, text) {
-        slot.className = 'cal-pill missing';
-        slot.textContent = `Incomplet · ${text}`;
+        slot.innerHTML = `<span class="cal-pill missing">Incomplet · ${escapeHtml(text)}</span>`;
         slot.title = 'Aucun échantillon de la mesure ne couvre cet instant.';
+    }
+    function dateTime(timestamp) {
+        return new Date(timestamp * 1000).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'});
     }
     function renderRunLive() {
         if (!state.full) return;
+        const starts = {};
         state.full.channels.forEach(channel => state.full.by_channel[channel].runs.forEach(run => {
+            if (run.start_timestamp != null && (starts[run.run_index] == null || run.start_timestamp < starts[run.run_index])) starts[run.run_index] = run.start_timestamp;
             const section = document.querySelector(`.cal-run[data-run="${run.run_index}"] [data-channel-block="${channel}"]`);
             if (!section) return;
-            const live = section.querySelector('[data-live]');
-            if (!run.has_data) {
-                live.innerHTML = `<span class="cal-pill missing">Incomplet · ${run.source_file ? `aucun échantillon du canal ${channel} dans cette mesure` : 'aucune mesure reliée'}</span>`;
-            } else {
-                const completeness = Math.min(100, run.completeness_pct || 0);
-                const tone = completeness >= 99 ? 'ok' : completeness >= 95 ? 'warn' : 'bad';
-                live.innerHTML = `
-                    <div class="cal-meter ${tone}" title="Complétude"><span style="width:${completeness}%"></span></div>
-                    <div class="cal-live-grid">
-                        <span><b>${count(run.samples)}</b> / ${count(run.samples_expected)} éch. (${pct(run.completeness_pct, 1)})</span>
-                        <span>Durée couverte <b>${nf(1).format(Math.max(0, (run.last_t_s || 0) - (run.first_t_s || 0)))} s</b></span>
-                        <span>Moyenne <b>${amps(run.mean_A)}</b></span>
-                        <span>σ <b>${amps(run.std_A)}</b></span>
-                        <span>Min <b>${amps(run.min_A)}</b> · Max <b>${amps(run.max_A)}</b></span>
-                        <span>Dérive <b>${signed(run.drift_A_per_min)}</b>/min</span>
-                    </div>`;
-            }
+            const absent = run.source_file ? `canal ${channel} absent de cette mesure` : 'aucune mesure reliée';
+            section.querySelector('[data-live]').innerHTML = run.has_data
+                ? `<div class="cal-live-grid"><span>Échantillons <b>${count(run.samples)}</b></span><span>Durée couverte <b>${nf(1).format(Math.max(0, (run.last_t_s || 0) - (run.first_t_s || 0)))} s</b></span></div>`
+                : `<span class="cal-pill missing">Incomplet · ${absent}</span>`;
             run.checkpoints.forEach(cp => {
-                const slot = section.querySelector(`[data-cp-status="${cp.t_s}"]`);
+                const slot = section.querySelector(`[data-cp-value="${cp.t_s}"]`);
                 if (!slot) return;
-                if (!run.has_data) return incomplete(slot, run.source_file ? `canal ${channel} absent de cette mesure` : 'aucune mesure reliée');
+                if (!run.has_data) return incomplete(slot, absent);
                 if (cp.ina_mean_A == null) return incomplete(slot, `pas de mesure à ${count(cp.t_s)} s`);
-                slot.className = `cal-pill ${cp.error_A != null ? cp.status : 'neutral'}`;
-                slot.textContent = cp.error_A != null ? `INA ${amps(cp.ina_mean_A)} · écart ${signed(cp.error_A)}` : `INA ${amps(cp.ina_mean_A)} (moyenne ${count(cp.samples)} éch.)`;
-                slot.title = cp.error_A != null ? `${STATUS[cp.status][0]} — limite Fluke ±${amps(cp.reference_limit_A)} (${cp.reference_formula})` : 'Valeur trouvée dans la mesure : saisissez la lecture du Fluke pour calculer l’écart.';
+                slot.title = `Moyenne de ${count(cp.samples)} échantillons autour de ${count(cp.t_s)} s`;
+                slot.innerHTML = `<b>${amps(cp.ina_mean_A)}</b>${cp.error_A != null
+                    ? ` <span class="cal-pill ${cp.status}" title="Fluke ${amps(cp.reference_A)} · limite ±${amps(cp.reference_limit_A)}">écart ${signed(cp.error_A)}</span>` : ''}`;
             });
             ['min', 'max'].forEach(kind => {
-                const slot = section.querySelector(`[data-ext-status="${kind}"]`);
+                const slot = section.querySelector(`[data-ext-value="${kind}"]`);
                 const extreme = (run.extremes || []).find(item => item.kind === kind);
                 if (!slot) return;
-                if (!run.has_data || !extreme) return incomplete(slot, run.source_file ? `canal ${channel} absent de cette mesure` : 'aucune mesure reliée');
-                slot.className = 'cal-pill neutral';
-                slot.textContent = extreme.error_raw_A != null
-                    ? `INA ${amps(extreme.ina_raw_A)} · écart ${signed(extreme.error_raw_A)} (lissé ${signed(extreme.error_smoothed_A)})`
-                    : `INA ${kind.toUpperCase()} ${amps(extreme.ina_raw_A)} · lissé ${amps(extreme.ina_smoothed_A)}`;
+                if (!run.has_data || !extreme) return incomplete(slot, absent);
+                slot.title = `Lissé (${nf(2).format(state.full.protocol.smoothing_s)} s) : ${amps(extreme.ina_smoothed_A)}`;
+                slot.innerHTML = `<b>${amps(extreme.ina_raw_A)}</b>${extreme.error_raw_A != null
+                    ? ` <span class="cal-pill neutral" title="Fluke ${amps(extreme.reference_A)}">écart ${signed(extreme.error_raw_A)}</span>` : ''}`;
             });
         }));
+        document.querySelectorAll('.cal-run').forEach(card => {
+            const slot = card.querySelector('[data-start]');
+            const timestamp = starts[Number(card.dataset.run)];
+            if (slot) slot.textContent = timestamp != null ? dateTime(timestamp) : 'Incomplet · aucune donnée';
+        });
         ['A', 'B'].forEach(channel => {
             const runs = state.full.by_channel[channel]?.runs || [];
             const reading = runs.flatMap(run => run.checkpoints).find(cp => cp.reference_A != null)?.reference_A;
