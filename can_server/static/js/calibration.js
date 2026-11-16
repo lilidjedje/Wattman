@@ -473,12 +473,28 @@
                             <option value="10" ${flukeInput(run) === 10 ? 'selected' : ''}>A · 10 A max</option>
                         </select>
                     </label>
-                    <div class="cal-values" role="list" aria-label="Valeurs relevées dans la mesure, canal ${channel}">
-                        <p class="cal-values-title">Valeurs relevées dans la mesure</p>
+                    <div class="cal-compare" role="table" aria-label="Lecture Fluke et valeur mesurée par l’INA226, canal ${channel}">
+                        <div class="cal-compare-head" role="row">
+                            <span role="columnheader"></span>
+                            <span role="columnheader" class="cal-col-fluke"><i aria-hidden="true">✎</i> Fluke 287 · votre lecture (${state.unit})</span>
+                            <span role="columnheader" class="cal-col-ina"><i aria-hidden="true">◉</i> INA226 · mesuré</span>
+                        </div>
                         ${protocol.checkpoints_s.map(cp => `
-                        <div class="cal-value-row" role="listitem"><span>I à ${count(cp)} s</span><output data-cp-value="${cp}">—</output></div>`).join('')}
-                        <div class="cal-value-row" role="listitem"><span>MIN</span><output data-ext-value="min">—</output></div>
-                        <div class="cal-value-row" role="listitem"><span>MAX</span><output data-ext-value="max">—</output></div>
+                        <div class="cal-compare-row" role="row">
+                            <label role="rowheader" for="ref_${id}_${cp}">I à ${count(cp)} s</label>
+                            <input class="cal-fluke-input" id="ref_${id}_${cp}" data-checkpoint="${cp}" inputmode="decimal" autocomplete="off" placeholder="lecture Fluke" value="${fromAmps(run.reference?.[String(cp)])}">
+                            <output class="cal-ina-value" data-cp-value="${cp}">—</output>
+                        </div>`).join('')}
+                        <div class="cal-compare-row" role="row">
+                            <label role="rowheader" for="min_${id}">MIN</label>
+                            <input class="cal-fluke-input" id="min_${id}" name="fluke_min_A" inputmode="decimal" autocomplete="off" placeholder="lecture Fluke" value="${fromAmps(run.fluke_min_A)}">
+                            <output class="cal-ina-value" data-ext-value="min">—</output>
+                        </div>
+                        <div class="cal-compare-row" role="row">
+                            <label role="rowheader" for="max_${id}">MAX</label>
+                            <input class="cal-fluke-input" id="max_${id}" name="fluke_max_A" inputmode="decimal" autocomplete="off" placeholder="lecture Fluke" value="${fromAmps(run.fluke_max_A)}">
+                            <output class="cal-ina-value" data-ext-value="max">—</output>
+                        </div>
                     </div>
                     <div class="cal-run-live" data-live></div>
                 </section>`;
@@ -506,12 +522,16 @@
         const channels = {};
         card.querySelectorAll('[data-channel-block]').forEach(section => {
             const channel = section.dataset.channelBlock;
-            const view = channelRun(stored, channel);
+            const reference = {};
+            section.querySelectorAll('[data-checkpoint]').forEach(input => {
+                const value = number(input, true, `Fluke canal ${channel} à ${input.dataset.checkpoint} s`);
+                if (value != null) reference[input.dataset.checkpoint] = value;
+            });
             channels[channel] = {
-                reference: view.reference || {},
+                reference,
                 fluke_range_A: section.querySelector('[name="fluke_range_A"]').value || null,
-                fluke_min_A: view.fluke_min_A ?? null,
-                fluke_max_A: view.fluke_max_A ?? null,
+                fluke_min_A: number(section.querySelector('[name="fluke_min_A"]'), true, `MIN Fluke canal ${channel}`),
+                fluke_max_A: number(section.querySelector('[name="fluke_max_A"]'), true, `MAX Fluke canal ${channel}`),
             };
         });
         const common = {

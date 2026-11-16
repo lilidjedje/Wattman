@@ -263,6 +263,36 @@ html body .cal-run.panel.multi { grid-column: 1 / -1; }
 .cal-channel-block .cal-readings legend { color: var(--ch-color); }
 .cal-channel-switch { margin-left: auto; }
 
+/* Lecture Fluke (saisie) face à la valeur mesurée par l'INA226 (lecture seule) */
+.cal-compare {
+    --fluke: #e8a33d;
+    --ina: var(--ch-color, #1f5fbf);
+    display: grid; gap: 0; border-radius: var(--rg-radius-md, 10px); overflow: hidden;
+    border: 1px solid var(--rg-line); background: var(--rg-surface);
+}
+.cal-compare-head, .cal-compare-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1.15fr); align-items: stretch; }
+.cal-compare-head > span { padding: 8px 10px; font: 700 .72rem var(--rg-font-mono, Consolas, monospace); letter-spacing: .02em; }
+.cal-compare-head i { font-style: normal; margin-right: 4px; }
+.cal-col-fluke { color: color-mix(in srgb, var(--fluke) 85%, var(--rg-ink)); background: color-mix(in srgb, var(--fluke) 14%, transparent); border-bottom: 2px solid var(--fluke); }
+.cal-col-ina { color: var(--ina); background: color-mix(in srgb, var(--ina) 12%, transparent); border-bottom: 2px solid var(--ina); }
+.cal-compare-row { border-top: 1px solid var(--rg-line); }
+.cal-compare-head + .cal-compare-row { border-top: 0; }
+.cal-compare-row > label { display: flex; align-items: center; padding: 6px 10px; color: var(--rg-ink-2); font-weight: 700; font-size: .82rem; }
+html body .cal-compare-row .cal-fluke-input {
+    width: 100%; min-height: 42px; margin: 0; border-radius: 0 !important;
+    border: 0 !important; border-left: 3px solid var(--fluke) !important;
+    background: color-mix(in srgb, var(--fluke) 9%, var(--rg-surface)) !important; color: var(--rg-ink) !important;
+    font: 700 .95rem var(--rg-font-mono, Consolas, monospace) !important;
+}
+html body .cal-compare-row .cal-fluke-input::placeholder { color: var(--rg-ink-3); font-weight: 400; font-style: italic; font-size: .8rem; }
+html body .cal-compare-row .cal-fluke-input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--fluke) !important; }
+.cal-compare-row .cal-ina-value {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; min-width: 0;
+    border-left: 3px solid var(--ina); background: color-mix(in srgb, var(--ina) 7%, var(--rg-surface-2));
+}
+.cal-compare-row .cal-ina-value b { color: var(--rg-ink); font: 700 .92rem var(--rg-font-mono, Consolas, monospace); }
+.cal-compare-row .cal-ina-value .cal-pill { font-size: .7rem; }
+
 /* Valeurs lues dans la mesure (lecture seule) */
 .cal-readonly { display: grid; gap: 7px; }
 .cal-readonly > span { color: var(--rg-ink); font-weight: 700; }
