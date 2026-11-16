@@ -432,3 +432,6 @@ input, select {
     .system-strip { flex-direction: column; }
     .selection-toolbar { align-items: stretch; flex-direction: column; }
 }
+
+/* Lien de la bande système vers la rubrique Logs ASC et base locale */
+.system-strip .system-strip-link { align-self: center; margin-left: auto; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }

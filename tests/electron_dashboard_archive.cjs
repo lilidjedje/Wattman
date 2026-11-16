@@ -30,8 +30,8 @@ async function run(win) {
         throw Error(`Timeout: ${expression}; ${await js("document.getElementById('logSearchStatus')?.textContent")}`);
     };
     const idle = () => until("!document.getElementById('logSearch').disabled");
-    await js("location.href='/analyse_logs/dashboard/import'; true");
-    await until("location.pathname === '/analyse_logs/dashboard/import' && !!document.getElementById('ascFiles')");
+    await js("location.href='/analyse_logs/database'; true");
+    await until("location.pathname === '/analyse_logs/database' && !!document.getElementById('ascFiles')");
     const files = fs.readdirSync('test_asc').filter(name => name.endsWith('.asc')).sort().map(name => path.resolve('test_asc', name));
     win.webContents.debugger.attach('1.3');
     const dom = await win.webContents.debugger.sendCommand('DOM.getDocument');
@@ -41,6 +41,8 @@ async function run(win) {
     console.log('PAGE_TEST import');
     await js("document.getElementById('uploadForm').requestSubmit()");
     await until("!document.getElementById('decodeResult').hidden && !document.getElementById('decodeButton').disabled");
+    await js("location.href='/analyse_logs/dashboard/import'; true");
+    await until("location.pathname === '/analyse_logs/dashboard/import' && !!document.getElementById('logSource')");
     await until("document.getElementById('logSource').options.length === 4");
     console.log('PAGE_TEST search');
     await js("document.querySelector('#logFilterForm [name=graph]').checked = true; document.getElementById('logFilterForm').requestSubmit()");

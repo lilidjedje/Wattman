@@ -35,8 +35,8 @@ async function run(win){
   } finally {win.webContents.debugger.detach();}
  };
  const files=fs.readdirSync('test_asc').filter(f=>f.endsWith('.asc')).sort().map(f=>path.resolve('test_asc',f));
- await win.loadURL('app://local/analyse_logs/dashboard/import');
- await until("document.getElementById('logSearchStatus').textContent.includes('Importez')");
+ await win.loadURL('app://local/analyse_logs/database');
+ await until("!!document.getElementById('ascFiles')");
  win.webContents.debugger.attach('1.3');
  const dom=await win.webContents.debugger.sendCommand('DOM.getDocument');
  const input=await win.webContents.debugger.sendCommand('DOM.querySelector',{nodeId:dom.root.nodeId,selector:'#ascFiles'});
@@ -48,6 +48,7 @@ async function run(win){
  assert.equal(await js("document.querySelectorAll('#fileResultsA tr').length"),4);
  await js("document.getElementById('decodeResult').scrollIntoView()");await shot('import-real-files');
  const sessionId=await js("fetch('/analyse_logs/api/measurement_sessions').then(r=>r.json()).then(d=>d.sessions[0].id)");
+ await win.loadURL('app://local/analyse_logs/dashboard/import');
  await until("document.getElementById('logSource').options.length===4");
  // Beyond the A endpoint of L214, only B has real samples.
  const lastA=new Date(2026,10,2,11,6,40,141).getTime()/1000+437.576582;
@@ -89,7 +90,7 @@ async function run(win){
   results.push(summary);console.log('CHECKED',mode);
  }
  // Reimport only the actual 5/10-minute test: no prior logs or pauses.
- await win.loadURL('app://local/analyse_logs/dashboard/import');
+ await win.loadURL('app://local/analyse_logs/database');
  win.webContents.debugger.attach('1.3');
  const singleDom=await win.webContents.debugger.sendCommand('DOM.getDocument');
  const singleInput=await win.webContents.debugger.sendCommand('DOM.querySelector',{nodeId:singleDom.root.nodeId,selector:'#ascFiles'});

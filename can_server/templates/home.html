@@ -59,8 +59,20 @@
             <article class="module-card">
                 <span class="module-index">MODULE 02 / EXPLOITATION</span>
                 <h2>Dashboard</h2>
-                <p id="dashboardDescription">Consultez toutes les mesures CAN et numériques enregistrées, sans connexion à l’ESP32-C3 ni à l’écran OLED.</p>
+                <p id="dashboardDescription">Explorez, filtrez et triez toutes les mesures CAN et numériques enregistrées, sans connexion à l’ESP32-C3 ni à l’écran OLED.</p>
                 <a class="button" id="dashboardButton" href="{{ url_for('dashboard_entry') }}">Ouvrir le dashboard</a>
+            </article>
+            <article class="module-card database-module-card">
+                <span class="module-index">MODULE 03 / DONNÉES</span>
+                <h2>Logs ASC et base locale</h2>
+                <p>Importez et décodez les logs CAN ASC, identifiez chaque enregistrement (ASC ou numérique, date, heure, canal), supprimez une sélection ou réinitialisez la base.</p>
+                <a class="button" id="databaseButton" href="{{ url_for('database_manager') }}">Gérer la base</a>
+            </article>
+            <article class="module-card calibration-module-card">
+                <span class="module-index">MODULE 04 / CALIBRATION</span>
+                <h2>Calibration</h2>
+                <p>Comparez une voie INA226 au multimètre de référence Fluke 287 : complétude, bruit, dérive, offset, incertitudes, Allan et Bland-Altman, à partir de la base de mesures du projet.</p>
+                <a class="button" id="calibrationButton" href="{{ url_for('calibration_page') }}">Ouvrir la calibration</a>
             </article>
         </section>
 

@@ -22,6 +22,8 @@ from can_parser import iter_asc_stream_rows
 from sharepoint_sync import backup_to_sharepoint_local_mount
 from can_collector import TcpCanCollector
 from log_explorer import register_log_explorer
+from calibration import register_calibration
+from database_catalog import describe_sources, delete_sources
 from sizing_comparison import coverage_spans, compare_interval, missing_ranges
 from autonomy_analysis import build_autonomy
 
@@ -174,6 +176,13 @@ def saved_dashboards():
 def project_scope(project):
     project = project if isinstance(project, dict) else {}
     return str(project.get("id") or project.get("name") or "").strip()
+
+
+register_calibration(
+    app,
+    project_id_provider=lambda: project_scope(theory_snapshot().get("project", {})),
+    project_provider=lambda: theory_snapshot().get("project", {}),
+)
 
 
 def dashboard_source(session):
@@ -380,6 +389,12 @@ def dashboard_import():
                            archive=({"id": archive["id"], "name": archive["dashboard_name"],
                                      "saved_at": archive["saved_at"],
                                      "state": json.loads(archive["view_json"]).get("explorer", {})} if archive else None))
+
+
+@app.route("/database")
+def database_manager():
+    # Rubrique dédiée : sélection des logs ASC et gestion de la base locale.
+    return render_template("database_manager.html", theory=theory_snapshot())
 
 
 @app.route("/dashboard/setup")
@@ -1399,6 +1414,49 @@ def upload_and_ingest_measures(local_files=None):
     })
 
 
+@app.route("/api/database_sources")
+def database_sources():
+    init_db()
+    conn = get_db_connection()
+    try:
+        return jsonify({"sources": describe_sources(conn)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/database_sources/delete", methods=["POST"])
+def delete_database_sources():
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        return jsonify({"status": "error", "message": "Sélectionnez au moins un fichier ou un canal à supprimer."}), 400
+    if active_measurement.get("status") == "running":
+        running = set(active_measurement.get("source_files") or [])
+        if any(str((item or {}).get("source_file")) in running for item in items if isinstance(item, dict)):
+            return jsonify({"status": "error", "message": "Arrêtez la mesure en cours avant de supprimer ses données."}), 409
+    init_db()
+    conn = get_db_connection()
+    try:
+        deleted, removed = delete_sources(conn, [item for item in items if isinstance(item, dict)])
+        conn.commit()
+    finally:
+        conn.close()
+    if removed:
+        with measurement_lock:
+            sessions = measurement_sessions()
+            for session in sessions:
+                if session.get("source_files"):
+                    session["source_files"] = [name for name in session["source_files"] if name not in removed]
+            write_json_file(SESSIONS_FILE, sessions)
+    return jsonify({
+        "status": "success",
+        "message": f"{deleted:,} mesures supprimées".replace(",", " ")
+                   + (f", {len(removed)} enregistrement(s) retiré(s) de la base." if removed else "."),
+        "deleted_measurements": deleted,
+        "removed_sources": removed,
+    })
+
+
 @app.route("/api/purge_database", methods=["POST"])
 def purge_database():
     try:
@@ -1957,7 +2015,7 @@ def control_esp_acquisition():
             "next_url": (
                 url_for("dashboard_setup", session_id=session_id)
                 if capture_locally
-                else url_for("dashboard_import")
+                else url_for("database_manager")
             ),
         })
     except (TypeError, ValueError, RuntimeError) as error:

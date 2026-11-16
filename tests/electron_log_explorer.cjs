@@ -59,8 +59,8 @@ async function run(win) {
         }
         files.push(file);
     }
-    await win.loadURL('app://local/analyse_logs/dashboard/import');
-    await until("document.getElementById('logSearchStatus').textContent.includes('Importez')");
+    await win.loadURL('app://local/analyse_logs/database');
+    await until("!!document.getElementById('ascFiles')");
     win.webContents.debugger.attach('1.3');
     const document = await win.webContents.debugger.sendCommand('DOM.getDocument');
     const input = await win.webContents.debugger.sendCommand('DOM.querySelector', {nodeId: document.root.nodeId, selector: '#ascFiles'});
@@ -68,11 +68,12 @@ async function run(win) {
     win.webContents.debugger.detach();
     await js("document.getElementById('uploadForm').requestSubmit()");
     await until("!document.getElementById('decodeResult').hidden && !document.getElementById('decodeButton').disabled");
-    await until("document.getElementById('logDay').options.length === 4");
     assert.equal(await js("document.getElementById('decodedCount').textContent.replace(/\\D/g, '')"), '36000');
     await shot('import-results');
     await js("document.getElementById('decodeResult').scrollIntoView()");
     await shot('decode-summary');
+    await win.loadURL('app://local/analyse_logs/dashboard/import');
+    await until("document.getElementById('logDay').options.length === 4");
     await js("document.querySelector('[name=graph]').checked=true; document.getElementById('logFilterForm').requestSubmit()");
     await until("document.querySelectorAll('#logCharts canvas').length === 2 && !document.getElementById('logSearch').disabled");
     assert.equal(await js("document.querySelectorAll('#logRows tr').length"), 100);

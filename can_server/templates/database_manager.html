@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Logs ASC et base locale</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/log-explorer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/database-manager.css') }}">
+    <script src="{{ url_for('shared_current_units') }}"></script>
+    <!-- Design system Renault Engineering -->
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-grid.js" defer></script>
+</head>
+<body class="can-import-page">
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
+        <div>
+            <p class="eyebrow">Données mesurées / Logs ASC et base locale</p>
+            <h1>Importer et décoder les logs CAN</h1>
+        </div>
+        <div class="actions right"><span class="status-led" id="databaseState">Lecture de la base…</span></div>
+    </header>
+
+    <main class="workstation-main">
+        <div class="system-strip">
+            <span>FORMAT ACCEPTÉ : VECTOR ASCII LOG (.ASC)</span>
+            <span>RÉFÉRENTIEL : {{ theory.project.name if theory.project and theory.project.name else 'Aucun projet synchronisé' }}</span>
+        </div>
+
+        <section class="import-layout">
+            <article class="panel">
+                <div class="panel-title"><h2>1. Sélectionner les logs ASC</h2></div>
+                <p class="form-intro">
+                    Importez un ou plusieurs fichiers, y compris des enregistrements sur plusieurs jours.
+                    Les trames décodées sont conservées dans la base locale. Au retour dans l’application, l’explorateur et le dashboard « base complète » retrouvent les mesures numériques et CAN tant que cette base n’est pas réinitialisée.
+                </p>
+                <form id="uploadForm" class="form-grid">
+                    <label class="asc-drop-zone" id="dropZone" for="ascFiles">
+                        <strong>Déposer vos fichiers .asc ici</strong>
+                        <span>ou cliquer pour les sélectionner</span>
+                        <small id="selectedFiles">Aucun fichier sélectionné</small>
+                    </label>
+                    <input id="ascFiles" name="files" type="file" accept=".asc" multiple required hidden>
+                    <div class="actions">
+                        <button type="submit" id="decodeButton">Importer et décoder</button>
+                    </div>
+                </form>
+                <div class="message" id="message">
+                    1. Sélectionnez vos fichiers · 2. Importez-les · 3. Explorez les mesures ou préparez un dashboard.
+                </div>
+                <div class="decode-progress" id="progress" hidden>
+                    <span></span>
+                </div>
+            </article>
+
+            <aside class="panel">
+                <div class="panel-title"><h2>Base de données locale</h2></div>
+                <div class="database-stats">
+                    <div class="metric"><span>Fichiers</span><strong id="fileCount">—</strong></div>
+                    <div class="metric"><span>Canaux</span><strong id="channelCount">—</strong></div>
+                </div>
+                {% for channel in ['A', 'B'] %}
+                <article class="database-channel-summary">
+                    <h3><span class="channel-tag channel-{{ channel }}">Canal {{ channel }}</span></h3>
+                    <div><span>Durée couverte <strong id="databaseDuration{{ channel }}">—</strong></span><span>Fréquence moyenne déclarée <strong id="databaseFrequency{{ channel }}">—</strong></span></div>
+                </article>
+                {% endfor %}
+                <div class="source-list" id="sourceList">Aucun fichier dans la base.</div>
+                <a class="button secondary database-manage-link" href="#databaseCatalog">Sélectionner, supprimer ou ajouter des données</a>
+                <p class="filter-hint" id="databaseDashboardScope" role="status">
+                    Les options du dashboard portent sur toutes les mesures présentes dans cette base.
+                </p>
+                <button class="danger database-reset" type="button" id="resetButton">
+                    Réinitialiser la base de données
+                </button>
+            </aside>
+        </section>
+
+        <section class="panel setup-panel" id="decodeResult" hidden>
+            <div class="panel-title"><h2>2. Résultat du décodage CAN</h2></div>
+            <div class="decode-overview">
+                <div class="decode-total"><span>Mesures décodées</span><strong id="decodedCount">—</strong><small>Canaux détectés : <b id="decodedChannels">—</b></small></div>
+                <article class="decode-channel"><h3><span class="channel-tag channel-A">Canal A</span> Branche A</h3><div><span>Fréquence canal A <strong id="decodedFrequencyA">—</strong></span><span>Durée canal A <strong id="decodedDurationA">—</strong></span></div></article>
+                <article class="decode-channel"><h3><span class="channel-tag channel-B">Canal B</span> Branche B</h3><div><span>Fréquence canal B <strong id="decodedFrequencyB">—</strong></span><span>Durée canal B <strong id="decodedDurationB">—</strong></span></div></article>
+            </div>
+            <p class="filter-hint">La fréquence est celle annoncée dans les trames de statistiques CAN. La durée couverte cumule les périodes enregistrées par canal, sans les pauses entre fichiers.</p>
+            {% for channel in ['A', 'B'] %}
+            <h3><span class="channel-tag channel-{{ channel }}">Canal {{ channel }}</span> Fichiers, durées et fréquences</h3>
+            <div class="table-scroll">
+                <table class="report-table">
+                    <thead>
+                        <tr>
+                            <th>Fichier ASC</th><th>Mesures {{ channel }}</th>
+                            <th>Première mesure {{ channel }}</th><th>Dernière mesure {{ channel }}</th>
+                            <th>Fréquence {{ channel }}</th><th>Durée de mesure {{ channel }}</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fileResults{{ channel }}"></tbody>
+                </table>
+            </div>
+            {% endfor %}
+        </section>
+
+        <section class="panel setup-panel db-catalog" id="databaseCatalog" aria-labelledby="catalogTitle">
+            <div class="panel-title db-catalog-title">
+                <div>
+                    <p class="eyebrow">Contenu de la base locale</p>
+                    <h2 id="catalogTitle">Fichiers ASC et mesures numériques</h2>
+                </div>
+                <div class="db-legend" aria-hidden="true">
+                    <span class="db-kind db-kind-asc">Log ASC</span>
+                    <span class="db-kind db-kind-digital">Numérique ESP32</span>
+                </div>
+            </div>
+            <div class="db-timeline" id="catalogTimeline" aria-label="Répartition des enregistrements dans le temps"></div>
+            <div class="db-toolbar" role="toolbar" aria-label="Filtres et sélection">
+                <label class="db-search"><span class="sr-only">Rechercher</span>
+                    <input type="search" id="catalogSearch" placeholder="Rechercher un fichier, une date (16/11/2026), un canal…">
+                </label>
+                <div class="db-segment" role="group" aria-label="Type">
+                    <button type="button" class="active" data-kind-filter="all">Tout</button>
+                    <button type="button" data-kind-filter="asc">Logs ASC</button>
+                    <button type="button" data-kind-filter="digital">Numérique</button>
+                </div>
+                <div class="db-segment" role="group" aria-label="Canal">
+                    <button type="button" class="active" data-channel-filter="all">A + B</button>
+                    <button type="button" data-channel-filter="A">Canal A</button>
+                    <button type="button" data-channel-filter="B">Canal B</button>
+                </div>
+                <label class="db-select-all"><input type="checkbox" id="catalogSelectAll"> Tout sélectionner</label>
+                <a class="button secondary db-add" href="#uploadForm">+ Ajouter des logs ASC</a>
+            </div>
+            <div class="db-list" id="catalogList" aria-live="polite">
+                <div class="empty-notice">Lecture de la base…</div>
+            </div>
+            <div class="db-actionbar" id="catalogActionbar" hidden>
+                <span id="catalogSelection">0 élément sélectionné</span>
+                <button type="button" class="secondary" id="catalogClear">Désélectionner</button>
+                <button type="button" class="danger" id="catalogDelete">Supprimer la sélection</button>
+            </div>
+            <div class="message" id="catalogMessage" hidden></div>
+        </section>
+
+        <section class="panel setup-panel workflow-next">
+            <div>
+                <p class="eyebrow">Étape suivante</p>
+                <h2>Trier et explorer les mesures dans le dashboard</h2>
+            </div>
+            <a class="button success" id="continueButton" href="{{ url_for('dashboard_import') }}">
+                Ouvrir le dashboard
+            </a>
+        </section>
+    </main>
+
+    <script>
+        const endpoints = {
+            upload: {{ url_for('upload_and_ingest_measures')|tojson }},
+            purge: {{ url_for('purge_database')|tojson }},
+            status: {{ url_for('database_status')|tojson }},
+            dashboard: {{ url_for('dashboard_import')|tojson }}
+        };
+        const filesInput = document.getElementById('ascFiles');
+        const dropZone = document.getElementById('dropZone');
+        const message = document.getElementById('message');
+        const continueButton = document.getElementById('continueButton');
+        const progress = document.getElementById('progress');
+
+        function escapeHtml(value) {
+            const node = document.createElement('span');
+            node.textContent = value ?? '';
+            return node.innerHTML;
+        }
+        function formatNumber(value) {
+            return new Intl.NumberFormat('fr-FR').format(Number(value || 0));
+        }
+        function formatDuration(seconds) {
+            const total = Math.max(0, Number(seconds || 0));
+            if (total >= 86400) return `${(total / 86400).toFixed(2)} j`;
+            if (total >= 3600) return `${(total / 3600).toFixed(2)} h`;
+            if (total < 60) return `${total.toFixed(2)} s`;
+            return `${(total / 60).toFixed(2)} min`;
+        }
+        function setMessage(text, type = '') {
+            message.textContent = text;
+            message.className = `message ${type}`.trim();
+        }
+        function setContinue() {
+            continueButton.href = endpoints.dashboard;
+        }
+        function renderSelectedFiles() {
+            const names = [...filesInput.files].map(file => file.name);
+            document.getElementById('selectedFiles').textContent =
+                names.length ? names.join(' · ') : 'Aucun fichier sélectionné';
+        }
+        function renderDatabase(data) {
+            document.getElementById('fileCount').textContent = formatNumber(data.file_count);
+            ['A', 'B'].forEach(channel => {
+                const settings = data.channel_settings?.[channel];
+                document.getElementById(`databaseDuration${channel}`).textContent = settings ? formatDuration(settings.actual_duration_s) : 'Aucune mesure';
+                document.getElementById(`databaseFrequency${channel}`).textContent = settings?.actual_frequency_hz != null ? `${formatNumber(settings.actual_frequency_hz)} Hz` : '—';
+            });
+            document.getElementById('channelCount').textContent = formatNumber(data.channel_count);
+            const sourceNames = data.source_files || [];
+            const ascCount = sourceNames.filter(name => name.startsWith('can_')).length;
+            const digitalCount = sourceNames.filter(name => name.startsWith('live_')).length;
+            document.getElementById('sourceList').innerHTML = sourceNames.length
+                ? `<span class="db-kind db-kind-asc">${formatNumber(ascCount)} log${ascCount > 1 ? 's' : ''} ASC</span><span class="db-kind db-kind-digital">${formatNumber(digitalCount)} mesure${digitalCount > 1 ? 's' : ''} numérique${digitalCount > 1 ? 's' : ''}</span>`
+                : 'Aucun fichier dans la base.';
+            document.getElementById('databaseState').textContent = data.measurement_count
+                ? `${formatNumber(data.measurement_count)} mesures disponibles`
+                : 'Base vide';
+            setContinue(data.dashboard_setup_url);
+        }
+        async function refreshDatabase() {
+            const response = await fetch(endpoints.status, {cache: 'no-store'});
+            if (!response.ok) throw new Error('Impossible de lire la base de données.');
+            renderDatabase(await response.json());
+        }
+
+        filesInput.addEventListener('change', renderSelectedFiles);
+        ['dragenter', 'dragover'].forEach(name => dropZone.addEventListener(name, event => {
+            event.preventDefault();
+            dropZone.classList.add('dragging');
+        }));
+        ['dragleave', 'drop'].forEach(name => dropZone.addEventListener(name, event => {
+            event.preventDefault();
+            dropZone.classList.remove('dragging');
+        }));
+        dropZone.addEventListener('drop', event => {
+            const ascFiles = [...event.dataTransfer.files].filter(file => file.name.toLowerCase().endsWith('.asc'));
+            if (!ascFiles.length) {
+                setMessage('Déposez uniquement des fichiers au format .asc.', 'error');
+                return;
+            }
+            const transfer = new DataTransfer();
+            ascFiles.forEach(file => transfer.items.add(file));
+            filesInput.files = transfer.files;
+            renderSelectedFiles();
+        });
+
+        document.getElementById('uploadForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!filesInput.files.length) return;
+            const button = document.getElementById('decodeButton');
+            const formData = new FormData();
+            [...filesInput.files].forEach(file => formData.append('files', file));
+            try {
+                button.disabled = true;
+                progress.hidden = false;
+                setContinue(null);
+                setMessage('Import et décodage des trames CAN en cours…');
+                let data;
+                if (window.desktopEnvironment?.importCanFiles) {
+                    data = await window.desktopEnvironment.importCanFiles([...filesInput.files]);
+                } else {
+                    const response = await fetch(endpoints.upload, {method: 'POST', body: formData});
+                    data = await response.json();
+                    if (!response.ok) throw new Error(data.message || 'Le décodage ASC a échoué.');
+                }
+                document.getElementById('decodeResult').hidden = false;
+                document.getElementById('decodedCount').textContent = formatNumber(data.measurements_count);
+                document.getElementById('decodedChannels').textContent = data.channels.join(' + ');
+                const channelSettings = data.channel_settings || data.session?.channel_settings || {};
+                ['A', 'B'].forEach(channel => {
+                    const settings = channelSettings[channel];
+                    document.getElementById(`decodedFrequency${channel}`).textContent = settings
+                        ? `${formatNumber(settings.actual_frequency_hz)} Hz`
+                        : '—';
+                    document.getElementById(`decodedDuration${channel}`).textContent = settings
+                        ? formatDuration(settings.actual_duration_s)
+                        : '—';
+                });
+                ['A', 'B'].forEach(channel => {
+                document.getElementById(`fileResults${channel}`).innerHTML = data.files_processed.map(file => {
+                    const settings = file.channel_settings[channel];
+                    const size = file.size_bytes != null ? `<small class="file-period">${new Intl.NumberFormat('fr-FR', {maximumFractionDigits: 2}).format(file.size_bytes / 1000000)} MB</small>` : '';
+                    const name = `${escapeHtml(file.name)}${size}`;
+                    if (!settings) return `<tr><td>${name}</td><td>0</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>${escapeHtml(file.warning || `Aucune mesure sur le canal ${channel}.`)}</td></tr>`;
+                    const date = timestamp => new Date(timestamp * 1000).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
+                    return `
+                        <tr>
+                            <td>${name}${file.timestamp_warning ? '<small class="timestamp-warning">Date incertaine : date d’import utilisée.</small>' : ''}</td>
+                            <td>${formatNumber(settings.measurements)}</td>
+                            <td>${date(settings.started_at)}</td>
+                            <td>${date(settings.ended_at)}</td>
+                            <td>${settings.actual_frequency_hz > 0 ? `${formatNumber(settings.actual_frequency_hz)} Hz` : '&mdash;'}</td>
+                            <td>${formatDuration(settings.actual_duration_s)}</td>
+                        </tr>`;
+                }).join('') || `<tr><td colspan="6">Aucune mesure sur le canal ${channel}.</td></tr>`;
+                });
+                setContinue(data.dashboard_setup_url);
+                setMessage(`${formatNumber(data.files_count)} fichiers importés, ${formatNumber(data.measurements_count)} mesures décodées. Ouvrez le dashboard pour trier et explorer les mesures.`, 'ok');
+                filesInput.value = '';
+                renderSelectedFiles();
+                await refreshDatabase();
+                window.dispatchEvent(new Event('can-database-changed'));
+            } catch (error) {
+                setMessage(error.message, 'error');
+            } finally {
+                button.disabled = false;
+                progress.hidden = true;
+            }
+        });
+
+        document.getElementById('resetButton').addEventListener('click', async () => {
+            const confirmed = confirm(
+                'Réinitialiser définitivement toutes les mesures décodées et toutes les sessions de dashboard ?'
+            );
+            if (!confirmed) return;
+            try {
+                const response = await fetch(endpoints.purge, {method: 'POST'});
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.message || 'Réinitialisation refusée.');
+                document.getElementById('decodeResult').hidden = true;
+                setContinue(null);
+                await refreshDatabase();
+                window.dispatchEvent(new Event('can-database-changed'));
+                setMessage(data.message, 'ok');
+            } catch (error) {
+                setMessage(error.message, 'error');
+            }
+        });
+
+        refreshDatabase().catch(error => setMessage(error.message, 'error'));
+    </script>
+    <script>window.databaseCatalogEndpoints = {list: {{ url_for('database_sources')|tojson }}, remove: {{ url_for('delete_database_sources')|tojson }}};</script>
+    <script src="{{ url_for('static', filename='js/database-catalog.js') }}"></script>
+</body>
+</html>

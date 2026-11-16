@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Calibration INA226</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='can-workstation.css') }}">
+    <script src="{{ url_for('static', filename='js/chart.min.js') }}"></script>
+    <script src="/static/design-system/rg-charts.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
+    <script src="{{ url_for('shared_current_units') }}"></script>
+    <!-- Design system Renault Engineering -->
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/calibration.css') }}">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-grid.js" defer></script>
+</head>
+<body class="calibration-page">
+    <header class="workstation-header">
+        <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
+        <div>
+            <p class="eyebrow">Métrologie / INA226 ↔ multimètre de référence</p>
+            <h1>Calibration</h1>
+        </div>
+        <div class="actions right">
+            <span class="status-led" id="calState">Chargement…</span>
+            <details class="dashboard-summary-menu">
+                <summary>Exporter</summary>
+                <div class="dashboard-summary-content">
+                    <a id="exportCsv" href="#">Résultats CSV (tableur)</a>
+                    <button type="button" id="exportJson">Analyse complète JSON</button>
+                    <button type="button" id="printReport">Imprimer / PDF</button>
+                </div>
+            </details>
+        </div>
+    </header>
+
+    <main class="workstation-main cal-main" data-unit="calibration">
+        <section class="cal-hero" aria-label="Banc de calibration">
+            <div class="cal-hero-copy">
+                <p class="eyebrow">Banc de comparaison · {{ project.name or 'projet actif' }}</p>
+                <h2>Mesurer l’écart réel entre l’INA226 et le Fluke 287</h2>
+                <p>Le même courant traverse le shunt R010 et le multimètre en série. Chaque répétition est reliée à son enregistrement dans la base de mesures, puis comparée aux relevés du Fluke : complétude, bruit, dérive, biais, incertitudes.</p>
+                <div class="cal-hero-facts">
+                    <span><b id="factExpected">6 000</b> échantillons attendus / répétition</span>
+                    <span><b id="factTotal">18 000</b> au total</span>
+                    <span><b id="factDuration">4 min 00 s</b> de protocole</span>
+                </div>
+            </div>
+            <svg class="cal-schematic" viewBox="0 0 520 260" role="img" aria-labelledby="schematicTitle">
+                <title id="schematicTitle">Schéma : source de courant, shunt R010 mesuré par l’INA226 et Fluke 287 en série</title>
+                <defs>
+                    <linearGradient id="calWire" x1="0" x2="1">
+                        <stop offset="0" stop-color="var(--cal-accent)" stop-opacity=".2"/>
+                        <stop offset=".5" stop-color="var(--cal-accent)"/>
+                        <stop offset="1" stop-color="var(--cal-accent)" stop-opacity=".2"/>
+                    </linearGradient>
+                    <pattern id="calGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M20 0H0V20" fill="none" stroke="currentColor" stroke-opacity=".08"/>
+                    </pattern>
+                </defs>
+                <rect width="520" height="260" fill="url(#calGrid)"/>
+                <path class="cal-loop" d="M70 70 H210 M300 70 H440 V190 H70 V70"/>
+                <path class="cal-flow" d="M70 70 H210 M300 70 H440 V190 H70 V70"/>
+                <g class="cal-node" transform="translate(30 105)">
+                    <rect width="80" height="50" rx="8"/>
+                    <text x="40" y="22">SOURCE</text><text x="40" y="38" class="cal-sub">I constant</text>
+                </g>
+                <g class="cal-node cal-node-shunt" transform="translate(210 52)">
+                    <rect width="90" height="36" rx="6"/>
+                    <text x="45" y="23">R010 · 10 mΩ</text>
+                </g>
+                <g class="cal-node cal-node-ina" transform="translate(205 118)">
+                    <rect width="100" height="46" rx="8"/>
+                    <text x="50" y="20">INA226 · <tspan id="schematicChannel">A</tspan></text><text x="50" y="36" class="cal-sub">LSB 250 µA</text>
+                </g>
+                <path class="cal-sense" d="M232 88 V118 M278 88 V118"/>
+                <g class="cal-node cal-node-ref" transform="translate(400 102)">
+                    <rect width="90" height="66" rx="10"/>
+                    <text x="45" y="22">FLUKE 287</text>
+                    <rect class="cal-lcd" x="10" y="30" width="70" height="24" rx="3"/>
+                    <text x="45" y="47" class="cal-lcd-text" id="schematicReading">— mA</text>
+                </g>
+                <text x="255" y="215" class="cal-caption">Le même courant traverse le shunt et le multimètre en série</text>
+            </svg>
+        </section>
+
+        <section class="cal-layout">
+            <aside class="panel cal-sidebar">
+                <div class="panel-title"><h2>Campagnes</h2></div>
+                <div class="cal-campaigns" id="campaignList"><div class="empty-notice">Aucune campagne.</div></div>
+                <button type="button" id="newCampaign" class="cal-full">+ Nouvelle campagne</button>
+
+                <form id="protocolForm" class="cal-protocol" autocomplete="off">
+                    <h3>Protocole</h3>
+                    <label class="field">Nom <input name="name" maxlength="120" placeholder="Offset voie A — 300 mA"></label>
+                    <div class="cal-grid-2">
+                        <label class="field">Voie
+                            <select name="channel"><option value="A">Canal A</option><option value="B">Canal B</option></select>
+                        </label>
+                        <label class="field">Fréquence (Hz) <input name="frequency_hz" type="number" min="1" step="1" required></label>
+                        <label class="field">Durée (s) <input name="duration_s" type="number" min="1" step="1" required></label>
+                        <label class="field">Répétitions <input name="repetitions" type="number" min="1" max="50" step="1" required></label>
+                        <label class="field">Pause (s) <input name="pause_s" type="number" min="0" step="1" required></label>
+                        <label class="field">Fenêtre relevé (s) <input name="window_s" type="number" min="0.01" step="0.01" required title="Les échantillons INA de part et d’autre de chaque instant sont moyennés sur cette durée"></label>
+                    </div>
+                    <label class="field">Instants de relevé (s) <input name="checkpoints_s" placeholder="0, 20, 40, 60" required></label>
+                    <details class="cal-advanced">
+                        <summary>Paramètres avancés</summary>
+                        <div class="cal-grid-2">
+                            <label class="field">Lissage min/max (s) <input name="smoothing_s" type="number" min="0" step="0.05"></label>
+                            <label class="field">Shunt (Ω) <input name="shunt_ohm" type="number" min="0.00001" step="0.0001"></label>
+                            <label class="field">Tolérance shunt (%) <input name="shunt_tolerance_pct" type="number" min="0" step="0.1"></label>
+                        </div>
+                    </details>
+                    <label class="field">Notes <textarea name="notes" rows="2" placeholder="Banc, température, source de courant…"></textarea></label>
+                    <div class="cal-computed" id="protocolComputed"></div>
+                    <div class="actions">
+                        <button type="submit" id="saveProtocol">Enregistrer le protocole</button>
+                        <button type="button" class="danger" id="deleteCampaign" hidden>Supprimer</button>
+                    </div>
+                    <div class="message" id="protocolMessage" hidden></div>
+                </form>
+            </aside>
+
+            <div class="cal-content">
+                <nav class="cal-tabs" role="tablist" aria-label="Vues de la calibration">
+                    <button role="tab" aria-selected="true" data-tab="input">Saisie</button>
+                    <button role="tab" aria-selected="false" data-tab="summary">Synthèse</button>
+                    <button role="tab" aria-selected="false" data-tab="time">Temporel</button>
+                    <button role="tab" aria-selected="false" data-tab="errors">Erreurs</button>
+                    <button role="tab" aria-selected="false" data-tab="noise">Bruit &amp; Allan</button>
+                    <button role="tab" aria-selected="false" data-tab="sampling">Échantillonnage</button>
+                    <button role="tab" aria-selected="false" data-tab="levels">Multi-niveaux</button>
+                    <button role="tab" aria-selected="false" data-tab="method">Méthode &amp; specs</button>
+                    <span class="cal-tab-ink" aria-hidden="true"></span>
+                </nav>
+                <div class="cal-unitbar">
+                    <span>Unité d’affichage</span>
+                    <div class="cal-segment" id="unitSwitch" role="group" aria-label="Unité">
+                        <button type="button" data-unit="A">A</button>
+                        <button type="button" data-unit="mA" class="active">mA</button>
+                        <button type="button" data-unit="µA">µA</button>
+                    </div>
+                    <span class="cal-unit-hint">Les saisies Fluke se font dans cette unité.</span>
+                </div>
+
+                <section class="cal-panel" data-panel="input">
+                    <div class="cal-bulk panel">
+                        <div>
+                            <h3>Relier les répétitions à la base de mesures</h3>
+                            <p>Un enregistrement par répétition, ou un seul enregistrement contenant les {{ defaults.repetitions }} répétitions séparées par les pauses : la détection automatique les découpe.</p>
+                        </div>
+                        <div class="cal-bulk-form">
+                            <select id="bulkSource" aria-label="Enregistrement contenant toutes les répétitions"></select>
+                            <label class="cal-inline">Pause min. (s) <input id="bulkGap" type="number" min="0.1" step="0.1" value="5"></label>
+                            <button type="button" id="bulkDetect" class="secondary">Détecter les répétitions</button>
+                        </div>
+                    </div>
+                    <div class="cal-runs" id="runCards"></div>
+                </section>
+
+                <section class="cal-panel" data-panel="summary" hidden>
+                    <div class="cal-verdict" id="verdict"></div>
+                    <div class="cal-kpis" id="kpis"></div>
+                    <div class="panel">
+                        <div class="panel-title"><h2>Recommandations</h2></div>
+                        <ul class="cal-tips" id="tips"></ul>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-title"><h2>Statistiques par répétition</h2></div>
+                        <div class="table-scroll"><table class="report-table" id="runTable" data-rg-grid="on"></table></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-title"><h2>Instants de relevé : INA226 vs Fluke 287</h2></div>
+                        <div class="table-scroll"><table class="report-table cal-status-table" id="checkpointTable" data-rg-grid="on"></table></div>
+                    </div>
+                </section>
+
+                <section class="cal-panel" data-panel="time" hidden>
+                    <div class="cal-chart-options">
+                        <label><input type="checkbox" id="optRaw" checked> Brut</label>
+                        <label><input type="checkbox" id="optSmooth" checked> Moyenne glissante</label>
+                        <label><input type="checkbox" id="optRef" checked> Relevés Fluke ± incertitude</label>
+                        <label><input type="checkbox" id="optSequence"> Enchaîner les répétitions (avec pauses)</label>
+                        <span class="cal-run-toggles" id="runToggles"></span>
+                    </div>
+                    <div class="cal-chart tall"><canvas id="chartTime" aria-label="Courant mesuré au cours du temps"></canvas></div>
+                    <div class="cal-chart"><canvas id="chartExtremes" aria-label="Minimum et maximum : Fluke contre INA226"></canvas></div>
+                </section>
+
+                <section class="cal-panel" data-panel="errors" hidden>
+                    <div class="cal-chart"><canvas id="chartErrors" aria-label="Erreur INA226 moins Fluke à chaque instant"></canvas></div>
+                    <div class="cal-chart-grid">
+                        <div class="cal-chart"><canvas id="chartBland" aria-label="Diagramme de Bland-Altman"></canvas></div>
+                        <div class="cal-chart"><canvas id="chartRunBias" aria-label="Biais moyen par répétition"></canvas></div>
+                    </div>
+                </section>
+
+                <section class="cal-panel" data-panel="noise" hidden>
+                    <div class="cal-chart-grid">
+                        <div class="cal-chart"><canvas id="chartHistogram" aria-label="Distribution des échantillons"></canvas></div>
+                        <div class="cal-chart"><canvas id="chartAllan" aria-label="Écart-type d'Allan"></canvas></div>
+                    </div>
+                    <p class="filter-hint">Écart-type d’Allan : la pente −½ indique un bruit blanc (moyenner aide). Le minimum donne la durée de moyennage optimale ; la remontée qui suit signale une dérive (thermique, source). La ligne pointillée marque le LSB de l’INA226.</p>
+                </section>
+
+                <section class="cal-panel" data-panel="sampling" hidden>
+                    <div class="cal-chart-grid">
+                        <div class="cal-chart"><canvas id="chartCompleteness" aria-label="Échantillons attendus, en base et relevés"></canvas></div>
+                        <div class="cal-chart"><canvas id="chartDt" aria-label="Distribution des intervalles d'échantillonnage"></canvas></div>
+                    </div>
+                    <div class="panel">
+                        <div class="panel-title"><h2>Régularité de l’échantillonnage</h2></div>
+                        <div class="table-scroll"><table class="report-table" id="samplingTable" data-rg-grid="on"></table></div>
+                    </div>
+                </section>
+
+                <section class="cal-panel" data-panel="levels" hidden>
+                    <div class="message" id="levelsMessage"></div>
+                    <div class="cal-chart"><canvas id="chartLevels" aria-label="Erreur en fonction du courant de référence"></canvas></div>
+                    <div class="panel">
+                        <div class="panel-title"><h2>Campagnes de la voie</h2></div>
+                        <div class="table-scroll"><table class="report-table" id="levelsTable" data-rg-grid="on"></table></div>
+                    </div>
+                </section>
+
+                <section class="cal-panel" data-panel="method" hidden>
+                    <div class="cal-method">
+                        <article class="panel">
+                            <div class="panel-title"><h2>Fluke 287 — courant continu</h2></div>
+                            <table class="report-table" data-rg-grid="off">
+                                <thead><tr><th>Calibre</th><th>Résolution</th><th>Précision</th></tr></thead>
+                                <tbody>
+                                {% for s in fluke_spec %}
+                                    <tr><td data-amps="{{ s.range_A }}"></td><td data-amps="{{ s.resolution_A }}"></td><td>±({{ s.pct }} % + {{ s.digits }} dgt)</td></tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                            <p class="filter-hint">Spécifications à 1 an après étalonnage, 18–28 °C, HR ≤ 90 %. {{ fluke_note }} Le calibre est choisi automatiquement d’après la lecture, ou peut être imposé par répétition.</p>
+                        </article>
+                        <article class="panel">
+                            <div class="panel-title"><h2>Ce que calcule la page</h2></div>
+                            <dl class="cal-defs">
+                                <dt>Complétude</dt><dd>N en base ÷ (durée × fréquence). Comparée au nombre relevé que vous saisissez.</dd>
+                                <dt>Erreur à un instant</dt><dd>E = moyenne INA sur la fenêtre − lecture Fluke. Verdict : vert si |E| ≤ limite Fluke, orange si |E| ≤ limite Fluke + limite INA226 non calibré, rouge au-delà.</dd>
+                                <dt>Erreur normalisée</dt><dd>Eₙ = E ÷ √(U_Fluke² + U_INA,95²). |Eₙ| ≤ 1 : les deux instruments sont compatibles.</dd>
+                                <dt>Biais (offset)</dt><dd>Moyenne des erreurs, avec U95 = 2σ/√n. À un seul niveau de courant, l’offset et le gain ne sont pas séparables.</dd>
+                                <dt>Bruit</dt><dd>Écart-type groupé des échantillons de chaque répétition, comparé au LSB (2,5 µV ÷ R shunt).</dd>
+                                <dt>Dérive</dt><dd>Pente de la régression linéaire courant / temps, en A/min, comparée à la variation du Fluke entre le premier et le dernier relevé.</dd>
+                                <dt>Bland-Altman</dt><dd>Différence en fonction de la moyenne des deux instruments ; biais ± 1,96σ (limites d’accord).</dd>
+                                <dt>Allan</dt><dd>σ(τ) des moyennes successives sur τ : choisit la fenêtre de moyennage qui minimise l’incertitude.</dd>
+                                <dt>Multi-niveaux</dt><dd>Régression E = a + b·I_ref sur toutes les campagnes de la voie : a = offset, b = erreur de gain. Correction : I = (I_INA − a) ÷ (1 + b).</dd>
+                            </dl>
+                        </article>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        window.calibrationConfig = {
+            defaults: {{ defaults|tojson }},
+            api: {
+                sources: {{ url_for('calibration_sources')|tojson }},
+                segments: {{ url_for('calibration_segments')|tojson }},
+                campaigns: {{ url_for('calibration_campaigns')|tojson }},
+                overview: {{ url_for('calibration_overview')|tojson }}
+            }
+        };
+    </script>
+    <script src="{{ url_for('static', filename='js/calibration.js') }}"></script>
+</body>
+</html>
