@@ -48,12 +48,12 @@
 .db-search { flex: 1 1 280px; }
 .db-search input { width: 100%; }
 .db-segment { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--rg-surface-2); border: 1px solid var(--rg-line); }
-html body .db-segment button {
+html body.database-page .db-toolbar .db-segment button {
     min-height: 34px; padding: 6px 14px; border: 0 !important; border-radius: 999px !important;
     background: transparent !important; color: var(--rg-ink-2) !important; font-weight: 650; box-shadow: none !important;
     transition: background-color var(--rg-dur-fast, .15s), color var(--rg-dur-fast, .15s);
 }
-html body .db-segment button.active { background: var(--rg-ink, #0b0c0e) !important; color: var(--rg-surface, #fff) !important; }
+html body.database-page .db-toolbar .db-segment button.active { background: var(--rg-ink, #0b0c0e) !important; color: var(--rg-surface, #fff) !important; }
 .db-select-all { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; cursor: pointer; }
 .db-select-all input, .db-row input[type="checkbox"] { width: 18px; min-height: 18px; height: 18px; margin: 0; accent-color: var(--rg-ink, #0b0c0e); }
 .db-add { white-space: nowrap; }
@@ -109,4 +109,124 @@ html body .db-segment button.active { background: var(--rg-ink, #0b0c0e) !import
 }
 @media (prefers-reduced-motion: reduce) {
     .db-row, .db-timeline-bar, .db-actionbar { animation: none; }
+}
+
+/* ===================== Import ASC : clair / sombre ===================== */
+.database-page .import-layout { align-items: start; }
+.database-page .db-format {
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--rg-line);
+    color: var(--rg-ink-3); font: 600 .75rem var(--rg-font-mono, Consolas, monospace); letter-spacing: .04em;
+}
+.database-page .db-upload-form { display: grid; gap: 14px; }
+
+html body.database-page .asc-drop-zone.db-drop {
+    position: relative; display: grid; justify-items: center; gap: 6px; min-height: 210px; padding: 28px 20px;
+    text-align: center; cursor: pointer; isolation: isolate; overflow: hidden;
+    border: 1.5px dashed var(--rg-line-strong) !important; border-radius: var(--rg-radius-lg, 16px) !important;
+    background:
+        radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--rg-yellow, #efdf00) 9%, transparent), transparent 70%),
+        var(--rg-surface-2) !important;
+    color: var(--rg-ink) !important;
+    transition: border-color var(--rg-dur-fast, .15s), background-color var(--rg-dur-fast, .15s), transform .2s var(--rg-ease-out, ease-out);
+}
+html body.database-page .asc-drop-zone.db-drop::before {
+    content: ""; position: absolute; inset: -40%; z-index: -1; opacity: 0;
+    background: conic-gradient(from 0deg, transparent 0 70%, color-mix(in srgb, var(--rg-yellow, #efdf00) 35%, transparent) 85%, transparent 100%);
+    animation: db-sweep 2.4s linear infinite; animation-play-state: paused; transition: opacity .25s;
+}
+html body.database-page .asc-drop-zone.db-drop strong { color: var(--rg-ink) !important; font-size: 1.15rem; }
+html body.database-page .asc-drop-zone.db-drop > span:not(.db-drop-icon) { color: var(--rg-ink-2) !important; font-size: .92rem; }
+html body.database-page .asc-drop-zone.db-drop u { text-decoration-color: var(--rg-yellow, #efdf00); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+html body.database-page .asc-drop-zone.db-drop small {
+    margin-top: 6px; padding: 4px 12px; border-radius: 999px; background: var(--rg-surface); border: 1px solid var(--rg-line);
+    color: var(--rg-ink-3) !important; font: .8rem var(--rg-font-mono, Consolas, monospace);
+}
+.database-page .db-drop-icon {
+    display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 6px; border-radius: 50%;
+    background: var(--rg-surface); border: 1px solid var(--rg-line); color: var(--rg-ink);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--rg-yellow, #efdf00) 12%, transparent);
+    transition: transform .3s var(--rg-ease-out, ease-out), box-shadow .3s;
+}
+.database-page .db-drop-icon svg { width: 34px; height: 34px; }
+.database-page .db-drop-arrow { animation: db-bob 1.8s var(--rg-ease-in-out, ease-in-out) infinite; }
+@media (hover: hover) {
+    html body.database-page .asc-drop-zone.db-drop:hover { border-color: var(--rg-ink) !important; }
+    html body.database-page .asc-drop-zone.db-drop:hover .db-drop-icon { transform: translateY(-2px); }
+}
+html body.database-page .asc-drop-zone.db-drop.dragging {
+    border-style: solid !important; border-color: var(--rg-yellow, #efdf00) !important; transform: scale(1.01);
+}
+html body.database-page .asc-drop-zone.db-drop.dragging::before { opacity: 1; animation-play-state: running; }
+html body.database-page .asc-drop-zone.db-drop.dragging .db-drop-icon { transform: scale(1.08); box-shadow: 0 0 0 10px color-mix(in srgb, var(--rg-yellow, #efdf00) 25%, transparent); }
+html body.database-page .asc-drop-zone.db-drop.has-files { border-style: solid !important; border-color: color-mix(in srgb, var(--rg-ok, #16794f) 60%, var(--rg-line)) !important; }
+html body.database-page .asc-drop-zone.db-drop.has-files small { color: var(--rg-ok, #16794f) !important; border-color: currentColor; }
+html body.database-page .asc-drop-zone.db-drop:focus-within { outline: 2px solid var(--rg-focus, var(--rg-yellow)); outline-offset: 3px; }
+@keyframes db-sweep { to { transform: rotate(1turn); } }
+@keyframes db-bob { 50% { transform: translateY(-3px); } }
+
+.database-page .db-file-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.database-page .db-file-chips[hidden] { display: none; }
+.database-page .db-file-chips li {
+    display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 5px 6px;
+    border: 1px solid var(--rg-line); border-radius: var(--rg-radius-sm, 6px); background: var(--rg-surface); color: var(--rg-ink);
+    animation: db-in .3s var(--rg-ease-out, ease-out) both; animation-delay: calc(var(--i, 0) * 30ms);
+}
+.database-page .db-chip-icon { padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--db-asc) 16%, transparent); color: var(--db-asc); font: 700 .66rem var(--rg-font-mono, Consolas, monospace); }
+.database-page .db-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; font-weight: 600; font-size: .88rem; }
+.database-page .db-file-chips small { color: var(--rg-ink-3); font: .75rem var(--rg-font-mono, Consolas, monospace); }
+html body.database-page .db-file-chips .db-chip-remove {
+    display: grid; place-items: center; width: 26px; min-height: 26px; height: 26px; padding: 0 !important;
+    border: 0 !important; border-radius: 50% !important; background: transparent !important; color: var(--rg-ink-3) !important;
+    box-shadow: none !important; font-size: 1.1rem; line-height: 1;
+}
+@media (hover: hover) { html body.database-page .db-file-chips .db-chip-remove:hover { background: var(--rg-danger-soft) !important; color: var(--rg-danger) !important; } }
+
+.database-page .db-upload-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+html body.database-page .db-upload-actions .db-import-button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex: 1 1 260px; min-height: 50px;
+    background: var(--rg-yellow, #efdf00) !important; color: var(--rg-yellow-ink, #1a1800) !important;
+    border: 1px solid transparent !important; font-weight: 800; letter-spacing: .01em;
+    transition: transform .15s var(--rg-ease-out, ease-out), filter .15s, opacity .2s;
+}
+html body.database-page .db-upload-actions .db-import-button svg { width: 20px; height: 20px; }
+@media (hover: hover) { html body.database-page .db-upload-actions .db-import-button:hover:not(:disabled) { filter: brightness(1.05); } }
+html body.database-page .db-upload-actions .db-import-button:active:not(:disabled) { transform: scale(.98); }
+html body.database-page .db-upload-actions .db-import-button:disabled { background: var(--rg-surface-2) !important; color: var(--rg-ink-3) !important; border-color: var(--rg-line) !important; opacity: 1; }
+
+.database-page .db-progress { display: grid; gap: 6px; height: auto; background: transparent; }
+.database-page .db-progress[hidden] { display: none; }
+.database-page .db-progress > span { position: relative; display: block; height: 6px; border-radius: 999px; overflow: hidden; background: var(--rg-surface-sunken, var(--rg-surface-2)); animation: none; }
+.database-page .db-progress > span::after {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; border-radius: inherit;
+    background: linear-gradient(90deg, transparent, var(--rg-yellow, #efdf00), transparent); animation: db-indeterminate 1.2s ease-in-out infinite;
+}
+.database-page .db-progress small { color: var(--rg-ink-3); font-size: .82rem; }
+@keyframes db-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+
+/* Panneau base locale : cartes et liste lisibles en sombre */
+html body.database-page .source-list {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; margin: 12px 0;
+    background: var(--rg-surface-2) !important; color: var(--rg-ink-2) !important; border: 1px solid var(--rg-line) !important;
+}
+html body.database-page :is(.decode-total, .decode-channel) { background: var(--rg-surface-2) !important; border-color: var(--rg-line) !important; color: var(--rg-ink) !important; }
+html body.database-page .decode-total > strong { color: var(--rg-ink) !important; }
+html body.database-page .decode-channel > div > span, html body.database-page .filter-hint { color: var(--rg-ink-3) !important; }
+html body.database-page .channel-A { background: color-mix(in srgb, var(--db-asc) 16%, transparent) !important; color: var(--db-asc) !important; }
+html body.database-page .channel-B { background: color-mix(in srgb, #d55e00 16%, transparent) !important; color: #e07b2e !important; }
+
+/* Avertissement de vérification */
+.database-page .db-warning {
+    display: grid; grid-template-columns: auto 1fr; gap: 12px; margin: 14px 0; padding: 14px 16px;
+    border-radius: var(--rg-radius-md, 10px); border: 1px solid color-mix(in srgb, var(--rg-warn, #9a6400) 55%, transparent);
+    background: var(--rg-warn-soft, #fff3d6); color: var(--rg-ink);
+    box-shadow: inset 4px 0 0 var(--rg-warn, #9a6400);
+}
+.database-page .db-warning svg { width: 26px; height: 26px; color: var(--rg-warn, #9a6400); }
+:root[data-theme="dark"] .database-page .db-warning svg, :root[data-theme="dark"] .database-page .db-warning strong { color: #f0b429; }
+.database-page .db-warning strong { display: block; color: var(--rg-warn, #9a6400); font-size: .95rem; text-transform: uppercase; letter-spacing: .04em; }
+.database-page .db-warning p { margin: 4px 0 0; color: var(--rg-ink-2); font-size: .88rem; line-height: 1.5; }
+.database-page .db-warning b { color: var(--rg-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+    .database-page .db-drop-arrow, .database-page .db-progress > span::after, html body.database-page .asc-drop-zone.db-drop::before { animation: none; }
 }

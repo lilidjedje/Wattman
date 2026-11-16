@@ -15,7 +15,7 @@
     <script src="/static/design-system/rg-ui.js"></script>
     <script src="/static/design-system/rg-grid.js" defer></script>
 </head>
-<body class="can-import-page">
+<body class="can-import-page database-page">
     <header class="workstation-header">
         <a class="button secondary" href="{{ url_for('index') }}">Retour à la Workstation</a>
         <div>
@@ -28,33 +28,41 @@
     <main class="workstation-main">
         <div class="system-strip">
             <span>FORMAT ACCEPTÉ : VECTOR ASCII LOG (.ASC)</span>
-            <span>RÉFÉRENTIEL : {{ theory.project.name if theory.project and theory.project.name else 'Aucun projet synchronisé' }}</span>
         </div>
 
         <section class="import-layout">
-            <article class="panel">
-                <div class="panel-title"><h2>1. Sélectionner les logs ASC</h2></div>
+            <article class="panel db-upload">
+                <div class="panel-title"><h2>Importer des logs ASC</h2><span class="db-format">Vector ASCII · .asc</span></div>
                 <p class="form-intro">
-                    Importez un ou plusieurs fichiers, y compris des enregistrements sur plusieurs jours.
-                    Les trames décodées sont conservées dans la base locale. Au retour dans l’application, l’explorateur et le dashboard « base complète » retrouvent les mesures numériques et CAN tant que cette base n’est pas réinitialisée.
+                    Ajoutez un ou plusieurs fichiers, y compris des enregistrements sur plusieurs jours. Les trames décodées
+                    s’ajoutent à la base locale sans effacer les mesures déjà présentes.
                 </p>
-                <form id="uploadForm" class="form-grid">
-                    <label class="asc-drop-zone" id="dropZone" for="ascFiles">
-                        <strong>Déposer vos fichiers .asc ici</strong>
-                        <span>ou cliquer pour les sélectionner</span>
+                <form id="uploadForm" class="db-upload-form">
+                    <label class="asc-drop-zone db-drop" id="dropZone" for="ascFiles">
+                        <span class="db-drop-icon" aria-hidden="true">
+                            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 34H11a8 8 0 0 1-1-15.9A12 12 0 0 1 33.5 15 9.5 9.5 0 0 1 37 34h-3"/>
+                                <path class="db-drop-arrow" d="M24 40V22m-7 7 7-7 7 7"/>
+                            </svg>
+                        </span>
+                        <strong>Déposez vos fichiers .asc ici</strong>
+                        <span>ou <u>parcourez</u> votre ordinateur · sélection multiple acceptée</span>
                         <small id="selectedFiles">Aucun fichier sélectionné</small>
                     </label>
                     <input id="ascFiles" name="files" type="file" accept=".asc" multiple required hidden>
-                    <div class="actions">
-                        <button type="submit" id="decodeButton">Importer et décoder</button>
+                    <ul class="db-file-chips" id="selectedList" aria-label="Fichiers sélectionnés" hidden></ul>
+                    <div class="db-upload-actions">
+                        <button type="submit" id="decodeButton" class="db-import-button">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg>
+                            Importer et décoder
+                        </button>
+                        <button type="button" class="secondary" id="clearFiles" hidden>Vider la sélection</button>
                     </div>
                 </form>
-                <div class="message" id="message">
-                    1. Sélectionnez vos fichiers · 2. Importez-les · 3. Explorez les mesures ou préparez un dashboard.
+                <div class="decode-progress db-progress" id="progress" hidden>
+                    <span></span><small>Décodage des trames CAN en cours…</small>
                 </div>
-                <div class="decode-progress" id="progress" hidden>
-                    <span></span>
-                </div>
+                <div class="message" id="message">Sélectionnez vos fichiers, importez-les, puis vérifiez la base ci-dessous.</div>
             </article>
 
             <aside class="panel">
@@ -63,17 +71,17 @@
                     <div class="metric"><span>Fichiers</span><strong id="fileCount">—</strong></div>
                     <div class="metric"><span>Canaux</span><strong id="channelCount">—</strong></div>
                 </div>
-                {% for channel in ['A', 'B'] %}
-                <article class="database-channel-summary">
-                    <h3><span class="channel-tag channel-{{ channel }}">Canal {{ channel }}</span></h3>
-                    <div><span>Durée couverte <strong id="databaseDuration{{ channel }}">—</strong></span><span>Fréquence moyenne déclarée <strong id="databaseFrequency{{ channel }}">—</strong></span></div>
-                </article>
-                {% endfor %}
                 <div class="source-list" id="sourceList">Aucun fichier dans la base.</div>
                 <a class="button secondary database-manage-link" href="#databaseCatalog">Sélectionner, supprimer ou ajouter des données</a>
-                <p class="filter-hint" id="databaseDashboardScope" role="status">
-                    Les options du dashboard portent sur toutes les mesures présentes dans cette base.
-                </p>
+                <div class="db-warning" role="note">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4m0 3h.01"/></svg>
+                    <div>
+                        <strong>À vérifier impérativement avant toute analyse</strong>
+                        <p>Les dashboards, l’explorateur et la calibration utilisent <b>toutes</b> les mesures présentes dans cette base.
+                        Avant de commencer, contrôlez que chaque fichier ASC et chaque mesure numérique attendus figurent bien dans la liste
+                        (date, heure, canal), et supprimez les doublons ou les essais parasites.</p>
+                    </div>
+                </div>
                 <button class="danger database-reset" type="button" id="resetButton">
                     Réinitialiser la base de données
                 </button>
@@ -145,15 +153,6 @@
             <div class="message" id="catalogMessage" hidden></div>
         </section>
 
-        <section class="panel setup-panel workflow-next">
-            <div>
-                <p class="eyebrow">Étape suivante</p>
-                <h2>Trier et explorer les mesures dans le dashboard</h2>
-            </div>
-            <a class="button success" id="continueButton" href="{{ url_for('dashboard_import') }}">
-                Ouvrir le dashboard
-            </a>
-        </section>
     </main>
 
     <script>
@@ -166,7 +165,6 @@
         const filesInput = document.getElementById('ascFiles');
         const dropZone = document.getElementById('dropZone');
         const message = document.getElementById('message');
-        const continueButton = document.getElementById('continueButton');
         const progress = document.getElementById('progress');
 
         function escapeHtml(value) {
@@ -188,20 +186,43 @@
             message.textContent = text;
             message.className = `message ${type}`.trim();
         }
-        function setContinue() {
-            continueButton.href = endpoints.dashboard;
+        function setContinue() { /* l'exploration se fait depuis le module Dashboard */ }
+        function fileSize(bytes) {
+            return bytes >= 1e6 ? `${(bytes / 1e6).toLocaleString('fr-FR', {maximumFractionDigits: 1})} Mo`
+                : `${Math.max(1, Math.round(bytes / 1e3)).toLocaleString('fr-FR')} ko`;
         }
         function renderSelectedFiles() {
-            const names = [...filesInput.files].map(file => file.name);
-            document.getElementById('selectedFiles').textContent =
-                names.length ? names.join(' · ') : 'Aucun fichier sélectionné';
+            const files = [...filesInput.files];
+            const total = files.reduce((sum, file) => sum + file.size, 0);
+            document.getElementById('selectedFiles').textContent = files.length
+                ? `${files.length} fichier${files.length > 1 ? 's' : ''} prêt${files.length > 1 ? 's' : ''} · ${fileSize(total)}`
+                : 'Aucun fichier sélectionné';
+            dropZone.classList.toggle('has-files', files.length > 0);
+            const list = document.getElementById('selectedList');
+            list.hidden = !files.length;
+            list.innerHTML = files.map((file, index) => `
+                <li style="--i:${Math.min(index, 10)}"><span class="db-chip-icon" aria-hidden="true">ASC</span>
+                    <span class="db-chip-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                    <small>${fileSize(file.size)}</small>
+                    <button type="button" class="db-chip-remove" data-remove="${index}" aria-label="Retirer ${escapeHtml(file.name)}">×</button></li>`).join('');
+            document.getElementById('clearFiles').hidden = !files.length;
+            document.getElementById('decodeButton').disabled = !files.length;
         }
+        function setFiles(files) {
+            const transfer = new DataTransfer();
+            files.forEach(file => transfer.items.add(file));
+            filesInput.files = transfer.files;
+            renderSelectedFiles();
+        }
+        document.getElementById('selectedList').addEventListener('click', event => {
+            const button = event.target.closest('[data-remove]');
+            if (button) setFiles([...filesInput.files].filter((_, index) => index !== Number(button.dataset.remove)));
+        });
+        document.getElementById('clearFiles').addEventListener('click', () => setFiles([]));
         function renderDatabase(data) {
             document.getElementById('fileCount').textContent = formatNumber(data.file_count);
             ['A', 'B'].forEach(channel => {
                 const settings = data.channel_settings?.[channel];
-                document.getElementById(`databaseDuration${channel}`).textContent = settings ? formatDuration(settings.actual_duration_s) : 'Aucune mesure';
-                document.getElementById(`databaseFrequency${channel}`).textContent = settings?.actual_frequency_hz != null ? `${formatNumber(settings.actual_frequency_hz)} Hz` : '—';
             });
             document.getElementById('channelCount').textContent = formatNumber(data.channel_count);
             const sourceNames = data.source_files || [];
@@ -293,7 +314,7 @@
                 }).join('') || `<tr><td colspan="6">Aucune mesure sur le canal ${channel}.</td></tr>`;
                 });
                 setContinue(data.dashboard_setup_url);
-                setMessage(`${formatNumber(data.files_count)} fichiers importés, ${formatNumber(data.measurements_count)} mesures décodées. Ouvrez le dashboard pour trier et explorer les mesures.`, 'ok');
+                setMessage(`${formatNumber(data.files_count)} fichiers importés, ${formatNumber(data.measurements_count)} mesures décodées. Vérifiez la liste ci-dessous avant de lancer une analyse.`, 'ok');
                 filesInput.value = '';
                 renderSelectedFiles();
                 await refreshDatabase();
@@ -325,6 +346,7 @@
             }
         });
 
+        renderSelectedFiles();
         refreshDatabase().catch(error => setMessage(error.message, 'error'));
     </script>
     <script>window.databaseCatalogEndpoints = {list: {{ url_for('database_sources')|tojson }}, remove: {{ url_for('delete_database_sources')|tojson }}};</script>
