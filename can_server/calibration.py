@@ -266,6 +266,20 @@ def load_run_samples(conn, protocol, run):
     return t, current, start
 
 
+def protocol_channels(protocol):
+    """Canaux couverts par une campagne : « AB » = A et B, chacun avec son Fluke."""
+    return ["A", "B"] if protocol.get("channel") == "AB" else [protocol.get("channel") or "A"]
+
+
+def channel_run(run, channel, protocol):
+    """Vue d'une répétition pour un canal : relevés Fluke propres au canal."""
+    if protocol.get("channel") != "AB":
+        return run
+    data = ((run.get("reference") or {}).get("channels") or {}).get(channel) or {}
+    return {**run, "reference": data.get("points") or {}, "fluke_min_A": data.get("min"),
+            "fluke_max_A": data.get("max"), "fluke_range_A": data.get("range")}
+
+
 def checkpoint_reference(run, checkpoint):
     references = run.get("reference") or {}
     return finite(references.get(str(checkpoint)) if str(checkpoint) in references else references.get(checkpoint))
@@ -615,8 +629,8 @@ def parse_protocol(payload, base=None):
     protocol = dict(base or DEFAULT_PROTOCOL)
     source = payload or {}
     if "channel" in source:
-        if source["channel"] not in ("A", "B"):
-            raise ValueError("Voie invalide (A ou B).")
+        if source["channel"] not in ("A", "B", "AB"):
+            raise ValueError("Voie invalide (A, B ou AB).")
         protocol["channel"] = source["channel"]
     numeric = {
         "frequency_hz": (1, 10000), "duration_s": (1, 86400), "pause_s": (0, 86400),
@@ -698,17 +712,25 @@ def register_calibration(app, project_id_provider, project_provider):
 
     def analyse_campaign(conn, campaign):
         protocol = campaign["protocol"]
+        channels = protocol_channels(protocol)
         runs_by_index = {run["run_index"]: run for run in campaign["runs"]}
-        analysed = []
-        for index in range(1, int(protocol["repetitions"]) + 1):
-            run = runs_by_index.get(index) or {"id": None, "run_index": index, "reference": {}}
-            analysed.append(analyse_run(conn, protocol, run))
+        by_channel = {}
+        for channel in channels:
+            channel_protocol = {**protocol, "channel": channel}
+            analysed = []
+            for index in range(1, int(protocol["repetitions"]) + 1):
+                run = runs_by_index.get(index) or {"id": None, "run_index": index, "reference": {}}
+                analysed.append(analyse_run(conn, channel_protocol, channel_run(run, channel, protocol)))
+            by_channel[channel] = {"runs": analysed, "summary": campaign_summary(channel_protocol, analysed)}
+        first = by_channel[channels[0]]
         return {
             "id": campaign["id"],
             "name": campaign["name"],
             "protocol": protocol,
-            "runs": analysed,
-            "summary": campaign_summary(protocol, analysed),
+            "channels": channels,
+            "by_channel": by_channel,
+            "runs": first["runs"],
+            "summary": first["summary"],
         }
 
     @app.get("/calibration")
@@ -878,26 +900,47 @@ def register_calibration(app, project_id_provider, project_provider):
             campaign = load_campaign(conn, campaign_id)
             if not 1 <= run_index <= int(campaign["protocol"]["repetitions"]):
                 return jsonify({"error": "Répétition hors protocole."}), 400
-            try:
-                references = {}
-                for key, value in (payload.get("reference") or {}).items():
+            def parse_points(raw):
+                points = {}
+                for key, value in (raw or {}).items():
                     number = optional_float(value)
                     if number is not None:
-                        references[str(int(float(key)) if float(key).is_integer() else float(key))] = number
+                        points[str(int(float(key)) if float(key).is_integer() else float(key))] = number
+                return points
+
+            def parse_range(value):
+                fluke_range = optional_float(value)
+                if fluke_range is not None and not any(math.isclose(fluke_range, s[0]) for s in FLUKE_287_DC_CURRENT):
+                    raise ValueError("Borne Fluke inconnue.")
+                return fluke_range
+
+            try:
+                multi = campaign["protocol"].get("channel") == "AB"
+                if multi:
+                    per_channel = {}
+                    for channel in ("A", "B"):
+                        data = (payload.get("channels") or {}).get(channel) or {}
+                        per_channel[channel] = {
+                            "points": parse_points(data.get("reference")),
+                            "min": optional_float(data.get("fluke_min_A")),
+                            "max": optional_float(data.get("fluke_max_A")),
+                            "range": parse_range(data.get("fluke_range_A")),
+                        }
+                    references = {"channels": per_channel}
+                else:
+                    references = parse_points(payload.get("reference"))
                 samples_reported = payload.get("samples_reported")
                 samples_reported = None if samples_reported in (None, "") else int(samples_reported)
                 if samples_reported is not None and samples_reported < 0:
                     raise ValueError("Nombre d'échantillons invalide.")
-                fluke_range = optional_float(payload.get("fluke_range_A"))
-                if fluke_range is not None and not any(math.isclose(fluke_range, s[0]) for s in FLUKE_287_DC_CURRENT):
-                    raise ValueError("Calibre Fluke inconnu.")
+                fluke_range = None if multi else parse_range(payload.get("fluke_range_A"))
                 values = (
                     (payload.get("source_file") or None),
                     optional_float(payload.get("start_offset_s")) or 0.0,
                     samples_reported,
                     json.dumps(references),
-                    optional_float(payload.get("fluke_min_A")),
-                    optional_float(payload.get("fluke_max_A")),
+                    None if multi else optional_float(payload.get("fluke_min_A")),
+                    None if multi else optional_float(payload.get("fluke_max_A")),
                     fluke_range,
                     optional_float(payload.get("ambient_c")),
                     str(payload.get("notes") or "")[:2000],
@@ -951,9 +994,10 @@ def register_calibration(app, project_id_provider, project_provider):
             results = []
             for campaign_id in ids:
                 campaign = load_campaign(conn, campaign_id)
-                if campaign["protocol"]["channel"] != channel:
+                if channel not in protocol_channels(campaign["protocol"]):
                     continue
-                analysis = analyse_campaign(conn, campaign)
+                full = analyse_campaign(conn, campaign)
+                analysis = {"id": full["id"], "name": full["name"], **full["by_channel"][channel]}
                 for run in analysis["runs"]:
                     for key in ("series", "series_smoothed", "histogram", "dt_histogram", "allan"):
                         run.pop(key, None)
@@ -982,22 +1026,22 @@ def register_calibration(app, project_id_provider, project_provider):
         writer.writerow(["Campagne", analysis["name"]])
         writer.writerow(["Protocole", json.dumps(analysis["protocol"], ensure_ascii=False)])
         writer.writerow([])
-        writer.writerow(["Répétition", "Source", "Échantillons base", "Attendus", "Relevés", "Complétude %",
+        writer.writerow(["Canal", "Répétition", "Source", "Échantillons base", "Attendus", "Relevés", "Complétude %",
                          "Fréquence effective Hz", "Moyenne A", "Écart-type A", "Min A", "Max A",
                          "Crête-crête A", "Dérive A/min", "Fluke min A", "Fluke max A"])
-        for run in analysis["runs"]:
+        for channel, run in ((c, r) for c in analysis["channels"] for r in analysis["by_channel"][c]["runs"]):
             extremes = {e["kind"]: e for e in run.get("extremes", [])}
-            writer.writerow([run["run_index"], run.get("source_file") or "", run["samples"], run["samples_expected"],
+            writer.writerow([channel, run["run_index"], run.get("source_file") or "", run["samples"], run["samples_expected"],
                              run.get("samples_reported") or "", run.get("completeness_pct"), run.get("effective_rate_hz"),
                              run.get("mean_A"), run.get("std_A"), run.get("min_A"), run.get("max_A"), run.get("p2p_A"),
                              run.get("drift_A_per_min"),
                              (extremes.get("min") or {}).get("reference_A"), (extremes.get("max") or {}).get("reference_A")])
         writer.writerow([])
-        writer.writerow(["Répétition", "Instant s", "Référence A", "INA moyenne A", "INA écart-type A", "Échantillons",
+        writer.writerow(["Canal", "Répétition", "Instant s", "Référence A", "INA moyenne A", "INA écart-type A", "Échantillons",
                          "Erreur A", "Erreur %", "Limite Fluke A", "Limite INA226 A", "Statut"])
-        for run in analysis["runs"]:
+        for channel, run in ((c, r) for c in analysis["channels"] for r in analysis["by_channel"][c]["runs"]):
             for cp in run["checkpoints"]:
-                writer.writerow([run["run_index"], cp["t_s"], cp.get("reference_A"), cp.get("ina_mean_A"),
+                writer.writerow([channel, run["run_index"], cp["t_s"], cp.get("reference_A"), cp.get("ina_mean_A"),
                                  cp.get("ina_std_A"), cp.get("samples"), cp.get("error_A"), cp.get("error_pct"),
                                  cp.get("reference_limit_A"), cp.get("ina_limit_A"), cp.get("status")])
         filename = f"calibration_{campaign_id[:8]}.csv"

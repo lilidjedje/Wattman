@@ -86,6 +86,34 @@ class CalibrationTest(unittest.TestCase):
         bad = self.client.post("/api/calibration/campaigns", json={"protocol": {"shunt_ohm": "RXX"}})
         self.assertEqual(bad.status_code, 400)
 
+    def test_two_channel_campaign_keeps_readings_per_channel(self):
+        campaign = self.create_campaign(channel="AB", repetitions=1)
+        self.assertEqual(campaign["protocol"]["channel"], "AB")
+        self.insert_run("live_ab", 1_800_000_000, 0.300, 0.001, channel="A")
+        self.insert_run("live_ab", 1_800_000_000, 0.100, 0.0, seconds=10, channel="B")
+        response = self.client.put(f"/api/calibration/campaigns/{campaign['id']}/runs/1", json={
+            "source_file": "live_ab",
+            "channels": {
+                "A": {"reference": {"0": 0.300, "20": 0.300}, "fluke_range_A": 0.4, "fluke_min_A": 0.299},
+                "B": {"reference": {"0": 0.100, "20": 0.100}, "fluke_range_A": 10},
+            },
+        })
+        self.assertEqual(response.status_code, 200, response.get_json())
+        analysis = self.client.get(f"/api/calibration/campaigns/{campaign['id']}/analysis").get_json()["analysis"]
+        self.assertEqual(analysis["channels"], ["A", "B"])
+        run_a = analysis["by_channel"]["A"]["runs"][0]
+        run_b = analysis["by_channel"]["B"]["runs"][0]
+        self.assertAlmostEqual(run_a["checkpoints"][0]["error_A"], 0.001, delta=0.0003)
+        self.assertEqual(run_a["checkpoints"][0]["reference_range_A"], 0.4)
+        self.assertEqual(run_b["checkpoints"][0]["reference_range_A"], 5.0)
+        # Le canal B ne couvre que 10 s : l'instant 20 s est incomplet.
+        self.assertIsNone(run_b["checkpoints"][1].get("ina_mean_A"))
+        self.assertEqual(run_b["checkpoints"][1]["status"], "missing")
+        overview = self.client.get("/api/calibration/overview?channel=B").get_json()
+        self.assertEqual(len(overview["campaigns"]), 1)
+        export = self.client.get(f"/api/calibration/campaigns/{campaign['id']}/export.csv").get_data(as_text=True)
+        self.assertIn("Canal;Répétition", export)
+
     def test_fluke_input_selects_range_within_jack(self):
         from calibration import fluke_range_for
         self.assertEqual(fluke_range_for(0.3, 0.4)[0], 0.4)

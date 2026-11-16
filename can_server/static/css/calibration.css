@@ -232,6 +232,36 @@ html body .cal-run.panel {
 .cal-pill.pass { background: var(--rg-ok-soft, #e3f3ea); color: var(--cal-ok); }
 .cal-pill.warning { background: var(--rg-warn-soft, #fff3d6); color: var(--cal-warn); }
 .cal-pill.fail { background: var(--rg-danger-soft, #fbeaea); color: var(--cal-bad); }
+.cal-pill.neutral { background: color-mix(in srgb, var(--ch-color, var(--rg-info, #1f5fbf)) 12%, transparent); color: var(--rg-ink-2); }
+.cal-pill.missing {
+    background: repeating-linear-gradient(135deg, var(--rg-warn-soft, #fff3d6) 0 6px, transparent 6px 12px), var(--rg-surface-2);
+    color: var(--cal-warn); border: 1px dashed color-mix(in srgb, var(--cal-warn) 55%, transparent); white-space: normal;
+}
+:root[data-theme="dark"] .cal-pill.missing { color: #f0b429; }
+.cal-reading em { justify-self: start; }
+
+/* Blocs par canal dans une répétition */
+.cal-channel-blocks { display: grid; gap: 12px; }
+html body .cal-run.panel.multi { grid-column: 1 / -1; }
+.cal-run.multi .cal-channel-blocks { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.cal-channel-block {
+    --ch-color: #1f5fbf;
+    display: grid; gap: 10px; padding: 12px; border-radius: var(--rg-radius-md, 10px);
+    border: 1px solid color-mix(in srgb, var(--ch-color) 35%, var(--rg-line));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--ch-color) 8%, transparent), transparent 90px);
+}
+.cal-channel-block.channel-B { --ch-color: #d55e00; }
+:root[data-theme="dark"] .cal-channel-block { --ch-color: #6aa1f0; }
+:root[data-theme="dark"] .cal-channel-block.channel-B { --ch-color: #f08a3c; }
+.cal-run .cal-channel-block .cal-channel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 0; background: none; border: 0; }
+.cal-channel-chip {
+    padding: 3px 10px; border-radius: 999px; background: var(--ch-color); color: #fff;
+    font: 800 .78rem var(--rg-font-mono, Consolas, monospace); letter-spacing: .06em; text-transform: uppercase;
+}
+.cal-channel-head small { color: var(--rg-ink-3); font: .75rem var(--rg-font-mono, Consolas, monospace); }
+.cal-channel-block .cal-readings { border-color: color-mix(in srgb, var(--ch-color) 30%, var(--rg-line)); }
+.cal-channel-block .cal-readings legend { color: var(--ch-color); }
+.cal-channel-switch { margin-left: auto; }
 
 /* Synthèse */
 .cal-verdict {

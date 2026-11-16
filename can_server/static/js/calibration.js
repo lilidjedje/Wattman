@@ -21,6 +21,8 @@
         analysis: null,
         overview: null,
         hiddenRuns: new Set(),
+        full: null,
+        viewChannel: 'A',
         charts: {},
         saveTimers: {},
         analysisTimer: null,
@@ -247,23 +249,11 @@
         try {
             button.disabled = true;
             const payload = protocolFromForm();
-            const both = payload.protocol.channel === 'AB';
-            const named = channel => ({...payload, name: both ? `${(payload.name || 'Calibration').replace(/\s*·\s*canal [AB]$/i, '')} · canal ${channel}` : payload.name,
-                protocol: {...payload.protocol, channel}});
-            let data;
-            if (state.campaign) {
-                const own = both ? state.campaign.protocol.channel : payload.protocol.channel;
-                data = await request(`${api.campaigns}/${state.campaign.id}`, {method: 'PUT', body: JSON.stringify(named(own))});
-                if (both) await request(api.campaigns, {method: 'POST', body: JSON.stringify(named(own === 'A' ? 'B' : 'A'))});
-            } else if (both) {
-                data = await request(api.campaigns, {method: 'POST', body: JSON.stringify(named('A'))});
-                await request(api.campaigns, {method: 'POST', body: JSON.stringify(named('B'))});
-            } else {
-                data = await request(api.campaigns, {method: 'POST', body: JSON.stringify(payload)});
-            }
-            flash($('protocolMessage'), both
-                ? 'Deux campagnes créées, une par voie (A et B) : chaque circuit a ses propres relevés Fluke. Basculez de l’une à l’autre dans la liste.'
-                : state.campaign ? 'Protocole enregistré.' : 'Campagne créée : reliez maintenant chaque répétition à son enregistrement.');
+            const data = state.campaign
+                ? await request(`${api.campaigns}/${state.campaign.id}`, {method: 'PUT', body: JSON.stringify(payload)})
+                : await request(api.campaigns, {method: 'POST', body: JSON.stringify(payload)});
+            flash($('protocolMessage'), state.campaign ? 'Protocole enregistré.'
+                : 'Campagne créée : choisissez maintenant les mesures à comparer.');
             await loadCampaigns();
             await openCampaign(data.campaign.id);
         } catch (error) {
@@ -275,6 +265,7 @@
     $('newCampaign').addEventListener('click', () => {
         state.campaign = null;
         state.analysis = null;
+        state.full = null;
         bulk.selected.clear();
         fillForm(null);
         renderBulkSources();
@@ -301,7 +292,7 @@
         $('campaignList').innerHTML = state.campaigns.length ? state.campaigns.map(campaign => `
             <button type="button" class="cal-campaign${state.campaign?.id === campaign.id ? ' active' : ''}" data-id="${campaign.id}">
                 <strong>${escapeHtml(campaign.name)}</strong>
-                <span>Canal ${campaign.protocol.channel} · ${campaign.protocol.repetitions} × ${count(campaign.protocol.duration_s)} s @ ${count(campaign.protocol.frequency_hz)} Hz</span>
+                <span>${campaign.protocol.channel === 'AB' ? 'Canaux A et B' : `Canal ${campaign.protocol.channel}`} · ${campaign.protocol.repetitions} × ${count(campaign.protocol.duration_s)} s @ ${count(campaign.protocol.frequency_hz)} Hz</span>
                 <small>${campaign.linked_runs}/${campaign.protocol.repetitions} répétitions reliées · ${new Date(campaign.updated_at * 1000).toLocaleString('fr-FR', {dateStyle: 'short', timeStyle: 'short'})}</small>
             </button>`).join('') : '<div class="empty-notice">Aucune campagne. Créez-en une avec le protocole ci-dessous.</div>';
     }
@@ -320,41 +311,54 @@
         await refreshAnalysis();
     }
 
+    const CHANNEL_ID = {A: '0x40', B: '0x44'};
+    function campaignChannels() {
+        const channel = state.campaign?.protocol.channel || form.channel.value;
+        return channel === 'AB' ? ['A', 'B'] : [channel === 'B' ? 'B' : 'A'];
+    }
+    function channelRun(run, channel) {
+        if (state.campaign?.protocol.channel !== 'AB') return run;
+        const data = run.reference?.channels?.[channel] || {};
+        return {...run, reference: data.points || {}, fluke_min_A: data.min ?? null, fluke_max_A: data.max ?? null, fluke_range_A: data.range ?? null};
+    }
+
     // ------------------------------------------------------------------ Sources
     async function loadSources() {
         state.sources = (await request(api.sources)).sources;
         renderBulkSources();
     }
     function sourceOptions(selected) {
-        const channel = state.campaign?.protocol.channel || form.channel.value;
-        const items = state.sources.filter(source => source.channels[channel]);
-        return `<option value="">— Choisir un enregistrement (canal ${channel}) —</option>` + items.map(source => {
-            const info = source.channels[channel];
+        const channels = campaignChannels();
+        const items = state.sources.filter(source => channels.some(channel => source.channels[channel]));
+        return `<option value="">— Choisir une mesure (canal ${channels.join(' + ')}) —</option>` + items.map(source => {
+            const info = source.channels[channels.find(channel => source.channels[channel])];
             return `<option value="${escapeHtml(source.source_file)}" ${source.source_file === selected ? 'selected' : ''}>
                 ${escapeHtml(source.kind === 'digital' ? 'Numérique' : source.kind === 'asc' ? 'ASC' : 'Source')} · ${escapeHtml(source.started_label)} · ${escapeHtml(source.name)} · ${count(info.samples)} éch.</option>`;
         }).join('');
     }
     const bulk = {kind: 'all', selected: new Set()};
     function channelSources() {
-        const channel = state.campaign?.protocol.channel || (form.channel.value === 'B' ? 'B' : 'A');
-        return {channel, items: state.sources.filter(source => source.channels[channel]).sort((a, b) => (a.start || 0) - (b.start || 0))};
+        const channels = campaignChannels();
+        return {channel: channels.join(' + '), channels,
+            items: state.sources.filter(source => channels.some(channel => source.channels[channel])).sort((a, b) => (a.start || 0) - (b.start || 0))};
     }
     function renderBulkSources() {
-        const {channel, items} = channelSources();
+        const {channel, channels, items} = channelSources();
         const visible = items.filter(source => bulk.kind === 'all' || source.kind === bulk.kind);
         const order = [...bulk.selected].map(key => items.find(item => item.source_file === key)).filter(Boolean)
             .sort((a, b) => (a.start || 0) - (b.start || 0)).map(item => item.source_file);
         $('bulkSources').innerHTML = !state.campaign
             ? '<div class="empty-notice">Créez ou ouvrez une campagne pour choisir ses mesures.</div>'
             : visible.length ? visible.map((source, index) => {
-                const info = source.channels[channel];
+                const present = channels.filter(item => source.channels[item]);
+                const info = source.channels[present[0]];
                 const rank = order.indexOf(source.source_file);
                 return `
                 <label class="cal-source ${source.kind}${rank >= 0 ? ' selected' : ''}" style="--i:${Math.min(index, 12)}${rank >= 0 ? `;--run-color:${series(rank)}` : ''}">
                     <input type="checkbox" value="${escapeHtml(source.source_file)}" ${rank >= 0 ? 'checked' : ''}>
                     <span class="cal-source-rank" aria-hidden="true">${rank >= 0 ? `R${rank + 1}` : ''}</span>
                     <span class="cal-source-body">
-                        <span class="cal-source-kind">${source.kind === 'digital' ? 'Numérique ESP32' : source.kind === 'asc' ? 'Log ASC' : 'Source'}</span>
+                        <span class="cal-source-kind">${source.kind === 'digital' ? 'Numérique ESP32' : source.kind === 'asc' ? 'Log ASC' : 'Source'} · canal ${present.join('+')}</span>
                         <strong>${escapeHtml(source.kind === 'digital' ? source.started_label : source.name)}</strong>
                         <small>${source.kind === 'digital' ? '' : `${escapeHtml(source.started_label)} · `}${count(info.samples)} éch. · ${duration((info.end || 0) - (info.start || 0))}${info.frequency_hz ? ` · ${count(info.frequency_hz)} Hz` : ''}</small>
                     </span>
@@ -391,12 +395,19 @@
             const previous = new Map((state.campaign.runs || []).filter(run => run.source_file).map(run => [run.source_file, run]));
             await request(`${api.campaigns}/${state.campaign.id}`, {method: 'PUT', body: JSON.stringify({protocol: {repetitions: chosen.length}})});
             for (let index = 0; index < chosen.length; index++) {
-                const kept = previous.get(chosen[index].source_file) || {};
+                const kept = previous.get(chosen[index].source_file) || {reference: {}};
+                const perChannel = channel => {
+                    const view = channelRun(kept, channel);
+                    return {reference: view.reference || {}, fluke_min_A: view.fluke_min_A ?? null,
+                        fluke_max_A: view.fluke_max_A ?? null, fluke_range_A: view.fluke_range_A ?? null};
+                };
+                const channels = campaignChannels();
                 await request(`${api.campaigns}/${state.campaign.id}/runs/${index + 1}`, {method: 'PUT', body: JSON.stringify({
                     source_file: chosen[index].source_file, start_offset_s: kept.start_offset_s || 0,
-                    samples_reported: kept.samples_reported ?? null, fluke_range_A: kept.fluke_range_A ?? null,
-                    fluke_min_A: kept.fluke_min_A ?? null, fluke_max_A: kept.fluke_max_A ?? null,
-                    ambient_c: kept.ambient_c ?? null, notes: kept.notes || '', reference: kept.reference || {},
+                    samples_reported: kept.samples_reported ?? null, ambient_c: kept.ambient_c ?? null, notes: kept.notes || '',
+                    ...(state.campaign.protocol.channel === 'AB'
+                        ? {channels: Object.fromEntries(channels.map(channel => [channel, perChannel(channel)]))}
+                        : perChannel(channels[0])),
                 })});
             }
             await loadCampaigns();
@@ -425,7 +436,7 @@
         for (let index = 1; index <= protocol.repetitions; index++) {
             const run = runData(index);
             html.push(`
-            <article class="cal-run panel" data-run="${index}" style="--run-color:${series(index - 1)}">
+            <article class="cal-run panel${campaignChannels().length > 1 ? ' multi' : ''}" data-run="${index}" style="--run-color:${series(index - 1)}">
                 <header>
                     <span class="cal-run-badge">R${index}</span>
                     <div><h3>Répétition ${index}</h3><small>${escapeHtml(runSourceLabel(run.source_file))}</small></div>
@@ -438,33 +449,42 @@
                     <label class="field">Début (s) <input name="start_offset_s" inputmode="decimal" value="${fromAmpsRaw(run.start_offset_s)}" placeholder="0" title="Décalage depuis le premier échantillon de la mesure"></label>
                     <label class="field">Éch. relevés <input name="samples_reported" inputmode="numeric" value="${run.samples_reported ?? ''}" placeholder="${count(expected)}"></label>
                 </div>
-                <div class="cal-grid-1">
+                <div class="cal-channel-blocks">${campaignChannels().map(channel => channelBlock(index, channel, channelRun(run, channel), protocol)).join('')}</div>
+                <div class="cal-grid-2">
+                    <label class="field">Ambiante (°C) <input name="ambient_c" inputmode="decimal" value="${fromAmpsRaw(run.ambient_c)}"></label>
+                    <label class="field">Notes <input name="notes" value="${escapeHtml(run.notes || '')}"></label>
+                </div>
+            </article>`);
+        }
+        container.innerHTML = html.join('');
+        renderRunLive();
+    }
+    function channelBlock(index, channel, run, protocol) {
+        const id = `${index}_${channel}`;
+        return `
+                <section class="cal-channel-block channel-${channel}" data-channel-block="${channel}">
+                    <header class="cal-channel-head">
+                        <span class="cal-channel-chip">Canal ${channel}</span>
+                        <small>INA226 · ID ${CHANNEL_ID[channel]}</small>
+                    </header>
                     <label class="field">Borne Fluke (entrée branchée)
                         <select name="fluke_range_A" title="Borne d’entrée du Fluke 287 sur laquelle le courant est branché. Le multimètre choisit ensuite seul le calibre (plage) de cette borne ; la précision utilisée dans les calculs en dépend.">
                             <option value="0.4" ${flukeInput(run) === 0.4 ? 'selected' : ''}>mA · 400 mA max</option>
                             <option value="10" ${flukeInput(run) === 10 ? 'selected' : ''}>A · 10 A max</option>
                         </select>
                     </label>
-                </div>
-                <fieldset class="cal-readings">
-                    <legend>Relevés Fluke (${state.unit})</legend>
-                    ${protocol.checkpoints_s.map(cp => `
-                        <div class="cal-reading"><label for="ref_${index}_${cp}">I à ${count(cp)} s</label>
-                            <input id="ref_${index}_${cp}" name="ref_${cp}" data-checkpoint="${cp}" inputmode="decimal" autocomplete="off" value="${fromAmps(run.reference?.[String(cp)])}">
+                    <fieldset class="cal-readings">
+                        <legend>Relevés Fluke (${state.unit})</legend>
+                        ${protocol.checkpoints_s.map(cp => `
+                        <div class="cal-reading"><label for="ref_${id}_${cp}">I à ${count(cp)} s</label>
+                            <input id="ref_${id}_${cp}" data-checkpoint="${cp}" inputmode="decimal" autocomplete="off" value="${fromAmps(run.reference?.[String(cp)])}">
                             <em data-cp-status="${cp}"></em>
                         </div>`).join('')}
-                    <div class="cal-reading"><label for="min_${index}">MIN</label><input id="min_${index}" name="fluke_min_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_min_A)}"><em data-ext-status="min"></em></div>
-                    <div class="cal-reading"><label for="max_${index}">MAX</label><input id="max_${index}" name="fluke_max_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_max_A)}"><em data-ext-status="max"></em></div>
-                </fieldset>
-                <div class="cal-grid-2">
-                    <label class="field">Ambiante (°C) <input name="ambient_c" inputmode="decimal" value="${fromAmpsRaw(run.ambient_c)}"></label>
-                    <label class="field">Notes <input name="notes" value="${escapeHtml(run.notes || '')}"></label>
-                </div>
-                <div class="cal-run-live" data-live></div>
-            </article>`);
-        }
-        container.innerHTML = html.join('');
-        renderRunLive();
+                        <div class="cal-reading"><label for="min_${id}">MIN</label><input id="min_${id}" name="fluke_min_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_min_A)}"><em data-ext-status="min"></em></div>
+                        <div class="cal-reading"><label for="max_${id}">MAX</label><input id="max_${id}" name="fluke_max_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_max_A)}"><em data-ext-status="max"></em></div>
+                    </fieldset>
+                    <div class="cal-run-live" data-live></div>
+                </section>`;
     }
     function flukeInput(run) {
         if (run.fluke_range_A != null) return run.fluke_range_A > 0.4 + 1e-12 ? 10 : 0.4;
@@ -480,29 +500,34 @@
     function fromAmpsRaw(value) { return value == null ? '' : String(+Number(value).toFixed(3)).replace('.', ','); }
     function collectRun(card) {
         const field = name => card.querySelector(`[name="${name}"]`);
-        const reference = {};
-        card.querySelectorAll('[data-checkpoint]').forEach(input => {
-            const value = toAmps(input.value);
-            if (Number.isNaN(value)) throw new Error(`Valeur invalide à ${input.dataset.checkpoint} s.`);
-            if (value != null) reference[input.dataset.checkpoint] = value;
-        });
-        const number = (name, convert) => {
-            const raw = field(name).value;
-            const value = convert ? toAmps(raw) : parseInput(raw);
-            if (Number.isNaN(value)) throw new Error(`Valeur invalide : ${name}.`);
+        const number = (input, convert, label) => {
+            const value = convert ? toAmps(input.value) : parseInput(input.value);
+            if (Number.isNaN(value)) throw new Error(`Valeur invalide : ${label}.`);
             return value;
         };
-        return {
+        const channels = {};
+        card.querySelectorAll('[data-channel-block]').forEach(section => {
+            const channel = section.dataset.channelBlock;
+            const reference = {};
+            section.querySelectorAll('[data-checkpoint]').forEach(input => {
+                const value = number(input, true, `canal ${channel} à ${input.dataset.checkpoint} s`);
+                if (value != null) reference[input.dataset.checkpoint] = value;
+            });
+            channels[channel] = {
+                reference,
+                fluke_range_A: section.querySelector('[name="fluke_range_A"]').value || null,
+                fluke_min_A: number(section.querySelector('[name="fluke_min_A"]'), true, `MIN canal ${channel}`),
+                fluke_max_A: number(section.querySelector('[name="fluke_max_A"]'), true, `MAX canal ${channel}`),
+            };
+        });
+        const common = {
             source_file: field('source_file').value || null,
-            start_offset_s: number('start_offset_s'),
+            start_offset_s: number(field('start_offset_s'), false, 'début'),
             samples_reported: field('samples_reported').value.replace(/\s/g, '') || null,
-            fluke_range_A: field('fluke_range_A').value || null,
-            fluke_min_A: number('fluke_min_A', true),
-            fluke_max_A: number('fluke_max_A', true),
-            ambient_c: number('ambient_c'),
+            ambient_c: number(field('ambient_c'), false, 'température ambiante'),
             notes: field('notes').value,
-            reference,
         };
+        return state.campaign.protocol.channel === 'AB' ? {...common, channels} : {...common, ...Object.values(channels)[0]};
     }
     async function saveRun(index, silent = false) {
         const card = document.querySelector(`.cal-run[data-run="${index}"]`);
@@ -539,22 +564,27 @@
         saveRun(index);
     });
 
+    function incomplete(slot, text) {
+        slot.className = 'cal-pill missing';
+        slot.textContent = `Incomplet · ${text}`;
+        slot.title = 'Aucun échantillon de la mesure ne couvre cet instant.';
+    }
     function renderRunLive() {
-        if (!state.analysis) return;
-        state.analysis.runs.forEach(run => {
-            const card = document.querySelector(`.cal-run[data-run="${run.run_index}"]`);
-            if (!card) return;
-            const live = card.querySelector('[data-live]');
+        if (!state.full) return;
+        state.full.channels.forEach(channel => state.full.by_channel[channel].runs.forEach(run => {
+            const section = document.querySelector(`.cal-run[data-run="${run.run_index}"] [data-channel-block="${channel}"]`);
+            if (!section) return;
+            const live = section.querySelector('[data-live]');
             if (!run.has_data) {
-                live.innerHTML = '<span class="cal-muted">Aucune donnée liée pour cette fenêtre.</span>';
+                live.innerHTML = `<span class="cal-pill missing">Incomplet · ${run.source_file ? `aucun échantillon du canal ${channel} dans cette mesure` : 'aucune mesure reliée'}</span>`;
             } else {
                 const completeness = Math.min(100, run.completeness_pct || 0);
                 const tone = completeness >= 99 ? 'ok' : completeness >= 95 ? 'warn' : 'bad';
                 live.innerHTML = `
                     <div class="cal-meter ${tone}" title="Complétude"><span style="width:${completeness}%"></span></div>
                     <div class="cal-live-grid">
-                        <span><b>${count(run.samples)}</b> / ${count(run.samples_expected)} en base (${pct(run.completeness_pct, 1)})</span>
-                        <span>Relevé : <b>${count(run.samples_reported)}</b>${run.reported_vs_db ? ` <em class="cal-delta">${run.reported_vs_db > 0 ? '+' : ''}${count(run.reported_vs_db)}</em>` : ''}</span>
+                        <span><b>${count(run.samples)}</b> / ${count(run.samples_expected)} éch. (${pct(run.completeness_pct, 1)})</span>
+                        <span>Durée couverte <b>${nf(1).format(Math.max(0, (run.last_t_s || 0) - (run.first_t_s || 0)))} s</b></span>
                         <span>Moyenne <b>${amps(run.mean_A)}</b></span>
                         <span>σ <b>${amps(run.std_A)}</b></span>
                         <span>Min <b>${amps(run.min_A)}</b> · Max <b>${amps(run.max_A)}</b></span>
@@ -562,26 +592,29 @@
                     </div>`;
             }
             run.checkpoints.forEach(cp => {
-                const slot = card.querySelector(`[data-cp-status="${cp.t_s}"]`);
+                const slot = section.querySelector(`[data-cp-status="${cp.t_s}"]`);
                 if (!slot) return;
-                slot.className = `cal-pill ${cp.status}`;
-                slot.textContent = cp.error_A != null ? `${signed(cp.error_A)} · INA ${amps(cp.ina_mean_A)}` : (cp.ina_mean_A != null ? `INA ${amps(cp.ina_mean_A)}` : '');
-                slot.title = cp.error_A != null ? `${STATUS[cp.status][0]} — limite Fluke ±${amps(cp.reference_limit_A)} (${cp.reference_formula})` : '';
+                if (!run.has_data) return incomplete(slot, run.source_file ? `canal ${channel} absent de cette mesure` : 'aucune mesure reliée');
+                if (cp.ina_mean_A == null) return incomplete(slot, `pas de mesure à ${count(cp.t_s)} s`);
+                slot.className = `cal-pill ${cp.error_A != null ? cp.status : 'neutral'}`;
+                slot.textContent = cp.error_A != null ? `INA ${amps(cp.ina_mean_A)} · écart ${signed(cp.error_A)}` : `INA ${amps(cp.ina_mean_A)} (moyenne ${count(cp.samples)} éch.)`;
+                slot.title = cp.error_A != null ? `${STATUS[cp.status][0]} — limite Fluke ±${amps(cp.reference_limit_A)} (${cp.reference_formula})` : 'Valeur trouvée dans la mesure : saisissez la lecture du Fluke pour calculer l’écart.';
             });
-            (run.extremes || []).forEach(extreme => {
-                const slot = card.querySelector(`[data-ext-status="${extreme.kind}"]`);
+            ['min', 'max'].forEach(kind => {
+                const slot = section.querySelector(`[data-ext-status="${kind}"]`);
+                const extreme = (run.extremes || []).find(item => item.kind === kind);
                 if (!slot) return;
+                if (!run.has_data || !extreme) return incomplete(slot, run.source_file ? `canal ${channel} absent de cette mesure` : 'aucune mesure reliée');
                 slot.className = 'cal-pill neutral';
                 slot.textContent = extreme.error_raw_A != null
-                    ? `brut ${signed(extreme.error_raw_A)} · lissé ${signed(extreme.error_smoothed_A)}`
-                    : `INA ${amps(extreme.ina_raw_A)}`;
+                    ? `INA ${amps(extreme.ina_raw_A)} · écart ${signed(extreme.error_raw_A)} (lissé ${signed(extreme.error_smoothed_A)})`
+                    : `INA ${kind.toUpperCase()} ${amps(extreme.ina_raw_A)} · lissé ${amps(extreme.ina_smoothed_A)}`;
             });
-        });
-        const first = state.analysis.runs.find(run => run.checkpoints.some(cp => cp.reference_A != null));
-        const reading = first?.checkpoints.find(cp => cp.reference_A != null)?.reference_A;
+        }));
         ['A', 'B'].forEach(channel => {
-            $(`schematicReading${channel}`).textContent = channel === state.analysis.protocol.channel && reading != null
-                ? amps(reading, state.unit === 'A' ? 4 : 2) : `— ${state.unit}`;
+            const runs = state.full.by_channel[channel]?.runs || [];
+            const reading = runs.flatMap(run => run.checkpoints).find(cp => cp.reference_A != null)?.reference_A;
+            $(`schematicReading${channel}`).textContent = reading != null ? amps(reading, state.unit === 'A' ? 4 : 2) : `— ${state.unit}`;
         });
     }
 
@@ -594,18 +627,34 @@
         if (!state.campaign) return;
         $('calState').textContent = 'Analyse…';
         try {
-            state.analysis = (await request(`${api.campaigns}/${state.campaign.id}/analysis`)).analysis;
-            const summary = state.analysis.summary;
-            $('calState').textContent = `${count(summary.samples_total)} échantillons analysés`;
+            state.full = (await request(`${api.campaigns}/${state.campaign.id}/analysis`)).analysis;
+            if (!state.full.channels.includes(state.viewChannel)) state.viewChannel = state.full.channels[0];
+            setViewChannel(state.viewChannel, false);
+            const total = state.full.channels.reduce((sum, channel) => sum + (state.full.by_channel[channel].summary.samples_total || 0), 0);
+            $('calState').textContent = `${count(total)} échantillons analysés`;
             renderAll();
             loadOverview();
         } catch (error) {
             $('calState').textContent = error.message;
         }
     }
+    function setViewChannel(channel, render = true) {
+        state.viewChannel = channel;
+        const view = state.full.by_channel[channel];
+        state.analysis = {id: state.full.id, name: state.full.name, channels: state.full.channels,
+            protocol: {...state.full.protocol, channel}, runs: view.runs, summary: view.summary};
+        const switcher = $('channelSwitch');
+        switcher.hidden = state.full.channels.length < 2;
+        switcher.querySelectorAll('[data-view-channel]').forEach(button => button.classList.toggle('active', button.dataset.viewChannel === channel));
+        if (render) { renderAll(); loadOverview(); }
+    }
+    $('channelSwitch').addEventListener('click', event => {
+        const button = event.target.closest('[data-view-channel]');
+        if (button && state.full) setViewChannel(button.dataset.viewChannel);
+    });
     async function loadOverview() {
         if (!state.campaign) return;
-        state.overview = await request(`${api.overview}?channel=${state.campaign.protocol.channel}`);
+        state.overview = await request(`${api.overview}?channel=${state.viewChannel}`);
         if (state.tab === 'levels') renderLevels();
     }
     function renderAll() {
