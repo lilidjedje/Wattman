@@ -191,9 +191,7 @@
                 duration_s: data.duration_s,
                 repetitions: data.repetitions,
                 pause_s: data.pause_s,
-                window_s: data.window_s,
                 checkpoints_s: data.checkpoints_s,
-                smoothing_s: data.smoothing_s,
                 shunt_ohm: shunt,
                 shunt_tolerance_pct: data.shunt_tolerance_pct,
             },
@@ -203,7 +201,7 @@
         const protocol = campaign ? campaign.protocol : config.defaults;
         form.name.value = campaign ? campaign.name : '';
         form.notes.value = campaign ? campaign.notes || '' : '';
-        ['channel', 'frequency_hz', 'duration_s', 'repetitions', 'pause_s', 'window_s', 'smoothing_s', 'shunt_tolerance_pct']
+        ['channel', 'frequency_hz', 'duration_s', 'repetitions', 'pause_s', 'shunt_tolerance_pct']
             .forEach(key => { form[key].value = protocol[key]; });
         form.shunt.value = shuntCode(protocol.shunt_ohm);
         form.checkpoints_s.value = protocol.checkpoints_s.join(', ');
@@ -219,7 +217,6 @@
         const perRun = Math.round(f * d);
         const total = perRun * r;
         const totalTime = r * d + Math.max(0, r - 1) * p;
-        const windowSamples = Math.round((Number(form.window_s.value) || 0) * f);
         const shunt = parseShunt(form.shunt.value);
         const validShunt = shunt > 0;
         const lsb = validShunt ? INA_LSB_V / shunt : null;
@@ -235,10 +232,9 @@
             <div><span>Échantillons au total</span><strong>${count(total)}</strong><small>${r} répétition${r > 1 ? 's' : ''}</small></div>
             <div class="cal-computed-accent"><span>Résolution INA226</span><strong>${validShunt ? `${physical(lsb)}/bit` : '—'}</strong><small>2,5 µV ÷ ${validShunt ? physical(shunt, 'Ω') : 'R shunt'}</small></div>
             <div class="cal-computed-accent"><span>Courant max mesurable</span><strong>${validShunt ? `±${physical(maxCurrent)}` : '—'}</strong><small>81,92 mV ÷ R${validShunt ? ` · ${physical(power, 'W')} dissipés` : ''}</small></div>
-            <div><span>Durée du protocole</span><strong>${duration(totalTime)}</strong><small>pauses incluses</small></div>
-            <div><span>Échantillons / relevé</span><strong>${count(windowSamples)}</strong><small>fenêtre de moyennage INA</small></div>`;
+            <div><span>Durée du protocole</span><strong>${duration(totalTime)}</strong><small>pauses incluses</small></div>`;
         document.querySelectorAll('[data-circuit]').forEach(circuit => {
-            circuit.classList.toggle('active', circuit.dataset.circuit === form.channel.value);
+            circuit.classList.toggle('active', form.channel.value.includes(circuit.dataset.circuit));
             if (validShunt) {
                 circuit.querySelector('[data-shunt-code]').textContent = `Rshunt ${shuntCode(shunt)}`;
                 circuit.querySelector("[data-shunt-lsb]").textContent = `${physical(lsb)}/bit`;
@@ -252,10 +248,23 @@
         try {
             button.disabled = true;
             const payload = protocolFromForm();
-            const data = state.campaign
-                ? await request(`${api.campaigns}/${state.campaign.id}`, {method: 'PUT', body: JSON.stringify(payload)})
-                : await request(api.campaigns, {method: 'POST', body: JSON.stringify(payload)});
-            flash($('protocolMessage'), state.campaign ? 'Protocole enregistré.' : 'Campagne créée : reliez maintenant chaque répétition à son enregistrement.');
+            const both = payload.protocol.channel === 'AB';
+            const named = channel => ({...payload, name: both ? `${(payload.name || 'Calibration').replace(/\s*·\s*canal [AB]$/i, '')} · canal ${channel}` : payload.name,
+                protocol: {...payload.protocol, channel}});
+            let data;
+            if (state.campaign) {
+                const own = both ? state.campaign.protocol.channel : payload.protocol.channel;
+                data = await request(`${api.campaigns}/${state.campaign.id}`, {method: 'PUT', body: JSON.stringify(named(own))});
+                if (both) await request(api.campaigns, {method: 'POST', body: JSON.stringify(named(own === 'A' ? 'B' : 'A'))});
+            } else if (both) {
+                data = await request(api.campaigns, {method: 'POST', body: JSON.stringify(named('A'))});
+                await request(api.campaigns, {method: 'POST', body: JSON.stringify(named('B'))});
+            } else {
+                data = await request(api.campaigns, {method: 'POST', body: JSON.stringify(payload)});
+            }
+            flash($('protocolMessage'), both
+                ? 'Deux campagnes créées, une par voie (A et B) : chaque circuit a ses propres relevés Fluke. Basculez de l’une à l’autre dans la liste.'
+                : state.campaign ? 'Protocole enregistré.' : 'Campagne créée : reliez maintenant chaque répétition à son enregistrement.');
             await loadCampaigns();
             await openCampaign(data.campaign.id);
         } catch (error) {

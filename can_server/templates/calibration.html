@@ -117,13 +117,12 @@
                     <label class="field">Nom <input name="name" maxlength="120" placeholder="Offset voie A — 300 mA"></label>
                     <div class="cal-grid-2">
                         <label class="field">Voie
-                            <select name="channel"><option value="A">Canal A</option><option value="B">Canal B</option></select>
+                            <select name="channel"><option value="A">Canal A</option><option value="B">Canal B</option><option value="AB">Canal A et B</option></select>
                         </label>
                         <label class="field">Fréquence (Hz) <input name="frequency_hz" type="number" min="1" step="1" required></label>
                         <label class="field">Durée (s) <input name="duration_s" type="number" min="1" step="1" required></label>
                         <label class="field">Répétitions <input name="repetitions" type="number" min="1" max="50" step="1" required></label>
                         <label class="field">Pause (s) <input name="pause_s" type="number" min="0" step="1" required></label>
-                        <label class="field">Fenêtre relevé (s) <input name="window_s" type="number" min="0.01" step="0.01" required title="Les échantillons INA de part et d’autre de chaque instant sont moyennés sur cette durée"></label>
                     </div>
                     <label class="field">Instants de relevé (s) <input name="checkpoints_s" placeholder="0, 20, 40, 60" required></label>
                     <div class="cal-grid-2">
@@ -143,12 +142,6 @@
                         <option value="R001">0,001 Ω</option>
                     </datalist>
                     <p class="cal-shunt-hint" id="shuntHint" role="status"></p>
-                    <details class="cal-advanced">
-                        <summary>Paramètres avancés</summary>
-                        <div class="cal-grid-2">
-                            <label class="field">Lissage min/max (s) <input name="smoothing_s" type="number" min="0" step="0.05"></label>
-                        </div>
-                    </details>
                     <label class="field">Notes <textarea name="notes" rows="2" placeholder="Banc, température, source de courant…"></textarea></label>
                     <div class="cal-computed" id="protocolComputed"></div>
                     <div class="actions">
