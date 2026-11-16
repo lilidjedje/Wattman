@@ -6,7 +6,6 @@
     const $ = id => document.getElementById(id);
     const UNITS = {A: 1, mA: 1e3, 'µA': 1e6};
     const DIGITS = {A: 6, mA: 3, 'µA': 1};
-    const FLUKE_RANGES = [0.0005, 0.005, 0.05, 0.4, 5, 10];
     const STATUS = {
         pass: ['Conforme', 'Écart ≤ incertitude du Fluke'],
         warning: ['À surveiller', 'Écart ≤ Fluke + limite INA226 non calibré'],
@@ -276,7 +275,9 @@
     $('newCampaign').addEventListener('click', () => {
         state.campaign = null;
         state.analysis = null;
+        bulk.selected.clear();
         fillForm(null);
+        renderBulkSources();
         renderCampaignList();
         renderRuns();
         renderAll();
@@ -314,6 +315,7 @@
         fillForm(state.campaign);
         renderCampaignList();
         renderRuns();
+        syncBulkFromCampaign();
         $('exportCsv').href = `${api.campaigns}/${id}/export.csv`;
         await refreshAnalysis();
     }
@@ -332,26 +334,79 @@
                 ${escapeHtml(source.kind === 'digital' ? 'Numérique' : source.kind === 'asc' ? 'ASC' : 'Source')} · ${escapeHtml(source.started_label)} · ${escapeHtml(source.name)} · ${count(info.samples)} éch.</option>`;
         }).join('');
     }
-    function renderBulkSources() {
-        $('bulkSource').innerHTML = sourceOptions('');
+    const bulk = {kind: 'all', selected: new Set()};
+    function channelSources() {
+        const channel = state.campaign?.protocol.channel || (form.channel.value === 'B' ? 'B' : 'A');
+        return {channel, items: state.sources.filter(source => source.channels[channel]).sort((a, b) => (a.start || 0) - (b.start || 0))};
     }
-    $('bulkDetect').addEventListener('click', async () => {
-        if (!state.campaign) return alert('Créez ou ouvrez d’abord une campagne.');
-        const source = $('bulkSource').value;
-        if (!source) return alert('Choisissez l’enregistrement à découper.');
-        const params = new URLSearchParams({source_file: source, channel: state.campaign.protocol.channel, min_gap_s: $('bulkGap').value || 5});
-        const {segments} = await request(`${api.segments}?${params}`);
-        const usable = segments.filter(segment => segment.duration_s >= state.campaign.protocol.duration_s * 0.5);
-        if (!usable.length) return alert('Aucune répétition détectée : vérifiez la pause minimale.');
-        const runs = Math.min(usable.length, state.campaign.protocol.repetitions);
-        if (!confirm(`${usable.length} segment(s) détecté(s). Relier les ${runs} premier(s) aux répétitions 1 à ${runs} ?`)) return;
-        for (let index = 0; index < runs; index++) {
-            const card = document.querySelector(`.cal-run[data-run="${index + 1}"]`);
-            card.querySelector('[name=source_file]').value = source;
-            card.querySelector('[name=start_offset_s]').value = String(+usable[index].start_offset_s.toFixed(3)).replace('.', ',');
-            await saveRun(index + 1, true);
+    function renderBulkSources() {
+        const {channel, items} = channelSources();
+        const visible = items.filter(source => bulk.kind === 'all' || source.kind === bulk.kind);
+        const order = [...bulk.selected].map(key => items.find(item => item.source_file === key)).filter(Boolean)
+            .sort((a, b) => (a.start || 0) - (b.start || 0)).map(item => item.source_file);
+        $('bulkSources').innerHTML = !state.campaign
+            ? '<div class="empty-notice">Créez ou ouvrez une campagne pour choisir ses mesures.</div>'
+            : visible.length ? visible.map((source, index) => {
+                const info = source.channels[channel];
+                const rank = order.indexOf(source.source_file);
+                return `
+                <label class="cal-source ${source.kind}${rank >= 0 ? ' selected' : ''}" style="--i:${Math.min(index, 12)}${rank >= 0 ? `;--run-color:${series(rank)}` : ''}">
+                    <input type="checkbox" value="${escapeHtml(source.source_file)}" ${rank >= 0 ? 'checked' : ''}>
+                    <span class="cal-source-rank" aria-hidden="true">${rank >= 0 ? `R${rank + 1}` : ''}</span>
+                    <span class="cal-source-body">
+                        <span class="cal-source-kind">${source.kind === 'digital' ? 'Numérique ESP32' : source.kind === 'asc' ? 'Log ASC' : 'Source'}</span>
+                        <strong>${escapeHtml(source.kind === 'digital' ? source.started_label : source.name)}</strong>
+                        <small>${source.kind === 'digital' ? '' : `${escapeHtml(source.started_label)} · `}${count(info.samples)} éch. · ${duration((info.end || 0) - (info.start || 0))}${info.frequency_hz ? ` · ${count(info.frequency_hz)} Hz` : ''}</small>
+                    </span>
+                </label>`;
+            }).join('') : `<div class="empty-notice">Aucune mesure ${bulk.kind === 'digital' ? 'numérique ' : bulk.kind === 'asc' ? 'ASC ' : ''}sur le canal ${channel} dans la base.</div>`;
+        const n = order.length;
+        $('bulkSummary').textContent = n ? `${n} mesure${n > 1 ? 's' : ''} → ${n} répétition${n > 1 ? 's' : ''} (canal ${channel})` : 'Aucune mesure sélectionnée';
+        $('bulkLink').disabled = !n || !state.campaign;
+        $('bulkLink').textContent = n ? `Créer ${n} répétition${n > 1 ? 's' : ''}` : 'Créer les répétitions';
+    }
+    function syncBulkFromCampaign() {
+        bulk.selected = new Set((state.campaign?.runs || []).map(run => run.source_file).filter(Boolean));
+        renderBulkSources();
+    }
+    $('bulkSources').addEventListener('change', event => {
+        if (event.target.type !== 'checkbox') return;
+        if (event.target.checked) bulk.selected.add(event.target.value); else bulk.selected.delete(event.target.value);
+        renderBulkSources();
+    });
+    document.querySelectorAll('[data-src-kind]').forEach(button => button.addEventListener('click', () => {
+        bulk.kind = button.dataset.srcKind;
+        document.querySelectorAll('[data-src-kind]').forEach(item => item.classList.toggle('active', item === button));
+        renderBulkSources();
+    }));
+    $('bulkLink').addEventListener('click', async () => {
+        if (!state.campaign) return;
+        const {items} = channelSources();
+        const chosen = items.filter(item => bulk.selected.has(item.source_file));
+        if (!chosen.length) return;
+        const button = $('bulkLink');
+        try {
+            button.disabled = true;
+            button.textContent = 'Création…';
+            const previous = new Map((state.campaign.runs || []).filter(run => run.source_file).map(run => [run.source_file, run]));
+            await request(`${api.campaigns}/${state.campaign.id}`, {method: 'PUT', body: JSON.stringify({protocol: {repetitions: chosen.length}})});
+            for (let index = 0; index < chosen.length; index++) {
+                const kept = previous.get(chosen[index].source_file) || {};
+                await request(`${api.campaigns}/${state.campaign.id}/runs/${index + 1}`, {method: 'PUT', body: JSON.stringify({
+                    source_file: chosen[index].source_file, start_offset_s: kept.start_offset_s || 0,
+                    samples_reported: kept.samples_reported ?? null, fluke_range_A: kept.fluke_range_A ?? null,
+                    fluke_min_A: kept.fluke_min_A ?? null, fluke_max_A: kept.fluke_max_A ?? null,
+                    ambient_c: kept.ambient_c ?? null, notes: kept.notes || '', reference: kept.reference || {},
+                })});
+            }
+            await loadCampaigns();
+            await openCampaign(state.campaign.id);
+            flash($('protocolMessage'), `${chosen.length} répétition${chosen.length > 1 ? 's' : ''} créée${chosen.length > 1 ? 's' : ''} : saisissez maintenant les relevés du Fluke.`);
+        } catch (error) {
+            alert(error.message);
+        } finally {
+            renderBulkSources();
         }
-        scheduleAnalysis(0);
     });
 
     // ------------------------------------------------------------------ Répétitions
@@ -373,31 +428,33 @@
             <article class="cal-run panel" data-run="${index}" style="--run-color:${series(index - 1)}">
                 <header>
                     <span class="cal-run-badge">R${index}</span>
-                    <div><h3>Répétition ${index}</h3><small>${index > 1 ? `après ${count(protocol.pause_s)} s de pause` : 'première mesure'}</small></div>
+                    <div><h3>Répétition ${index}</h3><small>${escapeHtml(runSourceLabel(run.source_file))}</small></div>
                     <span class="cal-save-state" data-save-state></span>
                 </header>
-                <label class="field">Enregistrement en base
+                <label class="field">Mesure en base
                     <select name="source_file">${sourceOptions(run.source_file)}</select>
                 </label>
-                <div class="cal-grid-3">
-                    <label class="field">Début (s) <input name="start_offset_s" inputmode="decimal" value="${fromAmpsRaw(run.start_offset_s)}" title="Décalage depuis le premier échantillon de l’enregistrement"></label>
+                <div class="cal-grid-2">
+                    <label class="field">Début (s) <input name="start_offset_s" inputmode="decimal" value="${fromAmpsRaw(run.start_offset_s)}" placeholder="0" title="Décalage depuis le premier échantillon de la mesure"></label>
                     <label class="field">Éch. relevés <input name="samples_reported" inputmode="numeric" value="${run.samples_reported ?? ''}" placeholder="${count(expected)}"></label>
-                    <label class="field">Calibre Fluke
-                        <select name="fluke_range_A">
-                            <option value="">Auto</option>
-                            ${FLUKE_RANGES.map(r => `<option value="${r}" ${run.fluke_range_A && Math.abs(run.fluke_range_A - r) < 1e-12 ? 'selected' : ''}>${r < 1 ? `${nf(0).format(r * (r < 0.01 ? 1e6 : 1e3))} ${r < 0.01 ? 'µA' : 'mA'}` : `${r} A`}</option>`).join('')}
+                </div>
+                <div class="cal-grid-1">
+                    <label class="field">Borne Fluke (entrée branchée)
+                        <select name="fluke_range_A" title="Borne d’entrée du Fluke 287 sur laquelle le courant est branché. Le multimètre choisit ensuite seul le calibre (plage) de cette borne ; la précision utilisée dans les calculs en dépend.">
+                            <option value="0.4" ${flukeInput(run) === 0.4 ? 'selected' : ''}>mA · 400 mA max</option>
+                            <option value="10" ${flukeInput(run) === 10 ? 'selected' : ''}>A · 10 A max</option>
                         </select>
                     </label>
                 </div>
                 <fieldset class="cal-readings">
                     <legend>Relevés Fluke (${state.unit})</legend>
                     ${protocol.checkpoints_s.map(cp => `
-                        <label class="field cal-reading"><span>I à ${count(cp)} s</span>
-                            <input name="ref_${cp}" data-checkpoint="${cp}" inputmode="decimal" value="${fromAmps(run.reference?.[String(cp)])}">
+                        <div class="cal-reading"><label for="ref_${index}_${cp}">I à ${count(cp)} s</label>
+                            <input id="ref_${index}_${cp}" name="ref_${cp}" data-checkpoint="${cp}" inputmode="decimal" autocomplete="off" value="${fromAmps(run.reference?.[String(cp)])}">
                             <em data-cp-status="${cp}"></em>
-                        </label>`).join('')}
-                    <label class="field cal-reading"><span>MIN</span><input name="fluke_min_A" inputmode="decimal" value="${fromAmps(run.fluke_min_A)}"><em data-ext-status="min"></em></label>
-                    <label class="field cal-reading"><span>MAX</span><input name="fluke_max_A" inputmode="decimal" value="${fromAmps(run.fluke_max_A)}"><em data-ext-status="max"></em></label>
+                        </div>`).join('')}
+                    <div class="cal-reading"><label for="min_${index}">MIN</label><input id="min_${index}" name="fluke_min_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_min_A)}"><em data-ext-status="min"></em></div>
+                    <div class="cal-reading"><label for="max_${index}">MAX</label><input id="max_${index}" name="fluke_max_A" inputmode="decimal" autocomplete="off" value="${fromAmps(run.fluke_max_A)}"><em data-ext-status="max"></em></div>
                 </fieldset>
                 <div class="cal-grid-2">
                     <label class="field">Ambiante (°C) <input name="ambient_c" inputmode="decimal" value="${fromAmpsRaw(run.ambient_c)}"></label>
@@ -409,7 +466,18 @@
         container.innerHTML = html.join('');
         renderRunLive();
     }
-    function fromAmpsRaw(value) { return value == null ? '' : String(value).replace('.', ','); }
+    function flukeInput(run) {
+        if (run.fluke_range_A != null) return run.fluke_range_A > 0.4 + 1e-12 ? 10 : 0.4;
+        const readings = [...Object.values(run.reference || {}), run.fluke_min_A, run.fluke_max_A].filter(v => v != null).map(Math.abs);
+        return readings.length && Math.max(...readings) > 0.4 ? 10 : 0.4;
+    }
+    function runSourceLabel(key) {
+        if (!key) return 'Aucune mesure reliée';
+        const source = state.sources.find(item => item.source_file === key);
+        if (!source) return key;
+        return source.kind === 'digital' ? `Numérique ESP32 · ${source.started_label}` : `Log ASC · ${source.name} · ${source.started_label}`;
+    }
+    function fromAmpsRaw(value) { return value == null ? '' : String(+Number(value).toFixed(3)).replace('.', ','); }
     function collectRun(card) {
         const field = name => card.querySelector(`[name="${name}"]`);
         const reference = {};

@@ -176,14 +176,25 @@
 
                 <section class="cal-panel" data-panel="input">
                     <div class="cal-bulk panel">
-                        <div>
-                            <h3>Relier les répétitions à la base de mesures</h3>
-                            <p>Un enregistrement par répétition, ou un seul enregistrement contenant les {{ defaults.repetitions }} répétitions séparées par les pauses : la détection automatique les découpe.</p>
+                        <div class="cal-bulk-head">
+                            <span class="cal-bulk-step" aria-hidden="true">1</span>
+                            <div>
+                                <h3>Choisir les mesures à comparer</h3>
+                                <p>Cochez une ou plusieurs mesures (numériques ESP32 ou logs ASC) : <b>une mesure = une répétition</b>,
+                                numérotées dans l’ordre chronologique.</p>
+                            </div>
+                            <div class="cal-bulk-tools">
+                                <div class="cal-segment" role="group" aria-label="Type de mesure">
+                                    <button type="button" class="active" data-src-kind="all">Toutes</button>
+                                    <button type="button" data-src-kind="digital">Numériques</button>
+                                    <button type="button" data-src-kind="asc">ASC</button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="cal-bulk-form">
-                            <select id="bulkSource" aria-label="Enregistrement contenant toutes les répétitions"></select>
-                            <label class="cal-inline">Pause min. (s) <input id="bulkGap" type="number" min="0.1" step="0.1" value="5"></label>
-                            <button type="button" id="bulkDetect" class="secondary">Détecter les répétitions</button>
+                        <div class="cal-sources" id="bulkSources" role="group" aria-label="Mesures disponibles"></div>
+                        <div class="cal-bulk-bar">
+                            <span id="bulkSummary">Aucune mesure sélectionnée</span>
+                            <button type="button" id="bulkLink" class="cal-primary" disabled>Créer les répétitions</button>
                         </div>
                     </div>
                     <div class="cal-runs" id="runCards"></div>
@@ -266,7 +277,7 @@
                                 {% endfor %}
                                 </tbody>
                             </table>
-                            <p class="filter-hint">Spécifications à 1 an après étalonnage, 18–28 °C, HR ≤ 90 %. {{ fluke_note }} Le calibre est choisi automatiquement d’après la lecture, ou peut être imposé par répétition.</p>
+                            <p class="filter-hint">Spécifications à 1 an après étalonnage, 18–28 °C, HR ≤ 90 %. {{ fluke_note }} Calibre = plage de mesure du multimètre. Il dépend de la borne branchée : borne <b>mA</b> (400 mA max) → calibres 500 µA, 5 000 µA, 50 mA et 400 mA ; borne <b>A</b> (10 A max) → calibres 5 A et 10 A. Dans la borne choisie, le Fluke sélectionne seul le plus petit calibre qui contient la lecture, et c’est sa ligne du tableau qui fixe la précision utilisée.</p>
                         </article>
                         <article class="panel">
                             <div class="panel-title"><h2>Ce que calcule la page</h2></div>

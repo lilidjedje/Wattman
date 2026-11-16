@@ -86,6 +86,13 @@ class CalibrationTest(unittest.TestCase):
         bad = self.client.post("/api/calibration/campaigns", json={"protocol": {"shunt_ohm": "RXX"}})
         self.assertEqual(bad.status_code, 400)
 
+    def test_fluke_input_selects_range_within_jack(self):
+        from calibration import fluke_range_for
+        self.assertEqual(fluke_range_for(0.3, 0.4)[0], 0.4)
+        self.assertEqual(fluke_range_for(0.03, 0.4)[0], 0.05)
+        self.assertEqual(fluke_range_for(0.3, 10)[0], 5.0)
+        self.assertEqual(fluke_range_for(6, 10)[0], 10.0)
+
     def test_rejects_checkpoint_after_duration(self):
         response = self.client.post("/api/calibration/campaigns", json={"protocol": {"duration_s": 30, "checkpoints_s": "0,20,40"}})
         self.assertEqual(response.status_code, 400)

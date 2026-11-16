@@ -113,15 +113,20 @@ def connection():
 # ---------------------------------------------------------------------------
 
 def fluke_range_for(current_a, forced_range=None):
+    """Calibre du Fluke 287 pour une lecture.
+
+    forced_range désigne la borne d'entrée câblée : 0,4 A = borne mA/µA (calibres
+    500 µA, 5 000 µA, 50 mA, 400 mA) ; 10 A = borne A (calibres 5 A et 10 A). Le
+    multimètre choisit ensuite automatiquement le plus petit calibre de cette borne.
+    """
     magnitude = abs(current_a)
+    specs = FLUKE_287_DC_CURRENT
     if forced_range:
-        for spec in FLUKE_287_DC_CURRENT:
-            if math.isclose(spec[0], forced_range, rel_tol=1e-9):
-                return spec
-    for spec in FLUKE_287_DC_CURRENT:
+        specs = [spec for spec in FLUKE_287_DC_CURRENT if (spec[0] <= 0.4) == (forced_range <= 0.4 + 1e-12)]
+    for spec in specs:
         if magnitude <= spec[0]:
             return spec
-    return FLUKE_287_DC_CURRENT[-1]
+    return specs[-1]
 
 
 def fluke_uncertainty(current_a, forced_range=None):
