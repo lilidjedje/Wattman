@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <Preferences.h>
+#include <math.h>
 #include <U8x8lib.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -8,7 +10,7 @@
 #include <mcp_can.h>
 #include "esp_timer.h"
 
-constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v5 | oled-flip-180";
+constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v6 | calibrated-shunt";
 
 void printFirmwareVersion() {
   Serial.printf("[FIRMWARE] %s | build %s %s\n", FIRMWARE_VERSION, __DATE__, __TIME__);
@@ -28,14 +30,14 @@ void printFirmwareVersion() {
 #define SPI_MOSI 6
 
 const uint8_t ADDR_INA_A = 0x40;
-const uint8_t ADDR_INA_B = 0x41;
+const uint8_t ADDR_INA_B = 0x44;
 const uint8_t REG_CONFIG = 0x00;
 const uint8_t REG_SHUNT = 0x01;
 
 // I = Vshunt / Rshunt ; INA226 shunt voltage resolution: 2.5 uV/LSB.
 constexpr float SHUNT_VOLTAGE_LSB_V = 2.5e-6f;
 constexpr float RSHUNT_A_OHMS = 0.010f;  // R010: 10 mOhm
-constexpr float RSHUNT_B_OHMS = 0.100f;  // R100: 100 mOhm
+constexpr float RSHUNT_B_OHMS = 0.010f;  // R010: 10 mOhm
 
 #define CAN_ID_CURRENT_A 0x100
 #define CAN_ID_STATS_A 0x101
@@ -149,7 +151,7 @@ void drawOledLines(char lines[8][17]) {
       if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(2)) != pdTRUE) return;
       Wire.setClock(OLED_BUS_HZ);
       oled.drawString(first + 1, row + 1, changed);
-      Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+      Wire.setClock(400000);
       xSemaphoreGive(i2cMutex);
       memcpy(&oledPrevious[row + 1][first + 1], changed, count);
       vTaskDelay(1);
@@ -187,7 +189,7 @@ void taskOled(void*) {
       if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(2)) == pdTRUE) {
         Wire.setClock(OLED_BUS_HZ);
         oled.setPowerSave(0);
-        Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+        Wire.setClock(400000);
         xSemaphoreGive(i2cMutex);
         lastKeepAwake = now;
       }
@@ -460,7 +462,7 @@ void stopSensor(char sensor) {
 
 bool inaWriteRegister16(uint8_t addr, uint8_t reg, uint16_t value) {
   xSemaphoreTake(i2cMutex, portMAX_DELAY);
-  Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+  Wire.setClock(400000);
   Wire.beginTransmission(addr);
   Wire.write(reg);
   Wire.write((uint8_t)((value >> 8) & 0xFF));
@@ -470,31 +472,76 @@ bool inaWriteRegister16(uint8_t addr, uint8_t reg, uint16_t value) {
   return success;
 }
 
-void configureINA226(uint8_t addr, uint32_t freq) {
-  uint16_t config_bits;
-  if (freq >= 1000) {
-    config_bits = (0b000 << 9) | (0b001 << 6) | (0b001 << 3) | 0b101;
-  } else {
-    config_bits = (0b000 << 9) | (0b100 << 6) | (0b100 << 3) | 0b111;
-  }
-  inaWriteRegister16(addr, REG_CONFIG, config_bits);
-}
-
-inline int16_t readINA226ShuntRaw(uint8_t addr) {
+// Explicitly sequence reads: never depend on evaluation order of Wire.read().
+bool inaReadRegister16(uint8_t addr, uint8_t reg, uint16_t& value) {
   xSemaphoreTake(i2cMutex, portMAX_DELAY);
-  Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+  Wire.setClock(400000);
   Wire.beginTransmission(addr);
-  Wire.write(REG_SHUNT);
-  if (Wire.endTransmission(false) != 0) {
-    xSemaphoreGive(i2cMutex);
-    return 0;
-  }
-  int16_t value = 0;
-  if (Wire.requestFrom(addr, (uint8_t)2) == 2) {
-    value = (int16_t)((Wire.read() << 8) | Wire.read());
+  Wire.write(reg);
+  bool ok = Wire.endTransmission(false) == 0;
+  if (ok) ok = Wire.requestFrom(addr, (uint8_t)2) == 2;
+  if (ok) {
+    const uint8_t msb = Wire.read();
+    const uint8_t lsb = Wire.read();
+    value = (uint16_t(msb) << 8) | lsb;
   }
   xSemaphoreGive(i2cMutex);
-  return value;
+  return ok;
+}
+
+bool configureINA226(uint8_t addr, uint32_t freq) {
+  // Shunt only, continuous. Include worst-case conversion-time margin.
+  // <=100 Hz: 4 x 1.1 ms; <=400: 2.116 ms; <=1000: 588 us; above: 204 us.
+  const uint16_t avg = freq <= 100 ? 1 : 0;
+  const uint16_t ct = freq <= 100 ? 4 : (freq <= 400 ? 5 : (freq <= 1000 ? 3 : 1));
+  const uint16_t config = (avg << 9) | (ct << 6) | (ct << 3) | 0b101;
+  uint16_t actual = 0;
+  if (!inaWriteRegister16(addr, REG_CONFIG, config)
+      || !inaReadRegister16(addr, REG_CONFIG, actual)
+      || (actual & 0x0FFF) != config) return false;
+  delay(12); // Discard the previous configuration's conversion before starting.
+  return true;
+}
+
+Preferences calibrationStore;
+float calibrationZero[2] = {0, 0}; // Raw ADC counts at zero current.
+float calibrationGain[2] = {1, 1};
+bool calibrationHasZero[2] = {false, false};
+bool calibrationHasGain[2] = {false, false};
+volatile uint32_t inaReadErrors[2] = {0, 0};
+volatile uint32_t inaSaturations[2] = {0, 0};
+
+void loadCalibration() {
+  if (!calibrationStore.begin("ina-cal-v1", false)) return;
+  for (int i = 0; i < 2; ++i) {
+    float record[4] = {0, 1, 0, 0};
+    // B's old record used the incorrect R100 conversion; recalibrate for R010.
+    if (calibrationStore.getBytesLength(i ? "recordB-r010" : "recordA") == sizeof(record))
+      calibrationStore.getBytes(i ? "recordB-r010" : "recordA", record, sizeof(record));
+    calibrationZero[i] = record[0]; calibrationGain[i] = record[1];
+    calibrationHasZero[i] = record[2] == 1;
+    calibrationHasGain[i] = record[3] == 1;
+    if (!isfinite(calibrationZero[i]) || fabsf(calibrationZero[i]) > 40
+        || !isfinite(calibrationGain[i]) || calibrationGain[i] < 0.8f
+        || calibrationGain[i] > 1.2f) {
+      calibrationZero[i] = 0; calibrationGain[i] = 1;
+      calibrationHasZero[i] = calibrationHasGain[i] = false;
+    }
+  }
+}
+
+bool readCalibratedCurrent(uint8_t index, int16_t& raw, float& current) {
+  uint16_t bits;
+  if (!inaReadRegister16(index ? ADDR_INA_B : ADDR_INA_A, REG_SHUNT, bits)) {
+    ++inaReadErrors[index]; return false;
+  }
+  raw = (int16_t)bits;
+  if (raw >= 32760 || raw <= -32760) {
+    ++inaSaturations[index]; return false;
+  }
+  current = (raw - calibrationZero[index]) * SHUNT_VOLTAGE_LSB_V
+      / (index ? RSHUNT_B_OHMS : RSHUNT_A_OHMS) * calibrationGain[index];
+  return true;
 }
 
 void IRAM_ATTR onAcqTimer(void* arg) {
@@ -571,24 +618,29 @@ void taskAcq(void* parameter) {
       const uint16_t sampleFrequencyA = intervalMicros
                                           ? (uint16_t)min((1000000ULL + intervalMicros / 2) / intervalMicros, 65535ULL)
                                           : (uint16_t)targetFrequencyA;
-      int16_t rawA = readINA226ShuntRaw(ADDR_INA_A);
-      float IA = rawA * SHUNT_VOLTAGE_LSB_V / RSHUNT_A_OHMS;
-      latestCurrentA = IA;
-      latestValidA = true;
-      if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawA == 0) {
-        IA = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
-      }
-      memset(canPacket, 0, 8);
-      memcpy(&canPacket[0], &IA, sizeof(float));
-      if (digitalStreamMode) memcpy(&canPacket[4], &sampleFrequencyA, sizeof(sampleFrequencyA));
-      const bool sent = sendCanFrame(CAN_ID_CURRENT_A, digitalStreamMode ? 6 : 4, canPacket);
-      if (!sent) lostCountA = lostCountA + 1;
-      if (!digitalStreamMode) {
-        lastDisplayedCanId = CAN_ID_CURRENT_A;
-        lastDisplayedCanCurrent = IA;
-        memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
-        lastDisplayedCanSendOk = sent;
-        hasCanSampleToDisplay = true;
+      int16_t rawA = 0;
+      float IA = 0;
+      if (readCalibratedCurrent(0, rawA, IA)) {
+        latestCurrentA = IA;
+        latestValidA = true;
+        if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawA == 0) {
+          IA = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
+        }
+        memset(canPacket, 0, 8);
+        memcpy(&canPacket[0], &IA, sizeof(float));
+        if (digitalStreamMode) memcpy(&canPacket[4], &sampleFrequencyA, sizeof(sampleFrequencyA));
+        const bool sent = sendCanFrame(CAN_ID_CURRENT_A, digitalStreamMode ? 6 : 4, canPacket);
+        if (!sent) lostCountA = lostCountA + 1;
+        if (!digitalStreamMode) {
+          lastDisplayedCanId = CAN_ID_CURRENT_A;
+          lastDisplayedCanCurrent = IA;
+          memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+          lastDisplayedCanSendOk = sent;
+          hasCanSampleToDisplay = true;
+        }
+      } else {
+        latestValidA = false;
+        ++lostCountA;
       }
     }
 
@@ -600,24 +652,29 @@ void taskAcq(void* parameter) {
       const uint16_t sampleFrequencyB = intervalMicros
                                           ? (uint16_t)min((1000000ULL + intervalMicros / 2) / intervalMicros, 65535ULL)
                                           : (uint16_t)targetFrequencyB;
-      int16_t rawB = readINA226ShuntRaw(ADDR_INA_B);
-      float IB = rawB * SHUNT_VOLTAGE_LSB_V / RSHUNT_B_OHMS;
-      latestCurrentB = IB;
-      latestValidB = true;
-      if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawB == 0) {
-        IB = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
-      }
-      memset(canPacket, 0, 8);
-      memcpy(&canPacket[0], &IB, sizeof(float));
-      if (digitalStreamMode) memcpy(&canPacket[4], &sampleFrequencyB, sizeof(sampleFrequencyB));
-      const bool sent = sendCanFrame(CAN_ID_CURRENT_B, digitalStreamMode ? 6 : 4, canPacket);
-      if (!sent) lostCountB = lostCountB + 1;
-      if (!digitalStreamMode) {
-        lastDisplayedCanId = CAN_ID_CURRENT_B;
-        lastDisplayedCanCurrent = IB;
-        memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
-        lastDisplayedCanSendOk = sent;
-        hasCanSampleToDisplay = true;
+      int16_t rawB = 0;
+      float IB = 0;
+      if (readCalibratedCurrent(1, rawB, IB)) {
+        latestCurrentB = IB;
+        latestValidB = true;
+        if (!digitalStreamMode && CAN_ZERO_CURRENT_TEST && rawB == 0) {
+          IB = 42.0f + (((millis() - testStartMillis) / 1000UL) % 10UL) / 10.0f;
+        }
+        memset(canPacket, 0, 8);
+        memcpy(&canPacket[0], &IB, sizeof(float));
+        if (digitalStreamMode) memcpy(&canPacket[4], &sampleFrequencyB, sizeof(sampleFrequencyB));
+        const bool sent = sendCanFrame(CAN_ID_CURRENT_B, digitalStreamMode ? 6 : 4, canPacket);
+        if (!sent) lostCountB = lostCountB + 1;
+        if (!digitalStreamMode) {
+          lastDisplayedCanId = CAN_ID_CURRENT_B;
+          lastDisplayedCanCurrent = IB;
+          memcpy(lastDisplayedCanData, canPacket, sizeof(lastDisplayedCanData));
+          lastDisplayedCanSendOk = sent;
+          hasCanSampleToDisplay = true;
+        }
+      } else {
+        latestValidB = false;
+        ++lostCountB;
       }
     }
 
@@ -731,7 +788,7 @@ button{padding:0.7rem;font-size:1rem;cursor:pointer;background:#10b981;color:whi
     </div>
     <div class="card">
       <label><input type="checkbox" name="activeA" value="1" checked style="width:auto"> Capteur A (Entrée - 0x40)</label><br>
-      <label><input type="checkbox" name="activeB" value="1" checked style="width:auto"> Capteur B (Sortie - 0x41)</label>
+      <label><input type="checkbox" name="activeB" value="1" checked style="width:auto"> Capteur B (Sortie - 0x44)</label>
     </div>
     <div style="max-width:500px"><button type="submit">Lancer l'acquisition</button></div>
   </form>
@@ -842,12 +899,14 @@ void handleSetDuration() {
   sensorStoppedB = false;
 
   xSemaphoreTake(i2cMutex, portMAX_DELAY);
-  if (targetFreq >= 1000) Wire.setClock(1000000);
-  else Wire.setClock(400000);
+  Wire.setClock(400000);
   xSemaphoreGive(i2cMutex);
 
-  if (currentCfg.activeA) configureINA226(ADDR_INA_A, targetFreq);
-  if (currentCfg.activeB) configureINA226(ADDR_INA_B, targetFreq);
+  if ((currentCfg.activeA && !configureINA226(ADDR_INA_A, targetFreq))
+      || (currentCfg.activeB && !configureINA226(ADDR_INA_B, targetFreq))) {
+    sensorRunningA = sensorRunningB = false;
+    server.send(503, "text/plain", "INA configuration/readback failed"); return;
+  }
 
   acqCountA = 0;
   lostCountA = 0;
@@ -915,6 +974,108 @@ void sendAcquisitionStatus(int statusCode = 200) {
 
 void sendAcquisitionError(int statusCode, const char* message) {
   server.send(statusCode, "application/json", String("{\"message\":\"") + message + "\"}");
+}
+
+// Calibration is allowed only while idle. No invented reference from a load setting.
+void handleCalibrationStatus() {
+  String json = "{\"channels\":[";
+  for (int i = 0; i < 2; ++i) {
+    if (i) json += ",";
+    json += "{\"channel\":\"" + String(i ? "B" : "A") + "\",\"zero_raw\":";
+    json += String(calibrationZero[i], 6);
+    json += ",\"gain\":" + String(calibrationGain[i], 8);
+    json += ",\"zero_calibrated\":" + jsonBool(calibrationHasZero[i]);
+    json += ",\"gain_calibrated\":" + jsonBool(calibrationHasGain[i]);
+    json += ",\"i2c_errors\":" + String(inaReadErrors[i]);
+    json += ",\"saturations\":" + String(inaSaturations[i]) + "}";
+  }
+  server.send(200, "application/json", json + "]}");
+}
+
+void handleCalibration() {
+  if (testRunning || acquisitionBusy || streamEndPending) {
+    sendAcquisitionError(423, "Stop acquisition and wait for stream completion first."); return;
+  }
+  const String channel = server.arg("channel");
+  const String action = server.arg("action");
+  if ((channel != "A" && channel != "B")
+      || (action != "zero" && action != "reference" && action != "reset")) {
+    sendAcquisitionError(400, "Use channel=A|B and action=zero|reference|reset."); return;
+  }
+  const int i = channel == "B" ? 1 : 0;
+  double reference = 0;
+  if (action == "reference") {
+    const String input = server.arg("reference_A");
+    char* end = nullptr;
+    reference = strtod(input.c_str(), &end);
+    const double limit = 7.5;
+    if (input.isEmpty() || end == input.c_str() || *end != '\0'
+        || !isfinite(reference) || fabs(reference) < 0.05 || fabs(reference) > limit
+        || !calibrationHasZero[i]) {
+      sendAcquisitionError(400, "Zero first; reference_A must be signed amperes, 0.05..7.5 A (R010)."); return;
+    }
+  }
+  float zero = calibrationZero[i], gain = calibrationGain[i];
+  double mean = 0, m2 = 0;
+  int16_t low = 32767, high = -32768;
+  if (action != "reset") {
+    const uint8_t addr = i ? ADDR_INA_B : ADDR_INA_A;
+    if (!configureINA226(addr, 100)) {
+      sendAcquisitionError(503, "INA configuration failed."); return;
+    }
+    for (int n = 1; n <= 128; ++n) {
+      delay(6); // > 4 x 1.21 ms: each observation is a new averaged conversion.
+      uint16_t bits;
+      if (!inaReadRegister16(addr, REG_SHUNT, bits)) {
+        ++inaReadErrors[i]; sendAcquisitionError(503, "I2C failure; calibration unchanged."); return;
+      }
+      const int16_t raw = (int16_t)bits;
+      if (raw >= 32760 || raw <= -32760) {
+        ++inaSaturations[i]; sendAcquisitionError(422, "ADC saturated; calibration unchanged."); return;
+      }
+      if (raw < low) low = raw;
+      if (raw > high) high = raw;
+      const double delta = raw - mean;
+      mean += delta / n;
+      m2 += delta * (raw - mean);
+    }
+    const double step = SHUNT_VOLTAGE_LSB_V / (i ? RSHUNT_B_OHMS : RSHUNT_A_OHMS);
+    const double stdA = sqrt(m2 / 127) * step;
+    const double allowedStd = fmax(2 * step, fabs(reference) * 0.005);
+    if (stdA > allowedStd || (high - low) * step > 8 * allowedStd) {
+      String error = "{\"message\":\"Unstable readings; calibration unchanged\",\"raw_mean\":";
+      error += String(mean, 4) + ",\"std_A\":" + String(stdA, 8);
+      error += ",\"peak_to_peak_A\":" + String((high-low)*step, 8) + "}";
+      server.send(422, "application/json", error); return;
+    }
+    if (action == "zero") {
+      if (fabs(mean) > 40) {
+        sendAcquisitionError(422, "Zero too far from zero: remove current; calibration unchanged."); return;
+      }
+      zero = mean;
+      gain = 1; // New zero invalidates the old gain reference.
+    } else {
+      const double measured = (mean - zero) * step;
+      const double proposed = reference / measured;
+      if (!isfinite(proposed) || proposed < 0.8 || proposed > 1.2) {
+        sendAcquisitionError(422, "Gain outside 0.8..1.2: investigate readings/shunt before calibration."); return;
+      }
+      gain = proposed;
+    }
+  } else {
+    zero = 0; gain = 1;
+  }
+  // One versioned blob commits a complete calibration atomically.
+  const float record[4] = {zero, gain, action == "reset" ? 0.0f : 1.0f,
+                          action == "reference" ? 1.0f : 0.0f};
+  if (calibrationStore.putBytes(i ? "recordB-r010" : "recordA", record, sizeof(record)) != sizeof(record)) {
+    sendAcquisitionError(500, "Calibration could not be saved."); return;
+  }
+  calibrationZero[i] = zero; calibrationGain[i] = gain;
+  calibrationHasZero[i] = record[2] == 1;
+  calibrationHasGain[i] = record[3] == 1;
+  latestValidA = latestValidB = false;
+  handleCalibrationStatus();
 }
 
 void handleApiStartAcquisition() {
@@ -1053,10 +1214,13 @@ void handleApiStartAcquisition() {
   canLastTxResult = CAN_OK;
 
   xSemaphoreTake(i2cMutex, portMAX_DELAY);
-  Wire.setClock(timerFrequency >= 1000 ? 1000000 : 400000);
+  Wire.setClock(400000);
   xSemaphoreGive(i2cMutex);
-  if (activeA) configureINA226(ADDR_INA_A, frequencyA);
-  if (activeB) configureINA226(ADDR_INA_B, frequencyB);
+  if ((activeA && !configureINA226(ADDR_INA_A, frequencyA))
+      || (activeB && !configureINA226(ADDR_INA_B, frequencyB))) {
+    sensorRunningA = sensorRunningB = false;
+    sendAcquisitionError(503, "INA configuration/readback failed"); return;
+  }
 
   testStartMillis = millis();
   testStartMicros = esp_timer_get_time();
@@ -1220,6 +1384,8 @@ void taskWeb(void* parameter) {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/display", HTTP_GET, handleApiDisplay);
+  server.on("/api/calibration", HTTP_GET, handleCalibrationStatus);
+  server.on("/api/calibration", HTTP_POST, handleCalibration);
   server.on("/api/acquisition/start", HTTP_POST, handleApiStartAcquisition);
   server.on("/api/acquisition/stop", HTTP_POST, handleApiStopAcquisition);
   server.on("/api/acquisition/status", HTTP_GET, []() {
@@ -1263,8 +1429,9 @@ void setup() {
   const uint32_t serialStartedAt = millis();
   while (!Serial && millis() - serialStartedAt < 1500) delay(10);
   printFirmwareVersion();
-  Serial.println("\n[BOOT] Wattman ESP32-C3 Mini - INA A R010 / INA B R100");
-  Serial.printf("[I2C] SDA=%u SCL=%u; A=0x40 (0.010 ohm), B=0x41 (0.100 ohm)\n", I2C_SDA, I2C_SCL);
+  loadCalibration();
+  Serial.println("\n[BOOT] Wattman ESP32-C3 Mini - INA A R010 / INA B R010");
+  Serial.printf("[I2C] SDA=%u SCL=%u; A=0x%02X (0.010 ohm), B=0x%02X (0.010 ohm)\n", I2C_SDA, I2C_SCL, ADDR_INA_A, ADDR_INA_B);
   canMutex = xSemaphoreCreateMutex();
   displayStateMutex = xSemaphoreCreateMutex();
   if (!displayStateMutex) fatalStartup("Display mutex creation failed.");
