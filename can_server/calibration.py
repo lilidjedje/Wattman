@@ -591,6 +591,21 @@ def multilevel_regression(campaign_results):
 # Sérialisation
 # ---------------------------------------------------------------------------
 
+def parse_shunt(value):
+    """Valeur en Ω, ou code de shunt : R100 = 0,100 Ω, R010 = 0,010 Ω, 2R5 = 2,5 Ω, 10m = 0,010 Ω."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(" ", "").replace(",", ".").replace("Ω", "").upper()
+    if "R" in text:
+        whole, _, decimals = text.partition("R")
+        if not (whole + decimals).isdigit():
+            raise ValueError("Code de shunt invalide (ex. R100, R010, R002).")
+        return float(f"{whole or '0'}.{decimals or '0'}")
+    if text.endswith("M"):
+        return float(text[:-1]) / 1000
+    return float(text)
+
+
 def parse_protocol(payload, base=None):
     protocol = dict(base or DEFAULT_PROTOCOL)
     source = payload or {}
@@ -605,7 +620,7 @@ def parse_protocol(payload, base=None):
     }
     for key, (low, high) in numeric.items():
         if key in source and source[key] not in (None, ""):
-            value = float(source[key])
+            value = parse_shunt(source[key]) if key == "shunt_ohm" else float(source[key])
             if not math.isfinite(value) or not low <= value <= high:
                 raise ValueError(f"Valeur hors limites pour {key}.")
             protocol[key] = value

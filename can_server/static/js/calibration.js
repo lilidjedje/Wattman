@@ -148,8 +148,40 @@
 
     // ------------------------------------------------------------------ Protocole
     const form = $('protocolForm');
+    // INA226 : LSB tension shunt 2,5 µV, pleine échelle ±81,92 mV.
+    const INA_LSB_V = 2.5e-6;
+    const INA_FULL_SCALE_V = 0.08192;
+    /** « R100 » = 0,100 Ω, « R010 » = 0,010 Ω, « 2R5 » = 2,5 Ω, « 10m » / « 10 mΩ » = 0,010 Ω, « 0,01 » = 0,01 Ω. */
+    function parseShunt(text) {
+        const raw = String(text ?? '').trim().replace(/\s/g, '').replace(',', '.').replace(/Ω|ohms?$/i, '');
+        if (!raw) return NaN;
+        let match = raw.match(/^(\d*)R(\d*)$/i);
+        if (match && (match[1] || match[2])) return Number(`${match[1] || '0'}.${match[2] || '0'}`);
+        match = raw.match(/^(\d+(?:\.\d+)?)m$/i);
+        if (match) return Number(match[1]) / 1000;
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : NaN;
+    }
+    function shuntCode(ohms) {
+        if (!(ohms > 0)) return '';
+        if (ohms < 1) {
+            const fixed = ohms.toFixed(3);
+            if (Math.abs(Number(fixed) - ohms) < 1e-12) return `R${fixed.slice(2)}`;
+            return `${String(+(ohms * 1000).toPrecision(6)).replace('.', ',')}m`;
+        }
+        return String(ohms).replace('.', 'R');
+    }
+    function physical(valueA, unitLabel = 'A') {
+        const magnitude = Math.abs(valueA);
+        const [factor, unit] = magnitude >= 1 ? [1, unitLabel] : magnitude >= 1e-3 ? [1e3, `m${unitLabel}`] : [1e6, `µ${unitLabel}`];
+        const scaled = valueA * factor;
+        const digits = Math.abs(scaled) >= 100 ? 1 : Math.abs(scaled) >= 10 ? 2 : 3;
+        return `${new Intl.NumberFormat('fr-FR', {maximumFractionDigits: digits}).format(scaled)} ${unit}`;
+    }
     function protocolFromForm() {
         const data = Object.fromEntries(new FormData(form));
+        const shunt = parseShunt(data.shunt);
+        if (!(shunt > 0)) throw new Error('Shunt invalide : saisissez un code (R100, R010, R002) ou une valeur en Ω.');
         return {
             name: data.name,
             notes: data.notes,
@@ -162,7 +194,7 @@
                 window_s: data.window_s,
                 checkpoints_s: data.checkpoints_s,
                 smoothing_s: data.smoothing_s,
-                shunt_ohm: data.shunt_ohm,
+                shunt_ohm: shunt,
                 shunt_tolerance_pct: data.shunt_tolerance_pct,
             },
         };
@@ -171,8 +203,9 @@
         const protocol = campaign ? campaign.protocol : config.defaults;
         form.name.value = campaign ? campaign.name : '';
         form.notes.value = campaign ? campaign.notes || '' : '';
-        ['channel', 'frequency_hz', 'duration_s', 'repetitions', 'pause_s', 'window_s', 'smoothing_s', 'shunt_ohm', 'shunt_tolerance_pct']
+        ['channel', 'frequency_hz', 'duration_s', 'repetitions', 'pause_s', 'window_s', 'smoothing_s', 'shunt_tolerance_pct']
             .forEach(key => { form[key].value = protocol[key]; });
+        form.shunt.value = shuntCode(protocol.shunt_ohm);
         form.checkpoints_s.value = protocol.checkpoints_s.join(', ');
         $('deleteCampaign').hidden = !campaign;
         $('saveProtocol').textContent = campaign ? 'Enregistrer le protocole' : 'Créer la campagne';
@@ -187,15 +220,30 @@
         const total = perRun * r;
         const totalTime = r * d + Math.max(0, r - 1) * p;
         const windowSamples = Math.round((Number(form.window_s.value) || 0) * f);
+        const shunt = parseShunt(form.shunt.value);
+        const validShunt = shunt > 0;
+        const lsb = validShunt ? INA_LSB_V / shunt : null;
+        const maxCurrent = validShunt ? INA_FULL_SCALE_V / shunt : null;
+        const power = validShunt ? maxCurrent * maxCurrent * shunt : null;
+        form.shunt.setCustomValidity(validShunt || !form.shunt.value ? '' : 'Code de shunt invalide');
+        $('shuntHint').textContent = validShunt
+            ? `${shuntCode(shunt)} = ${physical(shunt, 'Ω')}`
+            : form.shunt.value ? 'Code invalide : R100, R010, R002, 2R5, 10m ou une valeur en Ω.' : '';
+        $('shuntHint').classList.toggle('invalid', !validShunt && !!form.shunt.value);
         $('protocolComputed').innerHTML = `
             <div><span>Échantillons / répétition</span><strong>${count(perRun)}</strong><small>${count(d)} s × ${count(f)} Hz</small></div>
             <div><span>Échantillons au total</span><strong>${count(total)}</strong><small>${r} répétition${r > 1 ? 's' : ''}</small></div>
+            <div class="cal-computed-accent"><span>Résolution INA226</span><strong>${validShunt ? `${physical(lsb)}/bit` : '—'}</strong><small>2,5 µV ÷ ${validShunt ? physical(shunt, 'Ω') : 'R shunt'}</small></div>
+            <div class="cal-computed-accent"><span>Courant max mesurable</span><strong>${validShunt ? `±${physical(maxCurrent)}` : '—'}</strong><small>81,92 mV ÷ R${validShunt ? ` · ${physical(power, 'W')} dissipés` : ''}</small></div>
             <div><span>Durée du protocole</span><strong>${duration(totalTime)}</strong><small>pauses incluses</small></div>
             <div><span>Échantillons / relevé</span><strong>${count(windowSamples)}</strong><small>fenêtre de moyennage INA</small></div>`;
-        $('factExpected').textContent = count(perRun);
-        $('factTotal').textContent = count(total);
-        $('factDuration').textContent = duration(totalTime);
-        $('schematicChannel').textContent = form.channel.value;
+        document.querySelectorAll('[data-circuit]').forEach(circuit => {
+            circuit.classList.toggle('active', circuit.dataset.circuit === form.channel.value);
+            if (validShunt) {
+                circuit.querySelector('[data-shunt-code]').textContent = `Rshunt ${shuntCode(shunt)}`;
+                circuit.querySelector("[data-shunt-lsb]").textContent = `${physical(lsb)}/bit`;
+            }
+        });
     }
     form.addEventListener('input', updateComputed);
     form.addEventListener('submit', async event => {
@@ -454,7 +502,10 @@
         });
         const first = state.analysis.runs.find(run => run.checkpoints.some(cp => cp.reference_A != null));
         const reading = first?.checkpoints.find(cp => cp.reference_A != null)?.reference_A;
-        $('schematicReading').textContent = reading != null ? amps(reading, state.unit === 'A' ? 4 : 2) : `— ${state.unit}`;
+        ['A', 'B'].forEach(channel => {
+            $(`schematicReading${channel}`).textContent = channel === state.analysis.protocol.channel && reading != null
+                ? amps(reading, state.unit === 'A' ? 4 : 2) : `— ${state.unit}`;
+        });
     }
 
     // ------------------------------------------------------------------ Analyse

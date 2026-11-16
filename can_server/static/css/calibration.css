@@ -9,7 +9,7 @@
 
 /* Héros + schéma animé du banc */
 .cal-hero {
-    position: relative; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); gap: 24px; align-items: center;
+    position: relative; display: grid; grid-template-columns: minmax(0, .9fr) minmax(320px, 1.1fr); gap: 28px; align-items: center;
     padding: 28px 32px; border-radius: var(--rg-radius-lg, 16px); overflow: hidden; isolation: isolate;
     color: #f5f5f4;
     background:
@@ -34,10 +34,22 @@ html body .cal-hero p { color: rgba(245,245,244,.78) !important; }
 }
 .cal-hero-facts b { color: var(--cal-accent); font: 700 1.05rem var(--rg-font-mono, Consolas, monospace); margin-right: 4px; }
 
-.cal-schematic { width: 100%; height: auto; color: #fff; }
+.cal-schematic { width: 100%; height: auto; max-height: 340px; color: #fff; }
 .cal-schematic text { fill: #fff; font: 700 11px var(--rg-font-mono, Consolas, monospace); text-anchor: middle; letter-spacing: .06em; }
 .cal-schematic .cal-sub { fill: rgba(255,255,255,.6); font-weight: 500; font-size: 9.5px; }
 .cal-schematic .cal-caption { fill: rgba(255,255,255,.5); font-weight: 500; font-size: 10px; letter-spacing: 0; }
+.cal-circuit { opacity: .38; transition: opacity var(--rg-dur-base, .25s); }
+.cal-circuit.active { opacity: 1; }
+.cal-circuit:not(.active) .cal-flow { animation-play-state: paused; opacity: .35; }
+.cal-schematic .cal-channel-tag { text-anchor: start; fill: var(--cal-accent); font-size: 11px; letter-spacing: .14em; }
+.cal-circuit:not(.active) .cal-channel-tag { fill: rgba(255,255,255,.7); }
+.cal-node-psu rect { stroke: #4fbf8a; }
+.cal-node-load rect { stroke: rgba(255,255,255,.45); stroke-dasharray: 4 3; }
+.cal-schematic .cal-shunt { fill: rgba(239,223,0,.14); stroke: var(--cal-accent); stroke-width: 1.2; }
+.cal-schematic .cal-shunt-text { fill: var(--cal-accent); font-size: 10px; }
+.cal-shunt-hint { margin: -4px 0 0; min-height: 1.2em; color: var(--rg-ink-3); font: .8rem var(--rg-font-mono, Consolas, monospace); }
+.cal-shunt-hint.invalid { color: var(--cal-bad); }
+.cal-computed .cal-computed-accent { border-color: color-mix(in srgb, var(--cal-accent) 55%, var(--rg-line)); box-shadow: inset 3px 0 0 var(--cal-accent); }
 .cal-loop { fill: none; stroke: rgba(255,255,255,.22); stroke-width: 3; stroke-linejoin: round; }
 .cal-flow {
     fill: none; stroke: var(--cal-accent); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 2 18;

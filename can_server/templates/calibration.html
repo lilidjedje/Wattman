@@ -37,52 +37,72 @@
     </header>
 
     <main class="workstation-main cal-main" data-unit="calibration">
-        <section class="cal-hero" aria-label="Banc de calibration">
+        <section class="cal-hero" aria-label="Calibration capteur de courant">
             <div class="cal-hero-copy">
-                <p class="eyebrow">Banc de comparaison · {{ project.name or 'projet actif' }}</p>
+                <p class="eyebrow">Calibration capteur de courant</p>
                 <h2>Mesurer l’écart réel entre l’INA226 et le Fluke 287</h2>
-                <p>Le même courant traverse le shunt R010 et le multimètre en série. Chaque répétition est reliée à son enregistrement dans la base de mesures, puis comparée aux relevés du Fluke : complétude, bruit, dérive, biais, incertitudes.</p>
-                <div class="cal-hero-facts">
-                    <span><b id="factExpected">6 000</b> échantillons attendus / répétition</span>
-                    <span><b id="factTotal">18 000</b> au total</span>
-                    <span><b id="factDuration">4 min 00 s</b> de protocole</span>
-                </div>
+                <p>Le courant de référence est celui lu sur un multimètre Fluke 287 (précision 0,02 %, 100 µA), placé en série avec le shunt de l’INA226 : les deux instruments voient exactement le même courant. Chaque répétition est rattachée à son enregistrement dans la base de mesures, puis confrontée à ces relevés de référence pour quantifier la complétude, le bruit, la dérive, le biais et les incertitudes du capteur.</p>
             </div>
-            <svg class="cal-schematic" viewBox="0 0 520 260" role="img" aria-labelledby="schematicTitle">
-                <title id="schematicTitle">Schéma : source de courant, shunt R010 mesuré par l’INA226 et Fluke 287 en série</title>
+            <svg class="cal-schematic" viewBox="0 0 640 290" role="img" aria-labelledby="schematicTitle">
+                <title id="schematicTitle">Deux circuits, un par canal : alimentation, Fluke 287, INA226 avec son shunt, charge, retour à l’alimentation</title>
                 <defs>
-                    <linearGradient id="calWire" x1="0" x2="1">
-                        <stop offset="0" stop-color="var(--cal-accent)" stop-opacity=".2"/>
-                        <stop offset=".5" stop-color="var(--cal-accent)"/>
-                        <stop offset="1" stop-color="var(--cal-accent)" stop-opacity=".2"/>
-                    </linearGradient>
                     <pattern id="calGrid" width="20" height="20" patternUnits="userSpaceOnUse">
                         <path d="M20 0H0V20" fill="none" stroke="currentColor" stroke-opacity=".08"/>
                     </pattern>
                 </defs>
-                <rect width="520" height="260" fill="url(#calGrid)"/>
-                <path class="cal-loop" d="M70 70 H210 M300 70 H440 V190 H70 V70"/>
-                <path class="cal-flow" d="M70 70 H210 M300 70 H440 V190 H70 V70"/>
-                <g class="cal-node" transform="translate(30 105)">
-                    <rect width="80" height="50" rx="8"/>
-                    <text x="40" y="22">SOURCE</text><text x="40" y="38" class="cal-sub">I constant</text>
+                <rect width="640" height="290" fill="url(#calGrid)"/>
+                <g class="cal-circuit" data-circuit="A">
+                    <text x="22" y="32" class="cal-channel-tag">CANAL A</text>
+                    <path class="cal-loop" d="M70 46 H570 V130 H70 Z"/>
+                    <path class="cal-flow" d="M70 46 H570 V130 H70 Z"/>
+                    <g class="cal-node cal-node-psu" transform="translate(26 64)">
+                        <rect width="88" height="48" rx="8"/>
+                        <text x="44" y="21">ALIM</text><text x="44" y="37" class="cal-sub">I constant</text>
+                    </g>
+                    <g class="cal-node cal-node-ref" transform="translate(150 20)">
+                        <rect width="104" height="52" rx="9"/>
+                        <text x="52" y="17">FLUKE 287</text>
+                        <rect class="cal-lcd" x="10" y="24" width="84" height="20" rx="3"/>
+                        <text x="52" y="38" class="cal-lcd-text" id="schematicReadingA">— mA</text>
+                    </g>
+                    <g class="cal-node cal-node-ina" transform="translate(296 16)">
+                        <rect width="150" height="60" rx="9"/>
+                        <text x="75" y="18">INA226 · ID 0x40</text>
+                        <rect class="cal-shunt" x="35" y="25" width="80" height="16" rx="3"/>
+                        <text x="75" y="37" class="cal-shunt-text" data-shunt-code>R010</text>
+                        <text x="75" y="53" class="cal-sub" data-shunt-lsb>250 µA/bit</text>
+                    </g>
+                    <g class="cal-node cal-node-load" transform="translate(528 64)">
+                        <rect width="84" height="48" rx="8"/>
+                        <text x="42" y="21">CHARGE</text><text x="42" y="37" class="cal-sub">DUT</text>
+                    </g>
                 </g>
-                <g class="cal-node cal-node-shunt" transform="translate(210 52)">
-                    <rect width="90" height="36" rx="6"/>
-                    <text x="45" y="23">R010 · 10 mΩ</text>
+                <g class="cal-circuit" data-circuit="B">
+                    <text x="22" y="172" class="cal-channel-tag">CANAL B</text>
+                    <path class="cal-loop" d="M70 186 H570 V270 H70 Z"/>
+                    <path class="cal-flow" d="M70 186 H570 V270 H70 Z"/>
+                    <g class="cal-node cal-node-psu" transform="translate(26 204)">
+                        <rect width="88" height="48" rx="8"/>
+                        <text x="44" y="21">ALIM</text><text x="44" y="37" class="cal-sub">I constant</text>
+                    </g>
+                    <g class="cal-node cal-node-ref" transform="translate(150 160)">
+                        <rect width="104" height="52" rx="9"/>
+                        <text x="52" y="17">FLUKE 287</text>
+                        <rect class="cal-lcd" x="10" y="24" width="84" height="20" rx="3"/>
+                        <text x="52" y="38" class="cal-lcd-text" id="schematicReadingB">— mA</text>
+                    </g>
+                    <g class="cal-node cal-node-ina" transform="translate(296 156)">
+                        <rect width="150" height="60" rx="9"/>
+                        <text x="75" y="18">INA226 · ID 0x44</text>
+                        <rect class="cal-shunt" x="35" y="25" width="80" height="16" rx="3"/>
+                        <text x="75" y="37" class="cal-shunt-text" data-shunt-code>R010</text>
+                        <text x="75" y="53" class="cal-sub" data-shunt-lsb>250 µA/bit</text>
+                    </g>
+                    <g class="cal-node cal-node-load" transform="translate(528 204)">
+                        <rect width="84" height="48" rx="8"/>
+                        <text x="42" y="21">CHARGE</text><text x="42" y="37" class="cal-sub">DUT</text>
+                    </g>
                 </g>
-                <g class="cal-node cal-node-ina" transform="translate(205 118)">
-                    <rect width="100" height="46" rx="8"/>
-                    <text x="50" y="20">INA226 · <tspan id="schematicChannel">A</tspan></text><text x="50" y="36" class="cal-sub">LSB 250 µA</text>
-                </g>
-                <path class="cal-sense" d="M232 88 V118 M278 88 V118"/>
-                <g class="cal-node cal-node-ref" transform="translate(400 102)">
-                    <rect width="90" height="66" rx="10"/>
-                    <text x="45" y="22">FLUKE 287</text>
-                    <rect class="cal-lcd" x="10" y="30" width="70" height="24" rx="3"/>
-                    <text x="45" y="47" class="cal-lcd-text" id="schematicReading">— mA</text>
-                </g>
-                <text x="255" y="215" class="cal-caption">Le même courant traverse le shunt et le multimètre en série</text>
             </svg>
         </section>
 
@@ -106,12 +126,27 @@
                         <label class="field">Fenêtre relevé (s) <input name="window_s" type="number" min="0.01" step="0.01" required title="Les échantillons INA de part et d’autre de chaque instant sont moyennés sur cette durée"></label>
                     </div>
                     <label class="field">Instants de relevé (s) <input name="checkpoints_s" placeholder="0, 20, 40, 60" required></label>
+                    <div class="cal-grid-2">
+                        <label class="field">Shunt
+                            <input name="shunt" list="shuntCodes" placeholder="R010" autocomplete="off" spellcheck="false" required
+                                   title="Code du shunt : R100 = 0,100 Ω, R010 = 0,010 Ω, R002 = 0,002 Ω (ou une valeur en Ω / mΩ)">
+                        </label>
+                        <label class="field">Tolérance shunt (%) <input name="shunt_tolerance_pct" type="number" min="0" step="0.1"></label>
+                    </div>
+                    <datalist id="shuntCodes">
+                        <option value="R100">0,100 Ω</option>
+                        <option value="R050">0,050 Ω</option>
+                        <option value="R020">0,020 Ω</option>
+                        <option value="R010">0,010 Ω</option>
+                        <option value="R005">0,005 Ω</option>
+                        <option value="R002">0,002 Ω</option>
+                        <option value="R001">0,001 Ω</option>
+                    </datalist>
+                    <p class="cal-shunt-hint" id="shuntHint" role="status"></p>
                     <details class="cal-advanced">
                         <summary>Paramètres avancés</summary>
                         <div class="cal-grid-2">
                             <label class="field">Lissage min/max (s) <input name="smoothing_s" type="number" min="0" step="0.05"></label>
-                            <label class="field">Shunt (Ω) <input name="shunt_ohm" type="number" min="0.00001" step="0.0001"></label>
-                            <label class="field">Tolérance shunt (%) <input name="shunt_tolerance_pct" type="number" min="0" step="0.1"></label>
                         </div>
                     </details>
                     <label class="field">Notes <textarea name="notes" rows="2" placeholder="Banc, température, source de courant…"></textarea></label>
@@ -247,7 +282,8 @@
                                 <dt>Erreur à un instant</dt><dd>E = moyenne INA sur la fenêtre − lecture Fluke. Verdict : vert si |E| ≤ limite Fluke, orange si |E| ≤ limite Fluke + limite INA226 non calibré, rouge au-delà.</dd>
                                 <dt>Erreur normalisée</dt><dd>Eₙ = E ÷ √(U_Fluke² + U_INA,95²). |Eₙ| ≤ 1 : les deux instruments sont compatibles.</dd>
                                 <dt>Biais (offset)</dt><dd>Moyenne des erreurs, avec U95 = 2σ/√n. À un seul niveau de courant, l’offset et le gain ne sont pas séparables.</dd>
-                                <dt>Bruit</dt><dd>Écart-type groupé des échantillons de chaque répétition, comparé au LSB (2,5 µV ÷ R shunt).</dd>
+                                <dt>Résolution INA226</dt><dd>LSB = 2,5 µV ÷ R shunt (R010 → 250 µA/bit). Courant max = 81,92 mV ÷ R shunt (pleine échelle de la tension shunt), dissipation P = I² × R.</dd>
+                                <dt>Bruit</dt><dd>Écart-type groupé des échantillons de chaque répétition, comparé au LSB.</dd>
                                 <dt>Dérive</dt><dd>Pente de la régression linéaire courant / temps, en A/min, comparée à la variation du Fluke entre le premier et le dernier relevé.</dd>
                                 <dt>Bland-Altman</dt><dd>Différence en fonction de la moyenne des deux instruments ; biais ± 1,96σ (limites d’accord).</dd>
                                 <dt>Allan</dt><dd>σ(τ) des moyennes successives sur τ : choisit la fenêtre de moyennage qui minimise l’incertitude.</dd>

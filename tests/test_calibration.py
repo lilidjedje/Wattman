@@ -78,6 +78,14 @@ class CalibrationTest(unittest.TestCase):
         self.assertEqual(analysis["summary"]["samples_expected_total"], 18000)
         self.assertEqual(analysis["summary"]["verdict"], "missing")
 
+    def test_shunt_code_is_accepted(self):
+        campaign = self.create_campaign(shunt_ohm="R002")
+        self.assertAlmostEqual(campaign["protocol"]["shunt_ohm"], 0.002)
+        campaign = self.create_campaign(shunt_ohm="R100")
+        self.assertAlmostEqual(campaign["protocol"]["shunt_ohm"], 0.1)
+        bad = self.client.post("/api/calibration/campaigns", json={"protocol": {"shunt_ohm": "RXX"}})
+        self.assertEqual(bad.status_code, 400)
+
     def test_rejects_checkpoint_after_duration(self):
         response = self.client.post("/api/calibration/campaigns", json={"protocol": {"duration_s": 30, "checkpoints_s": "0,20,40"}})
         self.assertEqual(response.status_code, 400)
