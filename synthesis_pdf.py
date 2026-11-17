@@ -1,4 +1,5 @@
 """Native, selectable-text A4 reports built from the application's calculated data."""
+import json
 from collections import defaultdict
 from datetime import datetime
 from io import BytesIO
@@ -457,10 +458,15 @@ def build_synthesis_pdf(payload):
         raise ValueError('La sélection des rapports PDF est invalide.')
     if not isinstance(reports,list) or not reports or any(not isinstance(r,dict) or not isinstance(r.get('module'),str) or not isinstance(r.get('data'),dict) for r in reports) or {r['module'] for r in reports}!=set(modules):
         raise ValueError('Les données des rapports sélectionnés sont absentes.')
-    grouped=defaultdict(list)
-    for report in reports:grouped[report['module']].append(report)
-    if any(len(items)>1 for key,items in grouped.items() if key not in ('biberonnage','dcdc','wltc')):
-        raise ValueError('Un rapport a été sélectionné plusieurs fois.')
+    # Un module peut contenir plusieurs rapports (un par configuration / profil / durée).
+    # Les doublons strictement identiques sont ignorés au lieu de bloquer la génération.
+    grouped=defaultdict(list);seen=set()
+    for report in reports:
+        key=(report['module'],json.dumps(report.get('selection'),sort_keys=True,default=str),
+             json.dumps((report['data'].get('configuration') or {}).get('id') or (report['data'].get('configuration') or {}).get('name'),default=str),
+             report['data'].get('days'))
+        if key in seen:continue
+        seen.add(key);grouped[report['module']].append(report)
     project=payload.get('project') or {};builder=ReportBuilder();story=builder.story
     # Page de garde : titre et projet sont dessinés dans le bandeau (ReportDocument.cover).
     story += [NextPageTemplate('report'),Spacer(1,COVER_BAND-22*mm+10*mm),paragraph('Fiche projet','h2')]
@@ -496,8 +502,10 @@ def build_synthesis_pdf(payload):
         if module not in modules:continue
         if module in ('dcdc','wltc'):
             for report in grouped[module]:builder.sizing(report)
-        elif module in ('dm1','dm2'):builder.dm(grouped[module][0])
-        elif module=='customer':builder.customer(grouped[module][0])
+        elif module in ('dm1','dm2'):
+            for report in grouped[module]:builder.dm(report)
+        elif module=='customer':
+            for report in grouped[module]:builder.customer(report)
         else:builder.biberonnage(grouped[module])
     output=BytesIO();document=ReportDocument(output,project)
     document.multiBuild(story)

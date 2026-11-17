@@ -1167,7 +1167,10 @@
             const pdfButton = document.getElementById('generate-pdf');
             button.disabled = true;
             pdfButton.disabled = true;
-            status.textContent = 'Génération du fichier Excel…';
+            const startedAt = Date.now();
+            const tick = () => { status.textContent = `Génération du fichier Excel… ${Math.round((Date.now() - startedAt) / 1000)} s (classeurs Consoveille et DCDC, jusqu'à ~30 s)`; };
+            tick();
+            const ticker = setInterval(tick, 1000);
             try {
                 const response = await fetch('/export_synthesis_excel_bundle', {
                     method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collectSynthesisPayload())
@@ -1179,7 +1182,9 @@
                 }
                 const blob = await response.blob();
                 const fileName = `Synthese_Wattman_${project.name || 'projet'}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`;
+                clearInterval(ticker);
                 if (window.desktopEnvironment?.saveSynthesisExcel) {
+                    status.textContent = 'Fichier Excel prêt : choisissez où l’enregistrer.';
                     // Application bureau : boîte « Enregistrer sous » à chaque génération.
                     const result = await window.desktopEnvironment.saveSynthesisExcel(fileName, new Uint8Array(await blob.arrayBuffer()));
                     status.textContent = result.canceled ? 'Enregistrement du fichier Excel annulé.' : `Fichier Excel enregistré : ${result.filePath}`;
@@ -1198,6 +1203,7 @@
                 console.error('La génération du fichier Excel a échoué.', error);
                 status.textContent = `Erreur de génération Excel : ${error.message}`;
             } finally {
+                clearInterval(ticker);
                 button.disabled = false;
                 pdfButton.disabled = false;
             }
