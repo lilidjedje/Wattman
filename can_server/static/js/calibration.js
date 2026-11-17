@@ -275,36 +275,236 @@
         form.name.focus();
         $('calState').textContent = 'Nouvelle campagne';
     });
-    $('deleteCampaign').addEventListener('click', async () => {
-        if (!state.campaign || !confirm(`Supprimer la campagne « ${state.campaign.name} » et ses relevés ? Les mesures de la base ne sont pas supprimées.`)) return;
-        await request(`${api.campaigns}/${state.campaign.id}`, {method: 'DELETE'});
-        state.campaign = null;
+    // « Supprimer… » ouvre l'historique avec la campagne courante pré-cochée : on choisit ce qu'on supprime.
+    $('deleteCampaign').addEventListener('click', () => {
+        if (state.campaign) calHistory.selected = new Set([state.campaign.id]);
+        selectTab('history');
+    });
+
+    // ------------------------------------------------------------------ Historique
+    const calHistory = {selected: new Set()};
+    function renderHistory() {
+        const ids = new Set(state.campaigns.map(c => c.id));
+        calHistory.selected = new Set([...calHistory.selected].filter(id => ids.has(id)));
+        const n = calHistory.selected.size;
+        $('historyCount').textContent = `${state.campaigns.length} campagne${state.campaigns.length > 1 ? 's' : ''}${n ? ` · ${n} sélectionnée${n > 1 ? 's' : ''}` : ''}`;
+        $('historyDelete').disabled = !n;
+        $('historyDelete').textContent = n ? `Supprimer la sélection (${n})` : 'Supprimer la sélection';
+        const all = state.campaigns.length && n === state.campaigns.length;
+        const date = ts => ts ? new Date(ts * 1000).toLocaleString('fr-FR', {dateStyle: 'short', timeStyle: 'short'}) : '—';
+        const headers = [`<input type="checkbox" id="historyAll" aria-label="Tout sélectionner" ${all ? 'checked' : ''}>`,
+            'Nom', 'Voie', 'Fréquence', 'Durée', 'Répét.', 'Pause', 'Instants de relevé', 'Shunt', 'Tol. shunt', 'Reliées', 'Créée', 'Modifiée', 'Notes', ''];
+        $('historyTable').innerHTML = `<thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${
+            state.campaigns.length ? state.campaigns.map(c => {
+                const p = c.protocol;
+                const active = state.campaign?.id === c.id;
+                return `<tr class="${active ? 'is-active' : ''}${calHistory.selected.has(c.id) ? ' is-selected' : ''}">
+                    <td><input type="checkbox" data-history-id="${c.id}" aria-label="Sélectionner ${escapeHtml(c.name)}" ${calHistory.selected.has(c.id) ? 'checked' : ''}></td>
+                    <td><strong>${escapeHtml(c.name)}</strong>${active ? ' <span class="cal-pill neutral">ouverte</span>' : ''}</td>
+                    <td>${p.channel === 'AB' ? 'A + B' : p.channel}</td>
+                    <td>${count(p.frequency_hz)} Hz</td>
+                    <td>${count(p.duration_s)} s</td>
+                    <td>${p.repetitions}</td>
+                    <td>${count(p.pause_s)} s</td>
+                    <td>${(p.checkpoints_s || []).join(', ')} s</td>
+                    <td>${p.shunt_ohm != null ? `${nf(3).format(p.shunt_ohm)} Ω` : '—'}</td>
+                    <td>${p.shunt_tolerance_pct != null ? `${nf(1).format(p.shunt_tolerance_pct)} %` : '—'}</td>
+                    <td>${c.linked_runs}/${p.repetitions}</td>
+                    <td>${date(c.created_at)}</td>
+                    <td>${date(c.updated_at)}</td>
+                    <td class="cal-history-notes">${escapeHtml(c.notes || '')}</td>
+                    <td><button type="button" class="cal-history-open" data-history-open="${c.id}" ${active ? 'disabled' : ''}>Ouvrir</button></td>
+                </tr>`;
+            }).join('') : `<tr><td colspan="${headers.length}"><div class="empty-notice">Aucune campagne enregistrée pour ce projet.</div></td></tr>`
+        }</tbody>`;
+    }
+    $('historyTable').addEventListener('change', event => {
+        const box = event.target;
+        if (box.id === 'historyAll') calHistory.selected = box.checked ? new Set(state.campaigns.map(c => c.id)) : new Set();
+        else if (box.dataset.historyId) {
+            if (box.checked) calHistory.selected.add(box.dataset.historyId); else calHistory.selected.delete(box.dataset.historyId);
+        }
+        renderHistory();
+    });
+    $('historyTable').addEventListener('click', async event => {
+        const button = event.target.closest('[data-history-open]');
+        if (!button) return;
+        await openCampaign(button.dataset.historyOpen);
+        selectTab('input');
+    });
+    $('historyDelete').addEventListener('click', async () => {
+        const chosen = state.campaigns.filter(c => calHistory.selected.has(c.id));
+        if (!chosen.length) return;
+        const names = chosen.map(c => `• ${c.name}`).join('\n');
+        if (!confirm(`Supprimer définitivement ${chosen.length} campagne${chosen.length > 1 ? 's' : ''} et leurs relevés Fluke ?\n\n${names}\n\nLes mesures de la base ne sont pas supprimées.`)) return;
+        $('historyDelete').disabled = true;
+        const failed = [];
+        for (const c of chosen) {
+            try { await request(`${api.campaigns}/${c.id}`, {method: 'DELETE'}); }
+            catch (error) { failed.push(`${c.name} : ${error.message}`); }
+        }
+        const deletedCurrent = state.campaign && chosen.some(c => c.id === state.campaign.id) && !failed.some(f => f.startsWith(`${state.campaign.name} :`));
+        calHistory.selected = new Set();
         await loadCampaigns();
-        if (state.campaigns[0]) await openCampaign(state.campaigns[0].id); else $('newCampaign').click();
+        if (deletedCurrent) {
+            state.campaign = null;
+            if (state.campaigns[0]) await openCampaign(state.campaigns[0].id); else $('newCampaign').click();
+        }
+        renderHistory();
+        const ok = chosen.length - failed.length;
+        flash($('historyMessage'), failed.length
+            ? `${ok} supprimée${ok > 1 ? 's' : ''}, ${failed.length} en échec : ${failed.join(' ; ')}`
+            : `${ok} campagne${ok > 1 ? 's' : ''} supprimée${ok > 1 ? 's' : ''}.`, failed.length ? 'error' : 'ok');
     });
 
     // ------------------------------------------------------------------ Campagnes
     async function loadCampaigns() {
         state.campaigns = (await request(api.campaigns)).campaigns;
         renderCampaignList();
+        if (state.tab === 'history') renderHistory();
+    }
+    // Sélecteur : recherche, filtre de voie, tri, groupes par date, clavier.
+    const picker = {query: '', channel: storeGet('cal.pickerChannel') || 'all', sort: storeGet('cal.pickerSort') || 'recent', cursor: null};
+    const fold = text => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    function highlight(text, query) {
+        if (!query) return escapeHtml(text);
+        const index = fold(text).indexOf(query);
+        if (index < 0) return escapeHtml(text);
+        return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + query.length))}</mark>${escapeHtml(text.slice(index + query.length))}`;
+    }
+    function dayLabel(ts) {
+        const date = new Date(ts * 1000);
+        const start = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const days = Math.round((start(new Date()) - start(date)) / 86400000);
+        if (days === 0) return 'Aujourd’hui';
+        if (days === 1) return 'Hier';
+        if (days < 7) return date.toLocaleDateString('fr-FR', {weekday: 'long'}).replace(/^./, c => c.toUpperCase());
+        return date.toLocaleDateString('fr-FR', {day: 'numeric', month: 'long', year: 'numeric'});
+    }
+    function pickerItems() {
+        const query = fold(picker.query.trim());
+        const items = state.campaigns.filter(c => (picker.channel === 'all' || c.protocol.channel === picker.channel)
+            && (!query || fold(`${c.name} ${c.notes || ''}`).includes(query)));
+        const by = {
+            recent: (a, b) => b.updated_at - a.updated_at,
+            oldest: (a, b) => a.updated_at - b.updated_at,
+            name: (a, b) => a.name.localeCompare(b.name, 'fr', {numeric: true, sensitivity: 'base'}),
+        }[picker.sort] || ((a, b) => b.updated_at - a.updated_at);
+        return {query, items: items.sort(by)};
     }
     function renderCampaignList() {
-        $('campaignList').innerHTML = state.campaigns.length ? state.campaigns.map(campaign => `
-            <button type="button" class="cal-campaign${state.campaign?.id === campaign.id ? ' active' : ''}" data-id="${campaign.id}">
-                <strong>${escapeHtml(campaign.name)}</strong>
-                <span>${campaign.protocol.channel === 'AB' ? 'Canaux A et B' : `Canal ${campaign.protocol.channel}`} · ${campaign.protocol.repetitions} × ${count(campaign.protocol.duration_s)} s @ ${count(campaign.protocol.frequency_hz)} Hz</span>
-                <small>${campaign.linked_runs}/${campaign.protocol.repetitions} répétitions reliées · ${new Date(campaign.updated_at * 1000).toLocaleString('fr-FR', {dateStyle: 'short', timeStyle: 'short'})}</small>
-            </button>`).join('') : '<div class="empty-notice">Aucune campagne. Créez-en une avec le protocole ci-dessous.</div>';
+        const list = $('campaignList');
+        const {query, items} = pickerItems();
+        const total = state.campaigns.length;
+        $('campaignCount').textContent = total ? (items.length === total ? `${total}` : `${items.length} / ${total}`) : '';
+        document.querySelectorAll('[data-camp-channel]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.campChannel === picker.channel)));
+        $('campaignSort').value = picker.sort;
+        if (!total) {
+            list.innerHTML = '<div class="empty-notice">Aucune campagne. Créez-en une avec le protocole ci-dessous.</div>';
+            return;
+        }
+        if (!items.length) {
+            list.innerHTML = `<div class="cal-picker-empty">Aucune campagne ne correspond${picker.query ? ` à « ${escapeHtml(picker.query)} »` : ''}.<button type="button" data-camp-reset>Effacer les filtres</button></div>`;
+            return;
+        }
+        if (!items.some(c => c.id === picker.cursor)) picker.cursor = (items.find(c => c.id === state.campaign?.id) || items[0]).id;
+        let group = null, html = '';
+        items.forEach(c => {
+            const label = picker.sort === 'name' ? null : dayLabel(c.updated_at);
+            if (label && label !== group) { group = label; html += `<div class="cal-picker-group" role="presentation">${label}</div>`; }
+            const p = c.protocol;
+            const active = state.campaign?.id === c.id;
+            const complete = c.linked_runs >= p.repetitions;
+            const time = new Date(c.updated_at * 1000).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'});
+            html += `<button type="button" role="option" aria-selected="${active}" tabindex="-1"
+                class="cal-campaign${active ? ' active' : ''}${picker.cursor === c.id ? ' cursor' : ''}" data-id="${c.id}">
+                <span class="cal-campaign-chan" data-chan="${p.channel}">${p.channel === 'AB' ? 'A+B' : p.channel}</span>
+                <span class="cal-campaign-body">
+                    <strong>${highlight(c.name, query)}</strong>
+                    <span>${p.repetitions} × ${count(p.duration_s)} s · ${count(p.frequency_hz)} Hz</span>
+                </span>
+                <span class="cal-campaign-side">
+                    <small>${picker.sort === 'name' ? new Date(c.updated_at * 1000).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: '2-digit'}) : time}</small>
+                    <span class="cal-campaign-runs${complete ? ' ok' : ''}" title="${c.linked_runs}/${p.repetitions} répétitions reliées">${c.linked_runs}/${p.repetitions}</span>
+                </span>
+            </button>`;
+        });
+        list.innerHTML = html;
+        const target = list.querySelector('.cal-campaign.cursor');
+        if (target && picker.scroll !== false) {
+            const top = target.offsetTop, bottom = top + target.offsetHeight; // liste en position: relative
+            if (top < list.scrollTop + 28) list.scrollTop = Math.max(0, top - 28);
+            else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+        }
+        picker.scroll = true;
     }
     $('campaignList').addEventListener('click', event => {
+        if (event.target.closest('[data-camp-reset]')) {
+            picker.query = ''; picker.channel = 'all'; $('campaignSearch').value = '';
+            storeSet('cal.pickerChannel', 'all');
+            renderCampaignList(); $('campaignSearch').focus();
+            return;
+        }
         const button = event.target.closest('.cal-campaign');
-        if (button) openCampaign(button.dataset.id);
+        if (!button) return;
+        picker.cursor = button.dataset.id;
+        picker.scroll = false; // Le clic est déjà visible : ne pas faire sauter la liste.
+        openCampaign(button.dataset.id);
+    });
+    $('campaignSearch').addEventListener('input', event => {
+        picker.query = event.target.value;
+        picker.cursor = null;
+        $('campaignList').scrollTop = 0;
+        renderCampaignList();
+    });
+    $('campaignSearch').addEventListener('keydown', event => {
+        const {items} = pickerItems();
+        if (!items.length) return;
+        const index = Math.max(0, items.findIndex(c => c.id === picker.cursor));
+        const move = {ArrowDown: 1, ArrowUp: -1, PageDown: 8, PageUp: -8}[event.key];
+        if (move) {
+            event.preventDefault();
+            picker.cursor = items[Math.min(items.length - 1, Math.max(0, index + move))].id;
+            renderCampaignList();
+        } else if (event.key === 'Home' && event.ctrlKey || event.key === 'End' && event.ctrlKey) {
+            event.preventDefault();
+            picker.cursor = items[event.key === 'Home' ? 0 : items.length - 1].id;
+            renderCampaignList();
+        } else if (event.key === 'Enter') {
+            event.preventDefault();
+            if (picker.cursor && picker.cursor !== state.campaign?.id) openCampaign(picker.cursor);
+        } else if (event.key === 'Escape' && picker.query) {
+            event.preventDefault();
+            event.target.value = ''; picker.query = ''; renderCampaignList();
+        }
+    });
+    document.querySelector('.cal-picker-filters').addEventListener('click', event => {
+        const button = event.target.closest('[data-camp-channel]');
+        if (!button) return;
+        picker.channel = button.dataset.campChannel;
+        storeSet('cal.pickerChannel', picker.channel);
+        $('campaignList').scrollTop = 0;
+        renderCampaignList();
+    });
+    $('campaignSort').addEventListener('change', event => {
+        picker.sort = event.target.value;
+        storeSet('cal.pickerSort', picker.sort);
+        $('campaignList').scrollTop = 0;
+        renderCampaignList();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+        event.preventDefault();
+        $('campaignSearch').focus();
+        $('campaignSearch').select();
     });
     async function openCampaign(id) {
         state.campaign = (await request(`${api.campaigns}/${id}`)).campaign;
         storeSet('cal.campaign', id);
         fillForm(state.campaign);
         renderCampaignList();
+        if (state.tab === 'history') renderHistory();
         renderRuns();
         syncBulkFromCampaign();
         $('exportCsv').href = `${api.campaigns}/${id}/export.csv`;
@@ -673,6 +873,7 @@
         renderTab();
     }
     function renderTab() {
+        if (state.tab === 'history') return renderHistory();
         if (!state.analysis) return;
         ({time: renderTime, errors: renderErrors, noise: renderNoise, sampling: renderSampling, levels: renderLevels}[state.tab] || (() => {}))();
     }
@@ -765,9 +966,12 @@
             if ($('optSmooth').checked) datasets.push({type: 'line', label: `R${run.run_index} moyenne glissante`, data: run.series_smoothed.map(([t, v]) => ({x: t + shift, y: conv(v)})),
                 borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0, parsing: false});
             if ($('optRef').checked) {
-                const refs = run.checkpoints.filter(cp => cp.reference_A != null);
-                datasets.push({type: 'scatter', label: `R${run.run_index} Fluke`, data: refs.map(cp => ({x: cp.t_s + shift, y: conv(cp.reference_A)})),
-                    borderColor: color, backgroundColor: css('--rg-surface') || '#fff', pointStyle: 'rectRot', pointRadius: 7, borderWidth: 2,
+                // Courbe Fluke : même style que la moyenne glissante INA, couleur distincte.
+                const refs = run.checkpoints.filter(cp => cp.reference_A != null).sort((a, b) => a.t_s - b.t_s);
+                const flukeColor = series(run.run_index);
+                datasets.push({type: 'line', label: `R${run.run_index} Fluke`, data: refs.map(cp => ({x: cp.t_s + shift, y: conv(cp.reference_A)})),
+                    borderColor: flukeColor, backgroundColor: css('--rg-surface') || '#fff', borderWidth: 2, tension: 0, fill: false,
+                    pointStyle: 'rectRot', pointRadius: 7, pointBorderWidth: 2, pointBorderColor: flukeColor,
                     errorBars: refs.map(cp => ({low: conv(cp.reference_A - cp.reference_limit_A), high: conv(cp.reference_A + cp.reference_limit_A)}))});
             }
         });

@@ -108,8 +108,34 @@
 
         <section class="cal-layout">
             <aside class="panel cal-sidebar">
-                <div class="panel-title"><h2>Campagnes</h2></div>
-                <div class="cal-campaigns" id="campaignList"><div class="empty-notice">Aucune campagne.</div></div>
+                <div class="panel-title cal-picker-head">
+                    <h2>Campagnes</h2>
+                    <span class="cal-picker-count" id="campaignCount" aria-live="polite"></span>
+                </div>
+                <div class="cal-picker" id="campaignPicker">
+                    <div class="cal-picker-search">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>
+                        <input id="campaignSearch" type="search" placeholder="Rechercher une campagne" autocomplete="off" spellcheck="false"
+                               aria-label="Rechercher une campagne" aria-controls="campaignList" aria-keyshortcuts="/">
+                        <kbd aria-hidden="true">/</kbd>
+                    </div>
+                    <div class="cal-picker-bar">
+                        <div class="cal-picker-filters" role="group" aria-label="Filtrer par voie">
+                            <button type="button" data-camp-channel="all" aria-pressed="true">Toutes</button>
+                            <button type="button" data-camp-channel="A" aria-pressed="false">A</button>
+                            <button type="button" data-camp-channel="B" aria-pressed="false">B</button>
+                            <button type="button" data-camp-channel="AB" aria-pressed="false">A+B</button>
+                        </div>
+                        <select id="campaignSort" aria-label="Trier les campagnes">
+                            <option value="recent">Récentes</option>
+                            <option value="oldest">Anciennes</option>
+                            <option value="name">Nom A→Z</option>
+                        </select>
+                    </div>
+                    <div class="cal-campaigns" id="campaignList" role="listbox" aria-label="Campagnes de calibration">
+                        <div class="empty-notice">Aucune campagne.</div>
+                    </div>
+                </div>
                 <button type="button" id="newCampaign" class="cal-full">+ Nouvelle campagne</button>
 
                 <form id="protocolForm" class="cal-protocol" autocomplete="off">
@@ -146,7 +172,7 @@
                     <div class="cal-computed" id="protocolComputed"></div>
                     <div class="actions">
                         <button type="submit" id="saveProtocol">Enregistrer le protocole</button>
-                        <button type="button" class="danger" id="deleteCampaign" hidden>Supprimer</button>
+                        <button type="button" class="danger" id="deleteCampaign" hidden>Supprimer…</button>
                     </div>
                     <div class="message" id="protocolMessage" hidden></div>
                 </form>
@@ -162,6 +188,7 @@
                     <button role="tab" aria-selected="false" data-tab="sampling">Échantillonnage</button>
                     <button role="tab" aria-selected="false" data-tab="levels">Multi-niveaux</button>
                     <button role="tab" aria-selected="false" data-tab="method">Méthode &amp; specs</button>
+                    <button role="tab" aria-selected="false" data-tab="history">Historique</button>
                     <span class="cal-tab-ink" aria-hidden="true"></span>
                 </nav>
                 <div class="cal-unitbar">
@@ -266,6 +293,21 @@
                     <div class="panel">
                         <div class="panel-title"><h2>Campagnes de la voie</h2></div>
                         <div class="table-scroll"><table class="report-table" id="levelsTable" data-rg-grid="on"></table></div>
+                    </div>
+                </section>
+
+                <section class="cal-panel" data-panel="history" hidden>
+                    <div class="panel">
+                        <div class="panel-title cal-history-head">
+                            <h2>Toutes les calibrations enregistrées</h2>
+                            <div class="cal-history-actions">
+                                <span id="historyCount" class="cal-history-count" aria-live="polite"></span>
+                                <button type="button" class="danger" id="historyDelete" disabled>Supprimer la sélection</button>
+                            </div>
+                        </div>
+                        <p class="cal-history-hint">Cochez les campagnes à supprimer. Cliquez sur « Ouvrir » pour charger une campagne et ses paramètres. Les mesures de la base ne sont jamais supprimées.</p>
+                        <div class="table-scroll"><table class="report-table cal-history-table" id="historyTable"></table></div>
+                        <div class="message" id="historyMessage" hidden></div>
                     </div>
                 </section>
 
