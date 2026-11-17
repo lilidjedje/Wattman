@@ -187,6 +187,7 @@
                     <button role="tab" aria-selected="false" data-tab="noise">Bruit &amp; Allan</button>
                     <button role="tab" aria-selected="false" data-tab="sampling">Échantillonnage</button>
                     <button role="tab" aria-selected="false" data-tab="levels">Multi-niveaux</button>
+                    <button role="tab" aria-selected="false" data-tab="global">Analyse globale</button>
                     <button role="tab" aria-selected="false" data-tab="method">Méthode &amp; specs</button>
                     <button role="tab" aria-selected="false" data-tab="history">Historique</button>
                     <span class="cal-tab-ink" aria-hidden="true"></span>
@@ -287,6 +288,72 @@
                     </div>
                 </section>
 
+                <section class="cal-panel cal-global" data-panel="global" hidden>
+                    <header class="cal-global-head">
+                        <div>
+                            <p class="eyebrow">Toutes les campagnes du projet</p>
+                            <h2>Analyse globale</h2>
+                            <p class="cal-global-sub" id="globalSub">Comparez vos campagnes, repérez ce qui cloche et ce qui fonctionne.</p>
+                        </div>
+                        <div class="cal-global-tools">
+                            <div class="cal-segment" role="group" aria-label="Voie analysée">
+                                <button type="button" data-global-channel="" class="active">A + B</button>
+                                <button type="button" data-global-channel="A">Voie A</button>
+                                <button type="button" data-global-channel="B">Voie B</button>
+                            </div>
+                            <button type="button" class="secondary" id="globalRefresh">Recalculer</button>
+                        </div>
+                    </header>
+                    <div class="message" id="globalMessage" hidden></div>
+                    <div class="cal-kpis" id="globalKpis"></div>
+
+                    <div class="cal-global-grid">
+                        <article class="panel cal-global-card wide">
+                            <div class="panel-title"><h2>Score de santé par campagne</h2><span class="cal-hint">0 = très mauvais · 100 = parfait</span></div>
+                            <div class="cal-chart tall"><canvas id="chartGlobalScore" aria-label="Score de santé par campagne"></canvas></div>
+                        </article>
+                        <article class="panel cal-global-card">
+                            <div class="panel-title"><h2>Biais face à l’incertitude du Fluke</h2></div>
+                            <div class="cal-chart"><canvas id="chartGlobalBias" aria-label="Biais par campagne"></canvas></div>
+                        </article>
+                        <article class="panel cal-global-card">
+                            <div class="panel-title"><h2>Erreur selon le courant de référence</h2></div>
+                            <div class="cal-chart"><canvas id="chartGlobalLevels" aria-label="Erreur selon le courant"></canvas></div>
+                        </article>
+                        <article class="panel cal-global-card">
+                            <div class="panel-title"><h2>Bruit selon la fréquence</h2></div>
+                            <div class="cal-chart"><canvas id="chartGlobalNoise" aria-label="Bruit selon la fréquence"></canvas></div>
+                        </article>
+                        <article class="panel cal-global-card">
+                            <div class="panel-title"><h2>Évolution dans le temps</h2></div>
+                            <div class="cal-chart"><canvas id="chartGlobalTrend" aria-label="Évolution des campagnes"></canvas></div>
+                        </article>
+                    </div>
+
+                    <article class="panel">
+                        <div class="panel-title"><h2>Où ça cloche</h2><span class="cal-hint">Chaque case : vert = bon, rouge = à corriger. Cliquez une campagne pour l’ouvrir.</span></div>
+                        <div class="cal-hm-wrap"><table class="cal-heatmap" id="globalHeatmap"></table></div>
+                    </article>
+
+                    <div class="cal-global-diag">
+                        <article class="panel cal-diag">
+                            <div class="panel-title"><h2>Diagnostic expert</h2><span class="cal-badge-local">Local · hors ligne</span></div>
+                            <div class="cal-insights" id="globalInsights"></div>
+                        </article>
+                        <article class="panel cal-ai" id="globalAiPanel">
+                            <div class="panel-title"><h2>Analyse IA</h2><span class="cal-badge-ai">Claude</span></div>
+                            <p class="cal-ai-note" id="globalAiNote"></p>
+                            <button type="button" class="cal-ai-run" id="globalAiRun">Analyser mes campagnes avec l’IA</button>
+                            <div class="cal-ai-result" id="globalAiResult" aria-live="polite"></div>
+                        </article>
+                    </div>
+
+                    <article class="panel">
+                        <div class="panel-title"><h2>Toutes les campagnes</h2></div>
+                        <div class="table-scroll"><table class="report-table" id="globalTable" data-rg-grid="on"></table></div>
+                    </article>
+                </section>
+
                 <section class="cal-panel" data-panel="levels" hidden>
                     <div class="message" id="levelsMessage"></div>
                     <div class="cal-chart"><canvas id="chartLevels" aria-label="Erreur en fonction du courant de référence"></canvas></div>
@@ -353,7 +420,9 @@
                 sources: {{ url_for('calibration_sources')|tojson }},
                 segments: {{ url_for('calibration_segments')|tojson }},
                 campaigns: {{ url_for('calibration_campaigns')|tojson }},
-                overview: {{ url_for('calibration_overview')|tojson }}
+                overview: {{ url_for('calibration_overview')|tojson }},
+                global: {{ url_for('calibration_global')|tojson }},
+                globalAi: {{ url_for('calibration_global_ai')|tojson }}
             }
         };
     </script>

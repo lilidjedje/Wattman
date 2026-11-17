@@ -9,6 +9,7 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.utils import secure_filename
 import json
 import shutil
+import threading
 import zipfile
 from account_auth import (
     ADMIN_EMAIL,
@@ -1017,6 +1018,55 @@ def generate_synthesis_pdf():
         return jsonify({'error': f'La génération du rapport PDF a échoué : {exc}'}), 500
 
 
+# Le classeur Consoveille.xlsx met ~9 s à être lu par openpyxl. Un exemplaire
+# vierge est préparé en arrière-plan pour que chaque export Excel en dispose
+# immédiatement ; un nouvel exemplaire est relu dès qu'il a été consommé.
+_consoveille_lock = threading.Lock()
+_consoveille_spare = {'workbook': None, 'loading': None, 'mtime': None}
+
+
+def _consoveille_path():
+    return os.path.join(os.path.dirname(__file__), 'Consoveille.xlsx')
+
+
+def _load_consoveille_spare():
+    path = _consoveille_path()
+    try:
+        mtime = os.path.getmtime(path)
+        workbook = load_workbook(path, data_only=False, keep_links=True)
+    except Exception:
+        workbook, mtime = None, None
+    with _consoveille_lock:
+        _consoveille_spare.update(workbook=workbook, mtime=mtime, loading=None)
+
+
+def prefetch_consoveille_template():
+    with _consoveille_lock:
+        if _consoveille_spare['workbook'] is not None or _consoveille_spare['loading'] is not None:
+            return
+        if not os.path.isfile(_consoveille_path()):
+            return
+        worker = threading.Thread(target=_load_consoveille_spare, name='consoveille-prefetch', daemon=True)
+        _consoveille_spare['loading'] = worker
+    worker.start()
+
+
+def take_consoveille_template():
+    """Renvoie un classeur Consoveille neuf (jamais réutilisé) et relance le préchargement."""
+    with _consoveille_lock:
+        worker = _consoveille_spare['loading']
+    if worker is not None:
+        worker.join()
+    path = _consoveille_path()
+    with _consoveille_lock:
+        workbook, mtime = _consoveille_spare['workbook'], _consoveille_spare['mtime']
+        _consoveille_spare.update(workbook=None, mtime=None)
+    if workbook is None or mtime != os.path.getmtime(path):
+        workbook = load_workbook(path, data_only=False, keep_links=True)
+    prefetch_consoveille_template()
+    return workbook
+
+
 @app.route('/export_synthesis_excel_bundle', methods=['POST'])
 def export_synthesis_excel_bundle():
     payload = request.get_json(silent=True) or {}
@@ -1070,7 +1120,7 @@ def export_synthesis_excel_bundle():
                 if not os.path.isfile(template_path):
                     return jsonify({'error': 'Le classeur source Consoveille.xlsx est introuvable.'}), 404
 
-                workbook = load_workbook(template_path, data_only=False, keep_links=True)
+                workbook = take_consoveille_template()
                 try:
                     from synthesis_excel import populate_consoveille
                     populate_consoveille(workbook, reports, payload.get('project') or {}, payload.get('applicationData') or {})
@@ -1098,6 +1148,7 @@ def export_synthesis_excel_bundle():
 @app.route('/export_synthesis_pdf')
 def export_synthesis_pdf():
     """Sélection et prévisualisation des synthèses du projet, sans export PDF."""
+    prefetch_consoveille_template()
     return render_template('export_synthesis_pdf.html')
 
 @app.route('/battery_menu')

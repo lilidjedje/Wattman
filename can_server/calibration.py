@@ -27,6 +27,8 @@ from flask import Response, abort, g, jsonify, render_template, request
 
 from database import get_db_connection, init_db
 from database_catalog import describe_sources
+from calibration_global import (ai_payload, ai_status, campaign_metrics, checkpoint_points,
+                                expert_insights, run_ai_analysis)
 
 # Fluke 287, courant continu : (calibre A, résolution A, % lecture, digits).
 # Spécifications à 1 an, 18–28 °C (guide 287/289, table « DC Current »).
@@ -1010,6 +1012,89 @@ def register_calibration(app, project_id_provider, project_provider):
             )
         finally:
             conn.close()
+
+    # ------------------------------------------------------------------ Analyse globale
+    # Analyse allégée (sans séries temporelles) mise en cache par campagne ; la clé
+    # inclut updated_at, modifié à chaque enregistrement de protocole ou de relevé.
+    global_cache = {}
+
+    def light_analysis(conn, campaign):
+        key = (campaign["id"], campaign["updated_at"])
+        cached = global_cache.get(campaign["id"])
+        if cached and cached[0] == key:
+            return cached[1]
+        full = analyse_campaign(conn, campaign)
+        for channel_result in full["by_channel"].values():
+            for run in channel_result["runs"]:
+                for heavy in ("series", "series_smoothed", "histogram", "dt_histogram", "allan"):
+                    run.pop(heavy, None)
+        light = {"channels": full["channels"], "by_channel": full["by_channel"]}
+        global_cache[campaign["id"]] = (key, light)
+        return light
+
+    def build_global(channel_filter=None):
+        conn = connection()
+        try:
+            ids = [row[0] for row in conn.execute(
+                "SELECT id FROM calibration_campaigns WHERE project_id = ? ORDER BY created_at", (project_id_provider(),)
+            )]
+            rows, points, per_channel = [], [], {}
+            for campaign_id in ids:
+                campaign = load_campaign(conn, campaign_id)
+                light = light_analysis(conn, campaign)
+                for channel in light["channels"]:
+                    if channel_filter and channel != channel_filter:
+                        continue
+                    analysis = light["by_channel"][channel]
+                    rows.append(campaign_metrics(campaign, channel, analysis))
+                    points.extend(checkpoint_points(campaign, channel, analysis))
+                    per_channel.setdefault(channel, []).append(
+                        {"id": campaign["id"], "name": campaign["name"], "runs": analysis["runs"]})
+            regressions = {}
+            for channel, items in per_channel.items():
+                regression = multilevel_regression(items)
+                regression.pop("points", None)
+                if len(items) >= 4:  # campagnes dans l'ordre de création : moitié la plus récente
+                    recent_items = items[len(items) // 2:]
+                    recent = multilevel_regression(recent_items)
+                    recent.pop("points", None)
+                    recent["campaigns"] = len(recent_items)
+                    regression["recent"] = recent
+                regressions[channel] = regression
+            return rows, points, regressions, expert_insights(rows, regressions)
+        finally:
+            conn.close()
+
+    def channel_argument(source):
+        channel = (source.get("channel") or "").upper()
+        return channel if channel in ("A", "B") else None
+
+    @app.get("/api/calibration/global")
+    def calibration_global():
+        denied = require_admin()
+        if denied:
+            return denied
+        if request.args.get("refresh") == "1":
+            global_cache.clear()
+        rows, points, regressions, insights = build_global(channel_argument(request.args))
+        return jsonify(rows=rows, points=points, regressions=regressions, insights=insights,
+                       ai=ai_status(), generated_at=time.time())
+
+    @app.post("/api/calibration/global/ai")
+    def calibration_global_ai():
+        denied = require_admin()
+        if denied:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        rows, _points, regressions, insights = build_global(channel_argument(payload))
+        if not any(row["score"] is not None for row in rows):
+            return jsonify({"error": "Aucune campagne exploitable à analyser."}), 400
+        try:
+            return jsonify(analysis=run_ai_analysis(ai_payload(rows, regressions, insights)))
+        except RuntimeError as error:
+            return jsonify({"error": str(error)}), 503
+        except (ValueError, KeyError) as error:
+            return jsonify({"error": f"Réponse de l'IA illisible : {error}"}), 502
 
     @app.get("/api/calibration/campaigns/<campaign_id>/export.csv")
     def calibration_export(campaign_id):

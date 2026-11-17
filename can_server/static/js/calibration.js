@@ -360,6 +360,7 @@
     // ------------------------------------------------------------------ Campagnes
     async function loadCampaigns() {
         state.campaigns = (await request(api.campaigns)).campaigns;
+        state.global = null; // L'analyse globale sera recalculée à la prochaine ouverture de l'onglet.
         renderCampaignList();
         if (state.tab === 'history') renderHistory();
     }
@@ -874,6 +875,7 @@
     }
     function renderTab() {
         if (state.tab === 'history') return renderHistory();
+        if (state.tab === 'global') return state.global ? renderGlobal() : loadGlobal();
         if (!state.analysis) return;
         ({time: renderTime, errors: renderErrors, noise: renderNoise, sampling: renderSampling, levels: renderLevels}[state.tab] || (() => {}))();
     }
@@ -1129,6 +1131,248 @@
                 amps(item.summary.noise_pooled_A), pct(item.summary.completeness_pct, 1), `<span class="cal-pill ${item.summary.verdict}">${STATUS[item.summary.verdict][0]}</span>`,
             ].map((cell, i) => i === 6 ? cell : escapeHtml(cell))), true);
     }
+
+    // ------------------------------------------------------------------ Analyse globale
+    // Toutes les campagnes : scores, graphiques comparatifs, matrice « où ça cloche »,
+    // diagnostic expert local et analyse Claude facultative (indicateurs agrégés seulement).
+    const AXES = [
+        ['accuracy', 'Justesse'], ['conformity', 'Conformité'], ['noise', 'Bruit'],
+        ['stability', 'Stabilité'], ['completeness', 'Complétude'], ['repeatability', 'Reproductibilité'],
+    ];
+    state.global = null;
+    state.globalChannel = '';
+    state.globalLoading = false;
+    const tone = name => getComputedStyle(document.body).getPropertyValue(name).trim();
+    const scoreColor = score => score == null ? (css('--rg-ink-3') || '#67625c')
+        : score >= 85 ? (tone('--cal-ok') || '#16794f') : score >= 60 ? (tone('--cal-warn') || '#9a6400') : (tone('--cal-bad') || '#b42318');
+    const channelColor = channel => series(channel === 'B' ? 1 : 0);
+    const rowLabel = row => `${row.name} · ${row.channel}`;
+
+    async function loadGlobal(refresh = false) {
+        if (state.globalLoading) return;
+        state.globalLoading = true;
+        flash($('globalMessage'), 'Analyse de toutes les campagnes en cours…', 'ok');
+        try {
+            const query = new URLSearchParams({channel: state.globalChannel, ...(refresh ? {refresh: '1'} : {})});
+            state.global = await request(`${api.global}?${query}`);
+            flash($('globalMessage'), '');
+            renderGlobal();
+        } catch (error) {
+            flash($('globalMessage'), `Analyse globale impossible : ${error.message}`, 'error');
+        } finally {
+            state.globalLoading = false;
+        }
+    }
+
+    function renderGlobal() {
+        const data = state.global;
+        if (!data || state.tab !== 'global') return;
+        const rows = data.rows;
+        const measured = rows.filter(row => row.score != null);
+        const points = data.points;
+        $('globalSub').textContent = rows.length
+            ? `${measured.length} campagne${measured.length > 1 ? 's' : ''} exploitable${measured.length > 1 ? 's' : ''} sur ${rows.length} · ${points.length} relevé${points.length > 1 ? 's' : ''} Fluke comparé${points.length > 1 ? 's' : ''}`
+            : 'Aucune campagne dans ce projet.';
+
+        // KPI ---------------------------------------------------------------
+        const median = values => {
+            const list = values.filter(Number.isFinite).sort((a, b) => a - b);
+            if (!list.length) return null;
+            const mid = Math.floor(list.length / 2);
+            return list.length % 2 ? list[mid] : (list[mid - 1] + list[mid]) / 2;
+        };
+        const meanScore = measured.length ? Math.round(measured.reduce((sum, row) => sum + row.score, 0) / measured.length) : null;
+        const passed = points.filter(point => point.status === 'pass').length;
+        const best = measured.reduce((a, b) => (!a || b.score > a.score ? b : a), null);
+        const worst = measured.reduce((a, b) => (!a || b.score < a.score ? b : a), null);
+        const toneOf = score => score == null ? '' : score >= 85 ? 'ok' : score >= 60 ? 'warn' : 'bad';
+        $('globalKpis').innerHTML = [
+            `<div class="cal-kpi ${toneOf(meanScore)}"><i class="cal-ring" style="--v:${meanScore ?? 0}"></i><span>Score moyen</span><strong>${meanScore ?? '—'}<small> / 100</small></strong><small>${measured.length} campagne(s)</small></div>`,
+            kpi('Relevés conformes', points.length ? pct(100 * passed / points.length, 0) : '—', `${passed} / ${points.length} dans l’incertitude Fluke`, points.length ? toneOf(100 * passed / points.length) : ''),
+            kpi('Biais médian', signed(median(measured.map(row => row.metrics.offset_A))), 'INA − Fluke, toutes campagnes'),
+            kpi('Bruit médian', amps(median(measured.map(row => row.metrics.noise_pooled_A))), `${nf(0).format(median(measured.map(row => row.derived.noise_lsb)) ?? 0)} LSB`),
+            kpi('Meilleure campagne', best ? `${best.score}/100` : '—', best ? escapeHtml(rowLabel(best)) : '', 'ok'),
+            kpi('À corriger en priorité', worst ? `${worst.score}/100` : '—', worst ? escapeHtml(rowLabel(worst)) : '', worst && worst.score < 60 ? 'bad' : 'warn'),
+        ].join('');
+
+        // 1. Score par campagne (barres horizontales, du pire au meilleur) ----
+        const ranked = [...measured].sort((a, b) => a.score - b.score);
+        $('chartGlobalScore').parentElement.style.setProperty('--chart-h', `${Math.max(260, 30 * ranked.length + 70)}px`);
+        chart('chartGlobalScore', () => ({
+            type: 'bar',
+            data: {labels: ranked.map(rowLabel), datasets: [{label: 'Score', data: ranked.map(row => row.score),
+                backgroundColor: ranked.map(row => alpha(scoreColor(row.score), .8)), borderRadius: 4, barThickness: 18}]},
+            options: {
+                responsive: true, maintainAspectRatio: false, indexAxis: 'y', animation: {duration: 500},
+                onClick: (event, elements) => { if (elements[0]) openFromGlobal(ranked[elements[0].index]); },
+                plugins: {legend: {display: false}, tooltip: {callbacks: {afterLabel: item => {
+                    const row = ranked[item.dataIndex];
+                    return `Point faible : ${(AXES.find(([key]) => key === row.worst_axis) || [, '—'])[1]}`;
+                }}}},
+                scales: {x: {min: 0, max: 100, title: {display: true, text: 'Score de santé'}}, y: {ticks: {autoSkip: false}}},
+            },
+        }));
+
+        // 2. Biais vs incertitude Fluke --------------------------------------
+        const biasRows = measured.filter(row => row.metrics.offset_A != null);
+        chart('chartGlobalBias', () => ({
+            type: 'bar',
+            data: {labels: biasRows.map(rowLabel), datasets: [
+                {type: 'bar', label: 'Biais INA − Fluke', data: biasRows.map(row => conv(row.metrics.offset_A)),
+                    backgroundColor: biasRows.map(row => alpha(((row.derived.offset_over_limit || 0) > 1 ? tone('--cal-bad') : channelColor(row.channel)) || '#1f5fbf', .75)), borderRadius: 3},
+                {type: 'line', label: '± incertitude Fluke', data: biasRows.map(row => conv(row.metrics.reference_limit_A)),
+                    borderColor: tone('--cal-ok') || '#16794f', borderDash: [5, 4], pointRadius: 0, stepped: 'middle', fill: false},
+                {type: 'line', label: '', data: biasRows.map(row => -conv(row.metrics.reference_limit_A)),
+                    borderColor: tone('--cal-ok') || '#16794f', borderDash: [5, 4], pointRadius: 0, stepped: 'middle', fill: false},
+            ]},
+            options: {...baseOptions('', `Biais (${state.unit})`), scales: {x: {type: 'category', ticks: {maxRotation: 50, autoSkip: false}}, y: {title: {display: true, text: `Biais (${state.unit})`}}},
+                plugins: {legend: {position: 'bottom', labels: {filter: item => item.text, usePointStyle: true, boxWidth: 8}}},
+                onClick: (event, elements) => { if (elements[0]) openFromGlobal(biasRows[elements[0].index]); }},
+        }));
+
+        // 3. Erreur selon le courant (tous les relevés) + régressions ---------
+        const levelSets = ['A', 'B'].map(channel => ({channel, items: points.filter(point => point.channel === channel)}))
+            .filter(group => group.items.length).map(group => ({type: 'scatter', label: `Relevés voie ${group.channel}`,
+                data: group.items.map(point => ({x: conv(point.reference_A), y: conv(point.error_A)})),
+                backgroundColor: alpha(channelColor(group.channel), .7), pointRadius: 4}));
+        Object.entries(data.regressions).forEach(([channel, reg]) => {
+            if (reg.status !== 'ok') return;
+            const xs = points.filter(point => point.channel === channel).map(point => point.reference_A);
+            const x0 = Math.min(...xs), x1 = Math.max(...xs);
+            levelSets.push({type: 'line', label: `Tendance ${channel} : ${nf(3).format(reg.gain_error_pct)} %·I ${signed(reg.offset_A)}`,
+                data: [x0, x1].map(x => ({x: conv(x), y: conv(reg.offset_A + reg.gain_error_pct / 100 * x)})),
+                borderColor: channelColor(channel), borderWidth: 2, pointRadius: 0});
+        });
+        chart('chartGlobalLevels', () => ({data: {datasets: levelSets},
+            options: baseOptions(`Courant de référence Fluke (${state.unit})`, `Erreur INA − Fluke (${state.unit})`)}));
+
+        // 4. Bruit selon la fréquence ----------------------------------------
+        const noiseSets = ['A', 'B'].map(channel => ({channel, items: measured.filter(row => row.channel === channel && row.metrics.noise_pooled_A != null)}))
+            .filter(group => group.items.length).map(group => ({type: 'scatter', label: `Voie ${group.channel}`,
+                data: group.items.map(row => ({x: row.protocol.frequency_hz, y: conv(row.metrics.noise_pooled_A), name: rowLabel(row)})),
+                backgroundColor: alpha(channelColor(group.channel), .75), pointRadius: 6, pointHoverRadius: 8}));
+        const freqs = measured.map(row => row.protocol.frequency_hz).filter(Boolean);
+        if (freqs.length && measured[0]) noiseSets.push(hline('1 LSB', conv(measured[0].derived.lsb_A), Math.min(...freqs) * .8, Math.max(...freqs) * 1.25, css('--rg-ink-3') || '#67625c'));
+        chart('chartGlobalNoise', () => ({data: {datasets: noiseSets}, options: {
+            ...baseOptions('Fréquence d’acquisition (Hz)', `Bruit σ (${state.unit})`),
+            scales: {x: {type: 'logarithmic', title: {display: true, text: 'Fréquence d’acquisition (Hz)'}}, y: {type: 'logarithmic', title: {display: true, text: `Bruit σ (${state.unit})`}}},
+            plugins: {legend: {position: 'bottom', labels: {usePointStyle: true, boxWidth: 8}},
+                tooltip: {callbacks: {label: item => `${item.raw.name || item.dataset.label} : ${nf(DIGITS[state.unit]).format(item.raw.y)} ${state.unit}`}}},
+        }}));
+
+        // 5. Évolution dans le temps ------------------------------------------
+        const dated = [...measured].sort((a, b) => a.created_at - b.created_at);
+        const day = ts => new Date(ts * 1000).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'});
+        chart('chartGlobalTrend', () => ({data: {labels: dated.map(row => `${day(row.created_at)} ${row.name}`), datasets: [
+            {type: 'line', label: 'Score', data: dated.map(row => row.score), yAxisID: 'y', borderColor: css('--rg-ink') || '#0b0c0e',
+                backgroundColor: dated.map(row => scoreColor(row.score)), pointRadius: 5, tension: .25},
+            {type: 'bar', label: `|Biais| (${state.unit})`, data: dated.map(row => row.metrics.offset_A == null ? null : Math.abs(conv(row.metrics.offset_A))),
+                yAxisID: 'y1', backgroundColor: alpha(series(1), .35), borderRadius: 3},
+        ]}, options: {...baseOptions('', 'Score'), scales: {
+            x: {type: 'category', ticks: {maxRotation: 50, callback(value) { return this.getLabelForValue(value).slice(0, 18); }}},
+            y: {min: 0, max: 100, title: {display: true, text: 'Score'}},
+            y1: {position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: `|Biais| (${state.unit})`}},
+        }}}));
+
+        // Matrice « où ça cloche » ----------------------------------------------
+        const cellText = {
+            accuracy: row => signed(row.metrics.offset_A),
+            conformity: row => `${row.metrics.pass_count ?? 0}/${(row.metrics.pass_count ?? 0) + (row.metrics.warning_count ?? 0) + (row.metrics.fail_count ?? 0)}`,
+            noise: row => amps(row.metrics.noise_pooled_A),
+            stability: row => amps(row.derived.drift_per_run_A),
+            completeness: row => pct(row.metrics.completeness_pct, 1),
+            repeatability: row => amps(row.metrics.run_mean_spread_A),
+        };
+        $('globalHeatmap').innerHTML = `<thead><tr><th>Campagne</th><th>Score</th>${AXES.map(([, label]) => `<th>${label}</th>`).join('')}</tr></thead><tbody>${
+            [...rows].sort((a, b) => (a.score ?? 101) - (b.score ?? 101)).map(row => `<tr>
+                <td><button type="button" class="cal-hm-name" data-open-campaign="${row.id}" data-open-channel="${row.channel}">${escapeHtml(row.name)} <small>${row.channel}</small></button></td>
+                <td>${row.score == null ? '<span class="cal-hm-cell empty">—</span>' : `<span class="cal-hm-cell cal-hm-score" style="--g:${row.score / 100}">${row.score}</span>`}</td>
+                ${AXES.map(([key, label]) => row.axes[key] == null
+                    ? '<td><span class="cal-hm-cell empty" title="Non mesuré">—</span></td>'
+                    : `<td><span class="cal-hm-cell" style="--g:${row.axes[key].toFixed(3)}" title="${label} : ${Math.round(row.axes[key] * 100)} %">${escapeHtml(cellText[key](row))}</span></td>`).join('')}
+            </tr>`).join('') || `<tr><td colspan="${AXES.length + 2}"><div class="empty-notice">Aucune campagne.</div></td></tr>`
+        }</tbody>`;
+
+        // Diagnostic expert local -------------------------------------------------
+        $('globalInsights').innerHTML = data.insights.map((item, index) => `
+            <div class="cal-insight ${item.level}" style="--i:${Math.min(index, 8)}">
+                <strong>${escapeHtml(item.title)}</strong>
+                <p>${escapeHtml(item.text)}</p>
+                ${item.action ? `<p class="cal-action">${escapeHtml(item.action)}</p>` : ''}
+            </div>`).join('');
+
+        // IA -------------------------------------------------------------------------
+        const ai = data.ai || {};
+        $('globalAiNote').textContent = ai.available
+            ? `Claude (${ai.model}) compare toutes vos campagnes et propose un plan d’amélioration. Seuls les indicateurs agrégés (noms, paramètres, résultats) sont envoyés à l’API Anthropic, jamais les mesures brutes.`
+            : `Analyse IA indisponible : ${ai.reason || 'configuration manquante.'} Le diagnostic expert ci-contre reste disponible hors ligne.`;
+        $('globalAiRun').disabled = !ai.available || !measured.length;
+
+        // Tableau complet -----------------------------------------------------------
+        table('globalTable', ['Campagne', 'Voie', 'Créée', 'Fréquence', 'Durée', 'Répét.', 'Niveau Fluke', 'Biais', 'Biais / incert.', 'Erreur max', 'Bruit σ', 'Dérive / répét.', 'Complétude', 'Verdict', 'Score'],
+            [...rows].sort((a, b) => b.created_at - a.created_at).map(row => [
+                escapeHtml(row.name), row.channel, new Date(row.created_at * 1000).toLocaleDateString('fr-FR'),
+                `${count(row.protocol.frequency_hz)} Hz`, `${count(row.protocol.duration_s)} s`, count(row.protocol.repetitions),
+                amps(row.metrics.reference_mean_A), signed(row.metrics.offset_A),
+                row.derived.offset_over_limit == null ? '—' : `${nf(1).format(row.derived.offset_over_limit)} ×`,
+                amps(row.metrics.error_max_abs_A), amps(row.metrics.noise_pooled_A), amps(row.derived.drift_per_run_A),
+                pct(row.metrics.completeness_pct, 1),
+                `<span class="cal-pill ${row.metrics.verdict}">${STATUS[row.metrics.verdict]?.[0] || '—'}</span>`,
+                row.score == null ? '—' : `<b style="color:${scoreColor(row.score)}">${row.score}</b>`,
+            ]), true);
+    }
+
+    async function openFromGlobal(row) {
+        if (!row) return;
+        await openCampaign(row.id);
+        if (state.full?.channels?.includes(row.channel)) setViewChannel(row.channel);
+        selectTab('summary');
+    }
+    $('globalHeatmap').addEventListener('click', event => {
+        const button = event.target.closest('[data-open-campaign]');
+        if (button) openFromGlobal({id: button.dataset.openCampaign, channel: button.dataset.openChannel});
+    });
+    document.querySelector('.cal-global-head .cal-segment').addEventListener('click', event => {
+        const button = event.target.closest('[data-global-channel]');
+        if (!button) return;
+        state.globalChannel = button.dataset.globalChannel;
+        button.parentElement.querySelectorAll('button').forEach(item => item.classList.toggle('active', item === button));
+        $('globalAiResult').innerHTML = '';
+        loadGlobal();
+    });
+    $('globalRefresh').addEventListener('click', () => loadGlobal(true));
+
+    function renderAiResult(result) {
+        const list = (items, render) => items?.length ? `<ul class="cal-ai-list">${items.map(render).join('')}</ul>` : '<p class="cal-ai-meta">—</p>';
+        const severity = {critique: 'fail', majeure: 'warning', mineure: 'neutral'};
+        $('globalAiResult').innerHTML = `
+            <p class="cal-ai-summary">${escapeHtml(result.synthese)}</p>
+            <h3>Problèmes identifiés</h3>
+            ${list(result.problemes, item => `<li><b>${escapeHtml(item.titre)}</b><span class="cal-pill ${severity[item.gravite] || 'neutral'}">${escapeHtml(item.gravite)}</span><br>${escapeHtml(item.constat)}<br><i>Cause probable :</i> ${escapeHtml(item.cause_probable)}${item.campagnes?.length ? `<br><span class="cal-ai-meta">${escapeHtml(item.campagnes.join(' · '))}</span>` : ''}</li>`)}
+            <h3>Plan d’amélioration</h3>
+            ${list([...(result.plan_amelioration || [])].sort((a, b) => a.priorite - b.priorite), item => `<li><b>${item.priorite}. ${escapeHtml(item.action)}</b><br>${escapeHtml(item.detail)}<br><span class="cal-ai-meta">Gain attendu : ${escapeHtml(item.gain_attendu)}</span></li>`)}
+            <h3>Points forts</h3>
+            ${list(result.points_forts, item => `<li>${escapeHtml(item)}</li>`)}
+            <h3>Prochaines campagnes conseillées</h3>
+            ${list(result.prochaines_campagnes, item => `<li>${escapeHtml(item)}</li>`)}
+            <p class="cal-ai-meta">Généré par ${escapeHtml(result.model || 'Claude')} le ${new Date().toLocaleString('fr-FR')}. À vérifier par un ingénieur avant toute décision.</p>`;
+    }
+    $('globalAiRun').addEventListener('click', async () => {
+        if (!confirm('Envoyer les indicateurs agrégés de vos campagnes (noms, paramètres, résultats — aucune mesure brute) à l’API Claude d’Anthropic pour analyse ?')) return;
+        const button = $('globalAiRun');
+        button.disabled = true;
+        button.classList.add('loading');
+        $('globalAiResult').innerHTML = '';
+        try {
+            const response = await request(api.globalAi, {method: 'POST', body: JSON.stringify({channel: state.globalChannel})});
+            renderAiResult(response.analysis);
+        } catch (error) {
+            $('globalAiResult').innerHTML = `<div class="message error">${escapeHtml(error.message)}</div>`;
+        } finally {
+            button.classList.remove('loading');
+            button.disabled = false;
+        }
+    });
 
     // ------------------------------------------------------------------ Onglets, unités, exports
     const tabs = [...document.querySelectorAll('.cal-tabs [role=tab]')];

@@ -479,3 +479,102 @@ html body .cal-compare-row .cal-fluke-input:focus { outline: none; box-shadow: i
     .cal-sidebar, .cal-tabs, .cal-unitbar, .workstation-header .actions, .cal-hero .cal-schematic, .rg-appbar { display: none !important; }
     .cal-layout { grid-template-columns: 1fr; }
 }
+
+/* ======================================================================
+   Analyse globale : comparaison de toutes les campagnes
+   ==================================================================== */
+.cal-global { gap: 16px; }
+.cal-global-head {
+    position: relative; overflow: hidden; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;
+    padding: 22px 24px; border-radius: var(--rg-radius-lg, 18px); color: #f3f1ee;
+    background: radial-gradient(90% 140% at 100% 0%, rgba(239,223,0,.14), transparent 55%),
+                linear-gradient(135deg, #0b0c0e, #1a1b1f 60%, #22242a);
+}
+.cal-global-head::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 24px 24px; mask-image: linear-gradient(90deg, transparent, #000 60%);
+}
+.cal-global-head > * { position: relative; z-index: 1; }
+.cal-global-head .eyebrow { margin: 0; color: var(--cal-accent) !important; }
+html body .cal-global-head h2 { margin: 4px 0 6px; color: #fff !important; font: 800 clamp(1.5rem, 2.6vw, 2.1rem)/1.1 var(--rg-font-display, inherit); letter-spacing: -.02em; }
+.cal-global-sub { margin: 0; color: #c3c5c9; max-width: 60ch; }
+.cal-global-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cal-global-head .cal-segment { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.14); }
+html body .cal-global-head .cal-segment.cal-segment button { min-height: 32px; background: transparent !important; color: #c3c5c9 !important; border: 0 !important; box-shadow: none !important; }
+html body .cal-global-head .cal-segment.cal-segment button.active { background: var(--cal-accent) !important; color: #1a1700 !important; }
+.cal-global-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cal-global-card.wide { grid-column: 1 / -1; }
+.cal-global-card .cal-chart { border: 0; padding: 4px; }
+.cal-chart.tall { height: var(--chart-h, 360px); }
+.cal-hint { color: var(--rg-ink-3); font-size: .8rem; }
+.panel-title:has(.cal-hint), .panel-title:has(.cal-badge-local), .panel-title:has(.cal-badge-ai) { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+
+/* Score : anneau de progression dans la carte KPI */
+.cal-kpi .cal-ring { --v: 0; width: 46px; height: 46px; float: right; margin: -2px -2px 0 8px; border-radius: 50%;
+    background: conic-gradient(var(--kpi-tone, var(--rg-ink)) calc(var(--v) * 1%), var(--rg-surface-2) 0);
+    -webkit-mask: radial-gradient(circle, transparent 57%, #000 58%); mask: radial-gradient(circle, transparent 57%, #000 58%); }
+
+/* Matrice « où ça cloche » */
+.cal-heatmap { width: 100%; border-collapse: separate; border-spacing: 3px; font-size: .84rem; }
+.cal-heatmap th { padding: 6px 8px; color: var(--rg-ink-3); font: 700 .7rem var(--rg-font-brand, inherit); letter-spacing: .06em; text-transform: uppercase; text-align: center; white-space: nowrap; }
+.cal-heatmap th:first-child { text-align: left; }
+.cal-heatmap td { padding: 0; }
+html body .cal-heatmap .cal-hm-name {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; padding: 6px 10px !important; text-align: left;
+    background: transparent !important; color: var(--rg-ink) !important; border: 0 !important; box-shadow: none !important;
+    font: 650 .84rem var(--rg-font-brand, inherit) !important; letter-spacing: 0 !important; border-radius: 6px !important; cursor: pointer;
+}
+html body .cal-heatmap .cal-hm-name:hover { background: var(--rg-surface-2) !important; }
+.cal-hm-name small { color: var(--rg-ink-3); font-weight: 600; }
+.cal-hm-cell {
+    --g: 1; display: grid; place-items: center; min-width: 74px; height: 34px; border-radius: 6px;
+    background: color-mix(in srgb, color-mix(in srgb, #16794f calc(var(--g) * 100%), #c0392b) 22%, var(--rg-surface));
+    color: var(--rg-ink); font: 700 .8rem var(--rg-font-mono, monospace); font-variant-numeric: tabular-nums;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, color-mix(in srgb, #16794f calc(var(--g) * 100%), #c0392b) 45%, transparent);
+    transition: transform .15s ease;
+}
+.cal-hm-cell.empty { background: repeating-linear-gradient(135deg, var(--rg-surface-2) 0 5px, transparent 5px 10px); box-shadow: inset 0 0 0 1px var(--rg-line); color: var(--rg-ink-3); }
+.cal-hm-score { min-width: 64px; font-size: .9rem; }
+@media (hover: hover) { .cal-hm-cell:hover { transform: scale(1.06); } }
+
+/* Diagnostic expert + IA */
+.cal-global-diag { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.cal-badge-local, .cal-badge-ai { padding: 3px 9px; border-radius: 999px; font: 700 .7rem var(--rg-font-brand, inherit); letter-spacing: .06em; text-transform: uppercase; }
+.cal-badge-local { background: var(--rg-ok-soft, #e3f3ea); color: var(--cal-ok); }
+.cal-badge-ai { background: color-mix(in srgb, #d97757 16%, var(--rg-surface)); color: #b5583a; }
+.cal-insights { display: grid; gap: 10px; }
+.cal-insight { --tip: var(--rg-info, #1f5fbf); display: grid; gap: 4px; padding: 12px 14px 12px 16px; border-radius: 10px; background: var(--rg-surface-2); box-shadow: inset 4px 0 0 var(--tip); animation: cal-in .35s var(--rg-ease-out, ease-out) both; animation-delay: calc(var(--i, 0) * 50ms); }
+.cal-insight.pass { --tip: var(--cal-ok); }
+.cal-insight.warning { --tip: var(--cal-warn); }
+.cal-insight.fail { --tip: var(--cal-bad); }
+.cal-insight strong { font-size: .92rem; color: var(--rg-ink); }
+.cal-insight p { margin: 0; color: var(--rg-ink-2); font-size: .86rem; line-height: 1.45; }
+.cal-insight .cal-action { color: var(--rg-ink); font-weight: 600; }
+.cal-insight .cal-action::before { content: "→ "; color: var(--tip); font-weight: 800; }
+.cal-ai { position: relative; overflow: hidden; }
+.cal-ai::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, #d97757, var(--cal-accent), #6aa1f0); }
+.cal-ai-note { margin: 0 0 12px; color: var(--rg-ink-3); font-size: .84rem; line-height: 1.45; }
+html body .cal-ai-run.cal-ai-run { width: 100%; background: var(--rg-ink) !important; color: var(--rg-surface) !important; border-color: var(--rg-ink) !important; }
+html body .cal-ai-run.cal-ai-run:disabled { opacity: .45 !important; }
+html body .cal-ai-run.cal-ai-run.loading { position: relative; color: transparent !important; }
+.cal-ai-run.loading::after { content: "Analyse en cours…"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--rg-surface); background: linear-gradient(90deg, transparent, rgba(239,223,0,.28), transparent) 0 0/40% 100% no-repeat; animation: cal-ai-scan 1.4s linear infinite; }
+@keyframes cal-ai-scan { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+.cal-ai-result { display: grid; gap: 12px; margin-top: 14px; }
+.cal-ai-result:empty { display: none; }
+.cal-ai-result h3 { margin: 6px 0 0; font-size: .78rem; color: var(--rg-ink-3); letter-spacing: .08em; text-transform: uppercase; }
+.cal-ai-summary { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--rg-surface-2); color: var(--rg-ink); line-height: 1.5; }
+.cal-ai-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cal-ai-list li { padding: 10px 12px; border: 1px solid var(--rg-line); border-radius: 10px; font-size: .86rem; color: var(--rg-ink-2); line-height: 1.45; }
+.cal-ai-list li b { color: var(--rg-ink); }
+.cal-ai-list li .cal-pill { margin-left: 6px; }
+.cal-ai-meta { color: var(--rg-ink-3); font-size: .75rem; }
+@media (max-width: 1100px) { .cal-global-grid, .cal-global-diag { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .cal-insight, .cal-ai-run.loading::after { animation: none; } }
+
+/* La matrice garde le fond de son panneau (le design system force un fond clair aux tableaux). */
+html body table.cal-heatmap.cal-heatmap, html body table.cal-heatmap.cal-heatmap :is(thead, tbody, tr, th, td) { background: transparent !important; border: 0 !important; box-shadow: none !important; }
+html body table.cal-heatmap.cal-heatmap th { color: var(--rg-ink-3) !important; }
+html body table.cal-heatmap .cal-hm-cell.empty { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rg-ink-3) 18%, transparent) 0 4px, transparent 4px 9px) !important; }
+.cal-hm-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
+#globalKpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
