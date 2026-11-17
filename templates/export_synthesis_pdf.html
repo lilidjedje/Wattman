@@ -1,62 +1,318 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthèses du projet</title>
+    <link rel="stylesheet" href="/static/design-system/tokens.css">
+    <link rel="stylesheet" href="/static/design-system/components.css">
+    <script src="/static/design-system/rg-ui.js"></script>
+    <script src="/static/design-system/rg-hero3d.js" defer></script>
     <script src="/static/autonomy_profiles.js"></script>
     <script src="/static/homologation_profiles.js"></script>
     <script src="/static/biberonnage_profiles.js"></script>
     <link rel="stylesheet" href="/static/homologation_profiles.css">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Synthèses du projet</title>
     <style>
+        /* ======================================================================
+           Synthèse du projet — sélection, aperçu des rapports, export PDF/Excel.
+           Couleurs : design system Renault Group (tokens.css). Chaque module garde
+           une couleur catégorielle stable (palette de séries, lisible daltoniens).
+           ==================================================================== */
+        :root {
+            --syn-dcdc: var(--rg-series-1, #1f5fbf);
+            --syn-wltc: var(--rg-series-3, #009e73);
+            --syn-dm1: var(--rg-series-2, #d55e00);
+            --syn-dm2: var(--rg-series-4, #cc79a7);
+            --syn-customer: var(--rg-series-5, #8a6d00);
+            --syn-biberonnage: var(--rg-series-6, #56b4e9);
+            --syn-hero-ink: #f3f1ee;
+            --syn-gap: clamp(16px, 2vw, 24px);
+        }
         * { box-sizing: border-box; }
-        body { margin: 0; min-height: 100vh; padding: 28px 20px; color: #1f2937; background: #f3f6fb; font-family: "Segoe UI", Tahoma, sans-serif; }
-        .page { max-width: 1280px; margin: 0 auto; }
-        .header, .selection, .report { background: white; border: 1px solid #dbe2ea; border-radius: 12px; box-shadow: 0 4px 16px rgba(15,23,42,.07); }
-        .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; margin-bottom: 18px; }
+        body { margin: 0; min-height: 100vh; padding: 20px clamp(12px, 2.4vw, 32px) 120px; color: var(--rg-ink); background: var(--rg-surface-2); font-family: var(--rg-font-sans); }
+        .page { max-width: 1320px; margin: 0 auto; display: grid; gap: var(--syn-gap); }
         h1, h2, h3, p { margin-top: 0; }
-        h1 { margin-bottom: 0; color: #1f4e78; font-size: 1.55rem; }
-        h2 { margin-bottom: 12px; color: #1f4e78; font-size: 1.2rem; }
-        h3 { margin: 15px 0 8px; color: #334155; font-size: 1rem; }
-        .back, button { display: inline-block; padding: 10px 15px; border: 1px solid #bac8dd; border-radius: 7px; color: #20304a; background: #e8eef7; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-        button.primary { color: white; background: #2563eb; border-color: #2563eb; }
-        button.primary:hover { background: #1d4ed8; }
-        .selection { padding: 22px; }
+        .hidden { display: none !important; }
+        .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+        /* ---------------------------------------------------------------- Hero */
+        .syn-hero {
+            position: relative; isolation: isolate; overflow: hidden;
+            display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: stretch;
+            min-height: 340px; border-radius: var(--rg-radius-lg, 18px); color: var(--syn-hero-ink);
+            background:
+                radial-gradient(120% 90% at 85% 40%, rgba(239, 223, 0, .10), transparent 55%),
+                radial-gradient(80% 120% at 0% 100%, rgba(31, 95, 191, .22), transparent 60%),
+                linear-gradient(135deg, #0b0c0e 0%, #16171b 55%, #1d1f24 100%);
+            box-shadow: var(--rg-shadow-3);
+        }
+        .syn-hero::before {
+            content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+            background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+            background-size: 28px 28px;
+            mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+        }
+        .syn-hero-copy { position: relative; z-index: 1; display: grid; align-content: space-between; gap: 22px; padding: clamp(22px, 3vw, 40px); }
+        .syn-hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        html body .syn-hero a.back {
+            display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid rgba(255,255,255,.18);
+            border-radius: 999px; color: var(--syn-hero-ink) !important; background: rgba(255,255,255,.04);
+            font: 600 .82rem var(--rg-font-brand); text-decoration: none !important;
+            transition: background-color var(--rg-dur-fast) ease, border-color var(--rg-dur-fast) ease;
+        }
+        html body .syn-hero a.back:hover { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.35); }
+        .syn-eyebrow { display: flex; align-items: center; gap: 10px; margin: 0; color: #c3c5c9; font: 700 .72rem var(--rg-font-brand); letter-spacing: .18em; text-transform: uppercase; }
+        .syn-eyebrow::before { content: ""; width: 28px; height: 3px; background: var(--rg-yellow); border-radius: 2px; }
+        .syn-hero h1 { margin: 10px 0 6px; font: 800 clamp(2.1rem, 4.4vw, 3.6rem)/1.02 var(--rg-font-display); letter-spacing: -.025em; color: #fff; }
+        .syn-hero-project { margin: 0; color: #dcdddf; font: 500 clamp(1rem, 1.6vw, 1.25rem)/1.35 var(--rg-font-brand); overflow-wrap: anywhere; }
+        .syn-hero-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; padding: 0; }
+        .syn-hero-meta div { display: grid; gap: 1px; padding: 7px 11px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.04); backdrop-filter: blur(6px); }
+        .syn-hero-meta dt { color: #9a9da3; font: 700 .62rem var(--rg-font-brand); letter-spacing: .12em; text-transform: uppercase; }
+        .syn-hero-meta dd { margin: 0; color: #f3f1ee; font: 600 .86rem var(--rg-font-brand); }
+
+        .syn-steps { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+        .syn-steps li {
+            counter-increment: step; position: relative; flex: 1; display: flex; align-items: center; gap: 9px;
+            padding: 10px 12px 12px; color: #9a9da3; font: 600 .8rem var(--rg-font-brand);
+            border-top: 2px solid rgba(255,255,255,.14); transition: color var(--rg-dur-base) ease, border-color var(--rg-dur-base) ease;
+        }
+        .syn-steps li::before {
+            content: counter(step, decimal-leading-zero); font: 700 .72rem var(--rg-font-mono); color: inherit; opacity: .8;
+        }
+        .syn-steps li.is-done { color: #dcdddf; border-top-color: rgba(239,223,0,.45); }
+        .syn-steps li.is-current { color: #fff; border-top-color: var(--rg-yellow); }
+        .syn-steps li.is-current::after {
+            content: ""; position: absolute; left: 0; top: -2px; height: 2px; width: 100%;
+            background: linear-gradient(90deg, transparent, #fff8a8, transparent); background-size: 40% 100%; background-repeat: no-repeat;
+            animation: syn-scan 2.4s var(--rg-ease-in-out) infinite;
+        }
+        @keyframes syn-scan { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+        .syn-hero-stage { position: relative; min-height: 300px; }
+        .syn-hero-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+        .syn-hud { position: absolute; inset: 18px; pointer-events: none; font: 600 .68rem var(--rg-font-mono); color: #c3c5c9; letter-spacing: .06em; }
+        .syn-hud span { position: absolute; display: flex; align-items: center; gap: 7px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.14); border-radius: 6px; background: rgba(11,12,14,.55); backdrop-filter: blur(4px); }
+        .syn-hud span::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--rg-yellow); box-shadow: 0 0 10px var(--rg-yellow); animation: syn-pulse 1.8s ease-in-out infinite; }
+        .syn-hud .h1 { top: 6%; right: 4%; }
+        .syn-hud .h2 { bottom: 10%; left: 6%; }
+        .syn-hud .h2::before { animation-delay: .6s; }
+        .syn-hud .h3 { bottom: 24%; right: 6%; }
+        .syn-hud .h3::before { animation-delay: 1.2s; }
+        @keyframes syn-pulse { 50% { opacity: .35; transform: scale(.7); } }
+
+        /* --------------------------------------------------------------- Panneaux */
+        .syn-panel { position: relative; padding: clamp(18px, 2.4vw, 30px); border: 1px solid var(--rg-line); border-radius: var(--rg-radius-md, 12px); background: var(--rg-surface); box-shadow: var(--rg-shadow-1); }
+        .syn-panel-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+        .syn-index { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--rg-ink); color: var(--rg-surface); font: 800 .9rem var(--rg-font-mono); }
+        .syn-panel-head h2 { margin: 2px 0 4px; font: 750 clamp(1.15rem, 1.8vw, 1.45rem)/1.2 var(--rg-font-display); letter-spacing: -.01em; color: var(--rg-ink); }
+        .help, .status { color: var(--rg-ink-3); }
+        .help { margin: 0; font-size: .92rem; }
+
+        /* Tuiles de modules ------------------------------------------------------ */
+        .syn-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+        .syn-tile {
+            --c: var(--rg-ink-3);
+            position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px;
+            min-height: 92px; padding: 16px; cursor: pointer; overflow: hidden;
+            border: 1px solid var(--rg-line); border-radius: 14px; background: var(--rg-surface);
+            transition: border-color var(--rg-dur-base) ease, box-shadow var(--rg-dur-base) ease, transform var(--rg-dur-base) var(--rg-ease-out), background-color var(--rg-dur-base) ease;
+        }
+        .syn-tile[data-module="dcdc"] { --c: var(--syn-dcdc); }
+        .syn-tile[data-module="wltc"] { --c: var(--syn-wltc); }
+        .syn-tile[data-module="dm1"] { --c: var(--syn-dm1); }
+        .syn-tile[data-module="dm2"] { --c: var(--syn-dm2); }
+        .syn-tile[data-module="customer"] { --c: var(--syn-customer); }
+        .syn-tile[data-module="biberonnage"] { --c: var(--syn-biberonnage); }
+        .syn-tile::before {
+            content: ""; position: absolute; inset: 0; z-index: 0; opacity: 0; pointer-events: none;
+            background: radial-gradient(130% 120% at 0% 0%, color-mix(in srgb, var(--c) 16%, transparent), transparent 60%);
+            transition: opacity var(--rg-dur-slow) ease;
+        }
+        .syn-tile > * { position: relative; z-index: 1; }
+        .syn-tile input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+        .syn-tile-icon {
+            display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px;
+            color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--rg-surface)); border: 1px solid color-mix(in srgb, var(--c) 28%, transparent);
+            transition: transform var(--rg-dur-slow) var(--rg-ease-out), background-color var(--rg-dur-base) ease, color var(--rg-dur-base) ease;
+        }
+        .syn-tile-icon svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+        .syn-tile-icon svg .trace { stroke-dasharray: 60; stroke-dashoffset: 0; }
+        @keyframes syn-draw { from { stroke-dashoffset: 60; } }
+        .syn-tile-text { display: grid; gap: 3px; min-width: 0; }
+        .syn-tile-text strong { font: 750 1rem/1.2 var(--rg-font-brand); color: var(--rg-ink); }
+        .syn-tile-text small { color: var(--rg-ink-3); font-size: .8rem; line-height: 1.35; }
+        .syn-tile-check {
+            display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+            border: 1.5px solid var(--rg-line-strong); color: transparent; transition: all var(--rg-dur-base) var(--rg-ease-out);
+        }
+        .syn-tile-check svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+        @media (hover: hover) {
+            .syn-tile:hover { border-color: color-mix(in srgb, var(--c) 45%, var(--rg-line)); transform: translateY(-2px); box-shadow: var(--rg-shadow-2); }
+            .syn-tile:hover .syn-tile-icon { transform: scale(1.06) rotate(-3deg); }
+            .syn-tile:hover::before { opacity: .7; }
+        }
+        .syn-tile:active { transform: scale(.985); }
+        .syn-tile:has(input:checked) { border-color: var(--c); box-shadow: 0 0 0 1px var(--c), var(--rg-shadow-2); }
+        .syn-tile:has(input:checked)::before { opacity: 1; }
+        .syn-tile:has(input:checked) .syn-tile-icon { color: #fff; background: var(--c); }
+        .syn-tile:has(input:checked) .syn-tile-icon svg .trace { animation: syn-draw 700ms var(--rg-ease-out) both; }
+        .syn-tile:has(input:checked) .syn-tile-check { border-color: var(--c); background: var(--c); color: #fff; transform: scale(1.05); }
+        .syn-tile:has(input:focus-visible) { outline: 2px solid var(--rg-focus, #1f5fbf); outline-offset: 2px; }
+
+        /* Options de chaque module ---------------------------------------------- */
+        .syn-options { display: grid; gap: 12px; margin-top: 16px; }
+        .group { padding: 0; }
+        .syn-option {
+            --c: var(--rg-ink-3);
+            display: grid; gap: 4px; padding: 16px 18px 18px; border: 1px solid var(--rg-line); border-left: 4px solid var(--c);
+            border-radius: 12px; background: var(--rg-surface-2);
+            animation: syn-option-in var(--rg-dur-slow) var(--rg-ease-out) both;
+        }
+        @keyframes syn-option-in { from { opacity: 0; transform: translateY(-6px); } }
+        .syn-option[data-options="dcdc"] { --c: var(--syn-dcdc); }
+        .syn-option[data-options="wltc"] { --c: var(--syn-wltc); }
+        .syn-option[data-options="dm1"] { --c: var(--syn-dm1); }
+        .syn-option[data-options="dm2"] { --c: var(--syn-dm2); }
+        .syn-option[data-options="customer"] { --c: var(--syn-customer); }
+        .syn-option[data-options="biberonnage"] { --c: var(--syn-biberonnage); }
+        .syn-option h3 { display: flex; align-items: center; gap: 8px; margin: 10px 0 8px; color: var(--rg-ink-2); font: 700 .74rem var(--rg-font-brand); letter-spacing: .1em; text-transform: uppercase; }
+        .syn-option h3:first-child { margin-top: 0; color: var(--rg-ink); font-size: .8rem; }
+        .syn-option h3:first-child::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+        .syn-option > a { justify-self: start; margin-top: 8px; color: var(--rg-ink-2); font-size: .82rem; font-weight: 600; }
+        .syn-option .checks { display: flex; flex-wrap: wrap; gap: 8px; }
+        .syn-option .check {
+            display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px 7px 9px; cursor: pointer;
+            border: 1px solid var(--rg-line); border-radius: 999px; background: var(--rg-surface); line-height: 1.25;
+            font-size: .86rem; color: var(--rg-ink-2);
+            transition: border-color var(--rg-dur-fast) ease, background-color var(--rg-dur-fast) ease, color var(--rg-dur-fast) ease;
+        }
+        .syn-option .check input { width: 15px; height: 15px; margin: 0; accent-color: var(--c); cursor: pointer; }
+        .syn-option .check small { display: inline; margin-left: 6px; color: var(--rg-ink-3); font-size: .74rem; }
+        .syn-option .check:has(input:checked) { border-color: color-mix(in srgb, var(--c) 60%, var(--rg-line)); background: color-mix(in srgb, var(--c) 10%, var(--rg-surface)); color: var(--rg-ink); }
+        @media (hover: hover) { .syn-option .check:hover { border-color: var(--rg-line-strong); } }
+        .choices { margin: 10px 0 0; padding: 10px 0 0; border-top: 1px dashed var(--rg-line); }
+
+        /* Barre d'action (dock) --------------------------------------------------- */
+        .selection-actions {
+            position: sticky; bottom: 14px; z-index: 5; display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+            margin-top: 18px; padding: 10px 10px 10px 18px; border: 1px solid var(--rg-line); border-radius: 14px;
+            background: color-mix(in srgb, var(--rg-surface) 88%, transparent); backdrop-filter: blur(10px) saturate(1.2);
+            box-shadow: var(--rg-shadow-2);
+        }
+        .syn-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 auto 0 0; color: var(--rg-ink-3); font-size: .86rem; }
+        .syn-summary .chip { --c: var(--rg-ink-3); display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, var(--rg-surface)); color: var(--rg-ink); font: 600 .78rem var(--rg-font-brand); }
+        .syn-summary .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+        .status { min-height: 1.5em; margin: 12px 0 0; font-size: .9rem; }
+        .status:empty { display: none; }
+
+        /* Mode compact (après affichage) ----------------------------------------- */
         .selection.compact .group, .selection.compact .help,
         .selection.compact h2, .selection.compact #show-reports,
-        .selection.compact #generate-pdf { display: none !important; }
-        .selection.compact .selection-actions { margin-top: 0; }
-        .help, .status { color: #64748b; }
-        .group { padding: 14px 0; border-top: 1px solid #e2e8f0; }
-        .checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 9px 16px; }
-        .check { display: flex; align-items: flex-start; gap: 9px; line-height: 1.35; }
-        .check input { margin-top: 3px; }
-        .check small { display: block; color: #64748b; }
-        .choices { margin: 10px 0 0 26px; padding: 10px 12px; border-left: 3px solid #dbeafe; }
-        .hidden { display: none !important; }
-        .selection-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-        .status { min-height: 1.5em; margin: 14px 0 0; }
-        .reports { display: grid; gap: 18px; margin-top: 18px; }
-        .report-actions { display: flex; justify-content: flex-end; gap: 10px; }
-        .report-actions button:disabled { opacity: .65; cursor: wait; }
+        .selection.compact #generate-pdf, .selection.compact .syn-panel-head { display: none !important; }
+        .selection.compact { padding: 10px; }
+        .selection.compact .syn-options { display: none; }
+        .selection.compact .selection-actions { position: static; margin-top: 0; box-shadow: none; border: 0; background: transparent; padding: 0 0 0 8px; }
+        .selection.compact .status { margin: 8px 8px 2px; }
+
+        /* Boutons ---------------------------------------------------------------- */
+        html body .syn-cta.syn-cta {
+            display: inline-flex; align-items: center; gap: 9px; color: var(--rg-yellow-ink, #1a1700) !important; background: var(--rg-yellow) !important;
+            border-color: var(--rg-yellow) !important; box-shadow: 0 6px 18px -8px rgba(239, 223, 0, .8) !important;
+        }
+        html body .syn-cta.syn-cta:hover:not(:disabled) { background: #fff26a !important; border-color: #fff26a !important; }
+        .syn-cta svg, .syn-ico svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .syn-ico { display: inline-flex; align-items: center; gap: 8px; }
+        button:disabled { cursor: progress; }
+
+        /* ------------------------------------------------------------- Rapports */
+        .reports { display: grid; gap: 18px; }
+        .report-actions {
+            position: sticky; top: calc(var(--rg-appbar-h, 56px) + 10px); z-index: 6;
+            display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 18px;
+            border: 1px solid var(--rg-line); border-radius: 14px; background: color-mix(in srgb, var(--rg-surface) 90%, transparent);
+            backdrop-filter: blur(10px) saturate(1.2); box-shadow: var(--rg-shadow-2);
+        }
+        .syn-progress { flex: 1; display: grid; gap: 7px; min-width: 0; }
+        .syn-progress-text { display: flex; justify-content: space-between; gap: 12px; color: var(--rg-ink-2); font: 600 .84rem var(--rg-font-brand); }
+        .syn-progress-text b { font: 700 .8rem var(--rg-font-mono); color: var(--rg-ink); }
+        .syn-progress-track { position: relative; height: 4px; border-radius: 4px; background: var(--rg-line); overflow: hidden; }
+        .syn-progress-track span { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--rg-ink), var(--rg-yellow)); transition: width 420ms var(--rg-ease-out); }
+        .reports[data-state="ready"] .syn-progress-track span { background: var(--rg-ok); }
+
+        .syn-reader { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; align-items: start; }
+        .syn-toc { position: sticky; top: calc(var(--rg-appbar-h, 56px) + 92px); display: grid; gap: 4px; padding: 14px; border: 1px solid var(--rg-line); border-radius: 14px; background: var(--rg-surface); max-height: calc(100vh - 200px); overflow: auto; }
+        .syn-toc > p { margin: 0 4px 6px; color: var(--rg-ink-3); font: 700 .7rem var(--rg-font-brand); letter-spacing: .14em; text-transform: uppercase; }
+        .syn-toc ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+        .syn-toc a {
+            --c: var(--rg-ink-3);
+            display: grid; grid-template-columns: 10px minmax(0, 1fr) 16px; align-items: center; gap: 9px; padding: 8px; border-radius: 8px;
+            color: var(--rg-ink-2); font-size: .82rem; line-height: 1.3; text-decoration: none; transition: background-color var(--rg-dur-fast) ease, color var(--rg-dur-fast) ease;
+        }
+        .syn-toc a::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+        .syn-toc a[data-module="dcdc"] { --c: var(--syn-dcdc); } .syn-toc a[data-module="wltc"] { --c: var(--syn-wltc); }
+        .syn-toc a[data-module="dm1"] { --c: var(--syn-dm1); } .syn-toc a[data-module="dm2"] { --c: var(--syn-dm2); }
+        .syn-toc a[data-module="customer"] { --c: var(--syn-customer); } .syn-toc a[data-module="biberonnage"] { --c: var(--syn-biberonnage); }
+        .syn-toc a:hover, .syn-toc a.is-active { background: var(--rg-surface-2); color: var(--rg-ink); }
+        .syn-toc a .state { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--rg-line); border-top-color: var(--c); animation: syn-spin .8s linear infinite; }
+        .syn-toc a[data-state="ready"] .state { animation: none; border: 0; background: var(--rg-ok); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat; }
+        .syn-toc a[data-state="error"] .state { animation: none; border-color: var(--rg-danger); background: var(--rg-danger-soft); }
+        @keyframes syn-spin { to { transform: rotate(360deg); } }
+
+        #report-content { display: grid; gap: 20px; min-width: 0; }
+        .report {
+            --c: var(--rg-ink-3);
+            position: relative; overflow: hidden; scroll-margin-top: calc(var(--rg-appbar-h, 56px) + 96px);
+            border: 1px solid var(--rg-line); border-radius: 14px; background: var(--rg-surface); box-shadow: var(--rg-shadow-1);
+            animation: syn-report-in 480ms var(--rg-ease-out) both; animation-delay: calc(var(--i, 0) * 60ms);
+        }
+        @keyframes syn-report-in { from { opacity: 0; transform: translateY(14px) scale(.995); } }
+        .report[data-module="dcdc"] { --c: var(--syn-dcdc); } .report[data-module="wltc"] { --c: var(--syn-wltc); }
+        .report[data-module="dm1"] { --c: var(--syn-dm1); } .report[data-module="dm2"] { --c: var(--syn-dm2); }
+        .report[data-module="customer"] { --c: var(--syn-customer); } .report[data-module="biberonnage"] { --c: var(--syn-biberonnage); }
+        .report-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--rg-line); background: linear-gradient(90deg, color-mix(in srgb, var(--c) 9%, var(--rg-surface)), var(--rg-surface) 60%); }
+        .report-head::before { content: ""; align-self: stretch; width: 4px; border-radius: 4px; background: var(--c); }
+        .report-tag { padding: 3px 8px; border-radius: 6px; background: var(--c); color: #fff; font: 800 .68rem var(--rg-font-mono); letter-spacing: .06em; text-transform: uppercase; }
+        .report .report-title { margin: 0; padding: 0; color: var(--rg-ink); background: none; border: 0; font: 700 1.02rem/1.3 var(--rg-font-brand); }
+        .report-paper { position: relative; margin: 14px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 1px rgba(11,12,14,.06), 0 10px 30px -18px rgba(11,12,14,.4); overflow: hidden; }
+        iframe { display: block; width: 100%; min-height: 120px; border: 0; background: white; overflow: hidden; transition: opacity 360ms ease; }
+        .report.is-loading iframe { opacity: 0; min-height: 380px; }
+        .report-skeleton { display: none; position: absolute; inset: 0; padding: 22px; gap: 14px; grid-template-rows: 22px 180px 14px 14px 14px; }
+        .report.is-loading .report-skeleton { display: grid; }
+        .report-skeleton i { border-radius: 6px; background: linear-gradient(90deg, #eef0f2 25%, #f8f9fa 50%, #eef0f2 75%); background-size: 200% 100%; animation: syn-shimmer 1.3s linear infinite; }
+        .report-skeleton i:nth-child(1) { width: 40%; } .report-skeleton i:nth-child(4) { width: 80%; } .report-skeleton i:nth-child(5) { width: 60%; }
+        @keyframes syn-shimmer { to { background-position: -200% 0; } }
+
         .print-report-copy { display: none; }
         .cover { display: none; padding: 48px; color: #1f2937; background: white; border: 1px solid #dbe2ea; }
-        .cover-kicker { color: #2563eb; font-size: .9rem; font-weight: 800; letter-spacing: .18em; }
+        .cover-kicker { color: #131417; font-size: .9rem; font-weight: 800; letter-spacing: .18em; }
         .cover h1 { margin: 55px 0 8px; overflow-wrap: anywhere; font-size: 2.4rem; }
         .cover-subtitle { margin-bottom: 48px; color: #64748b; font-size: 1.25rem; }
         .project-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 26px; }
         .project-details div { padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
         .project-details dt { color: #64748b; font-size: .8rem; font-weight: 700; }
         .project-details dd { margin: 4px 0 0; overflow-wrap: anywhere; font-weight: 650; }
-        .report { overflow: hidden; }
-        .report-title { margin: 0; padding: 12px 16px; color: #fff; background: #1f4e78; font-size: 1.1rem; }
-        .report h2 { margin: 0; padding: 15px 18px; border-bottom: 1px solid #dbe2ea; background: #f8fafc; }
-        iframe { display: block; width: 100%; min-height: 120px; border: 0; background: white; overflow: hidden; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .syn-tile, .syn-tile-icon, .report, .syn-option, .syn-steps li::after, .syn-hud span::before, .report-skeleton i { animation: none !important; transition: none !important; }
+        }
+        :root[data-motion="reduced"] :is(.report, .syn-option, .syn-steps li, .syn-hud span, .report-skeleton i) { animation: none !important; }
+        :root[data-motion="reduced"] .syn-steps li::after, :root[data-motion="reduced"] .syn-hud span::before { animation: none !important; }
+        @media (max-width: 1080px) {
+            .syn-reader { grid-template-columns: minmax(0, 1fr); }
+            .syn-toc { position: static; max-height: none; }
+            .syn-toc ol { grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); overflow-x: auto; }
+        }
+        @media (max-width: 860px) {
+            .syn-hero { grid-template-columns: minmax(0, 1fr); }
+            .syn-hero-stage { min-height: 220px; order: -1; }
+            .syn-steps li { font-size: .72rem; }
+        }
         @media (max-width: 650px) {
-            body { padding: 12px; }
-            .header { align-items: flex-start; flex-direction: column; }
-            .selection { padding: 16px; }
-            .selection-actions { justify-content: stretch; flex-direction: column; }
+            body { padding: 12px 12px 120px; }
+            .selection-actions { flex-wrap: wrap; }
+            .syn-summary { flex-basis: 100%; }
+            .report-actions { flex-wrap: wrap; }
+            .syn-progress { flex-basis: 100%; }
         }
     </style>
     <script src="/static/current_units.js"></script>
@@ -64,37 +320,79 @@
 </head>
 <body>
     <main class="page">
-        <header class="header">
-            <a class="back" href="/mode_selection">← Retour</a>
-            <h1>Synthèses du projet</h1>
+        <header class="syn-hero" aria-labelledby="syn-title">
+            <div class="syn-hero-copy">
+                <div class="syn-hero-top">
+                    <a class="back" href="/mode_selection">← Retour</a>
+                    <p class="syn-eyebrow">Wattman · Synthèse électrique</p>
+                </div>
+                <div>
+                    <h1 id="syn-title">Synthèse du projet</h1>
+                    <p class="syn-hero-project" id="hero-project">Projet Wattman</p>
+                    <dl class="syn-hero-meta" id="hero-meta"></dl>
+                </div>
+                <ol class="syn-steps" id="syn-steps" aria-label="Étapes de la synthèse">
+                    <li data-step="select" class="is-current" aria-current="step">Sélection</li>
+                    <li data-step="preview">Aperçu des rapports</li>
+                    <li data-step="export">Export PDF · Excel</li>
+                </ol>
+            </div>
+            <div class="syn-hero-stage" aria-hidden="true">
+                <canvas data-rg-hero3d></canvas>
+                <div class="syn-hud"><span class="h1">12 V · RÉSEAU DE BORD</span><span class="h2">BATTERIE · AUTONOMIE</span><span class="h3">DCDC · ECU</span></div>
+            </div>
         </header>
 
-        <section class="selection" id="selection">
-            <h2>Choisir les éléments de la synthèse</h2>
-            <p class="help">Sélectionnez les résultats à afficher. Le bouton PDF apparaîtra une fois la synthèse chargée.</p>
+        <section class="selection syn-panel" id="selection">
+            <div class="syn-panel-head">
+                <span class="syn-index" aria-hidden="true">01</span>
+                <div>
+                    <h2>Choisir les éléments de la synthèse</h2>
+                    <p class="help">Sélectionnez les rapports, puis leurs profils et scénarios. Le PDF et le fichier Excel sont disponibles une fois la synthèse chargée.</p>
+                </div>
+            </div>
 
-            <form id="selection-form">
+            <form id="selection-form" autocomplete="off">
                 <div class="group">
-                    <h3>Rapports</h3>
-                    <div class="checks">
-                        <label class="check"><input type="checkbox" name="module" value="dcdc"><span>DCDC Sizing</span></label>
-                        <label class="check"><input type="checkbox" name="module" value="wltc"><span>WLTC</span></label>
-                        <label class="check"><input type="checkbox" name="module" value="dm1"><span>DM1<small>Autonomie par capacité batterie</small></span></label>
-                        <label class="check"><input type="checkbox" name="module" value="dm2"><span>DM2<small>Autonomie par capacité batterie</small></span></label>
-                        <label class="check"><input type="checkbox" name="module" value="customer"><span>Customer Mode</span></label>
-                        <label class="check"><input type="checkbox" name="module" value="biberonnage"><span>Biberonnage</span></label>
+                    <h3 class="sr-only">Rapports</h3>
+                    <div class="checks syn-tiles">
+                        <label class="check syn-tile" data-module="dcdc"><input type="checkbox" name="module" value="dcdc">
+                            <span class="syn-tile-icon"><svg viewBox="0 0 32 32"><rect x="4" y="8" width="24" height="16" rx="3"/><path class="trace" d="M8 16h4l2-4 4 8 2-4h4"/></svg></span>
+                            <span class="syn-tile-text"><strong>DCDC Sizing</strong><small>Dimensionnement du convertisseur · 3 saisons</small></span>
+                            <span class="syn-tile-check"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span></label>
+                        <label class="check syn-tile" data-module="wltc"><input type="checkbox" name="module" value="wltc">
+                            <span class="syn-tile-icon"><svg viewBox="0 0 32 32"><path d="M4 26h24"/><path class="trace" d="M4 22l4-8 3 4 4-10 4 7 3-3 6 10"/></svg></span>
+                            <span class="syn-tile-text"><strong>WLTC</strong><small>Cycles d’homologation · alternateur</small></span>
+                            <span class="syn-tile-check"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span></label>
+                        <label class="check syn-tile" data-module="dm1"><input type="checkbox" name="module" value="dm1">
+                            <span class="syn-tile-icon"><svg viewBox="0 0 32 32"><rect x="4" y="9" width="21" height="14" rx="2.5"/><path d="M28 13v6"/><path class="trace" d="M8 13v6M12 13v6M16 13v6"/></svg></span>
+                            <span class="syn-tile-text"><strong>DM1</strong><small>Autonomie par capacité batterie</small></span>
+                            <span class="syn-tile-check"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span></label>
+                        <label class="check syn-tile" data-module="dm2"><input type="checkbox" name="module" value="dm2">
+                            <span class="syn-tile-icon"><svg viewBox="0 0 32 32"><rect x="4" y="9" width="21" height="14" rx="2.5"/><path d="M28 13v6"/><path class="trace" d="M8 13v6M12 13v6M16 13v6M20 13v6"/></svg></span>
+                            <span class="syn-tile-text"><strong>DM2</strong><small>Autonomie par capacité batterie</small></span>
+                            <span class="syn-tile-check"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span></label>
+                        <label class="check syn-tile" data-module="customer"><input type="checkbox" name="module" value="customer">
+                            <span class="syn-tile-icon"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="5"/><path d="M6 27c1.6-5 5.4-7 10-7s8.4 2 10 7"/><path class="trace" d="M22 6l3-3M25 9h3"/></svg></span>
+                            <span class="syn-tile-text"><strong>Customer Mode</strong><small>Usage client · Standard, sans Unplug, PIE</small></span>
+                            <span class="syn-tile-check"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span></label>
+                        <label class="check syn-tile" data-module="biberonnage"><input type="checkbox" name="module" value="biberonnage">
+                            <span class="syn-tile-icon"><svg viewBox="0 0 32 32"><path d="M12 4v6M20 4v6M9 10h14v5a7 7 0 0 1-14 0z"/><path class="trace" d="M16 22v6"/></svg></span>
+                            <span class="syn-tile-text"><strong>Biberonnage</strong><small>Recharges de maintien · 30 / 90 jours</small></span>
+                            <span class="syn-tile-check"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span></label>
                     </div>
                 </div>
 
-                <div class="group hidden" data-options="dcdc">
+                <div class="syn-options">
+                <div class="group syn-option hidden" data-options="dcdc">
                     <h3>Profils DCDC</h3><div class="checks" data-profiles="dcdc"></div>
-                    <a href="/edit_current">Configurer les profils DCDC</a>
+                    <a href="/edit_current">Configurer les profils DCDC →</a>
                 </div>
-                <div class="group hidden" data-options="wltc">
+                <div class="group syn-option hidden" data-options="wltc">
                     <h3>Profils WLTC</h3><div class="checks" data-profiles="wltc"></div>
-                    <a href="/edit_alternator">Configurer les profils WLTC</a>
+                    <a href="/edit_alternator">Configurer les profils WLTC →</a>
                 </div>
-                <div class="group hidden" data-options="dm1">
+                <div class="group syn-option hidden" data-options="dm1">
                     <h3>Profils batterie DM1</h3>
                     <div class="checks" data-profiles="dm1"></div>
                     <div class="choices checks">
@@ -102,7 +400,7 @@
                         <label class="check"><input type="checkbox" name="dm1-scenario" value="withoutAlarmTachy" checked><span>Sans Unplug</span></label>
                     </div>
                 </div>
-                <div class="group hidden" data-options="dm2">
+                <div class="group syn-option hidden" data-options="dm2">
                     <h3>Profils batterie DM2</h3>
                     <div class="checks" data-profiles="dm2"></div>
                     <div class="choices checks">
@@ -110,7 +408,7 @@
                         <label class="check"><input type="checkbox" name="dm2-scenario" value="withoutAlarmTachy" checked><span>Sans Unplug</span></label>
                     </div>
                 </div>
-                <div class="group hidden" data-options="customer">
+                <div class="group syn-option hidden" data-options="customer">
                     <h3>Profils Customer Mode</h3>
                     <div class="checks" data-profiles="customer"></div>
                     <h3>Rapports du profil</h3>
@@ -127,7 +425,7 @@
                         <label class="check"><input type="checkbox" name="customer-scenario" value="baseLib" checked><span>Base LIB (PIE)</span></label>
                     </div>
                 </div>
-                <div class="group hidden" data-options="biberonnage">
+                <div class="group syn-option hidden" data-options="biberonnage">
                     <h3>Biberonnage</h3>
                     <div class="checks">
                         <label class="check"><input type="checkbox" name="bib-days" value="30" checked><span>30 jours</span></label>
@@ -144,9 +442,11 @@
                         <div class="checks" data-profiles="biberonnage-90"></div>
                     </div>
                 </div>
+                </div>
                 <div class="selection-actions">
-                    <button type="button" id="back-to-selection" class="hidden">Modifier la sélection</button>
-                    <button type="submit" class="primary" id="show-reports">Afficher la synthèse</button>
+                    <p class="syn-summary" id="selection-summary" aria-live="polite"></p>
+                    <button type="button" id="back-to-selection" class="secondary hidden"><span class="syn-ico"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Modifier la sélection</span></button>
+                    <button type="submit" class="primary" id="show-reports"><span class="syn-ico">Afficher la synthèse<svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button>
                 </div>
             </form>
             <p class="status" id="selection-status" role="status" aria-live="polite"></p>
@@ -154,8 +454,12 @@
 
         <div class="reports hidden" id="reports" aria-live="polite">
             <div class="report-actions hidden" id="report-actions">
-                <button type="button" class="primary" id="generate-pdf" disabled>Générer la synthèse en PDF</button>
-                <button type="button" class="primary" id="generate-excel" disabled>Générer le fichier Excel</button>
+                <div class="syn-progress">
+                    <div class="syn-progress-text"><span id="report-progress-label">Chargement des rapports…</span><b id="report-progress-count">0 / 0</b></div>
+                    <div class="syn-progress-track"><span id="report-progress-bar"></span></div>
+                </div>
+                <button type="button" class="primary syn-cta" id="generate-pdf" disabled><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 14h6M9 17h4"/></svg>Générer la synthèse en PDF</button>
+                <button type="button" class="secondary" id="generate-excel" disabled><span class="syn-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>Générer le fichier Excel</span></button>
             </div>
             <section class="cover" id="project-cover" aria-label="Informations du projet">
                 <p class="cover-kicker">WATTMAN</p>
@@ -173,7 +477,10 @@
                     <div><dt>Milestone</dt><dd id="cover-milestone"></dd></div>
                 </dl>
             </section>
-            <div id="report-content"></div>
+            <div class="syn-reader">
+                <nav class="syn-toc" aria-label="Rapports de la synthèse"><p>Sommaire</p><ol id="report-toc"></ol></nav>
+                <div id="report-content"></div>
+            </div>
         </div>
     </main>
     <script>
@@ -312,6 +619,7 @@
             modules.clear();
             form.querySelectorAll('input[name="module"]:checked').forEach(input => modules.add(input.value));
             document.querySelectorAll('[data-options]').forEach(group => group.classList.toggle('hidden', !modules.has(group.dataset.options)));
+            updateSummary();
         }
 
         form.addEventListener('change', event => {
@@ -325,6 +633,54 @@
 
         function getBiberonnageReportSelections(days, getProfiles) {
             return days.map(daysValue => ({ days: daysValue, profiles: getProfiles(daysValue) }));
+        }
+
+        // ------------------------------------------------------------ Interface
+        const MODULE_LABELS = { dcdc: 'DCDC', wltc: 'WLTC', dm1: 'DM1', dm2: 'DM2', customer: 'Customer', biberonnage: 'Biberonnage' };
+        const toc = document.getElementById('report-toc');
+
+        function setStep(step) {
+            const order = ['select', 'preview', 'export'];
+            document.querySelectorAll('#syn-steps li').forEach(item => {
+                const index = order.indexOf(item.dataset.step), current = order.indexOf(step);
+                item.classList.toggle('is-current', index === current);
+                item.classList.toggle('is-done', index < current);
+                if (index === current) item.setAttribute('aria-current', 'step'); else item.removeAttribute('aria-current');
+            });
+        }
+
+        function updateProgress() {
+            const total = Math.max(expectedReports, 0);
+            const ready = Math.min(loadedReports, total);
+            const done = total > 0 && ready === total;
+            document.getElementById('report-progress-count').textContent = `${ready} / ${total}`;
+            document.getElementById('report-progress-label').textContent = done
+                ? 'Synthèse prête : PDF A4 natif et fichier Excel disponibles'
+                : 'Chargement et mise en page des rapports…';
+            document.getElementById('report-progress-bar').style.width = `${total ? ready / total * 100 : 0}%`;
+            reports.dataset.state = done ? 'ready' : 'loading';
+            if (done) setStep('export');
+        }
+
+        // Résumé vivant de la sélection, dans la barre d'action.
+        function updateSummary() {
+            const summary = document.getElementById('selection-summary');
+            const chosen = selectedValues('module');
+            if (!chosen.length) { summary.textContent = 'Aucun rapport sélectionné'; return; }
+            summary.innerHTML = chosen.map(module => `<span class="chip" style="--c:var(--syn-${module})">${escapeHtml(MODULE_LABELS[module] || module)}</span>`).join('')
+                + `<span>${chosen.length} rapport${chosen.length > 1 ? 's' : ''}</span>`;
+        }
+
+        // En-tête : nom du projet et métadonnées du projet actif.
+        function populateHero() {
+            let project = null;
+            try { project = JSON.parse(localStorage.getItem('activeProject') || 'null'); } catch { project = null; }
+            document.getElementById('hero-project').textContent = project?.name || 'Projet Wattman';
+            const architecture = project?.projectType === 'EV' ? project?.evArchitecture : project?.iceProject;
+            const items = [['Type', project?.projectType], ['Architecture', architecture], ['Pilote', project?.pilotWattman],
+                ['Powertrain', project?.powertrain], ['Milestone', project?.milestone]].filter(([, value]) => value);
+            document.getElementById('hero-meta').innerHTML = items.map(([label, value]) =>
+                `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('');
         }
 
         function getChartPeakMetrics(datasets) {
@@ -354,14 +710,30 @@
         }
 
         function addReport(title, type, url, module) {
+            const index = reportContent.children.length;
             const section = document.createElement('section');
-            section.className = 'report';
+            section.className = 'report is-loading';
+            section.id = `report-${index + 1}`;
             section.dataset.module = module;
+            section.style.setProperty('--i', String(Math.min(index, 8)));
             // Titre visible : module et profil affichés explicitement dans la synthèse.
+            const head = document.createElement('div');
+            head.className = 'report-head';
+            const tag = document.createElement('span');
+            tag.className = 'report-tag';
+            tag.textContent = MODULE_LABELS[module] || module;
             const heading = document.createElement('h2');
             heading.className = 'report-title';
             heading.textContent = title;
-            section.appendChild(heading);
+            head.append(tag, heading);
+            section.appendChild(head);
+            const paper = document.createElement('div');
+            paper.className = 'report-paper';
+            paper.innerHTML = '<div class="report-skeleton" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>';
+            const entry = document.createElement('li');
+            entry.innerHTML = `<a href="#${section.id}" data-module="${module}" data-state="loading"><span>${escapeHtml(title)}</span><span class="state" aria-hidden="true"></span></a>`;
+            toc.append(entry);
+            const link = entry.firstElementChild;
             const frame = document.createElement('iframe');
             frame.title = title;
             frame.scrolling = 'no';
@@ -374,10 +746,15 @@
                     if (!section.isConnected) return;
                     console.error(`Impossible de préparer le rapport « ${title} ».`, error);
                     status.textContent = `Erreur de chargement du rapport « ${title} » : ${error.message}`;
+                    link.dataset.state = 'error';
+                    section.classList.remove('is-loading');
                     return;
                 }
                 if (!section.isConnected) return;
+                section.classList.remove('is-loading');
+                link.dataset.state = 'ready';
                 loadedReports += 1;
+                updateProgress();
                 if (loadedReports === expectedReports) {
                     document.getElementById('generate-pdf').disabled = false;
                     document.getElementById('generate-excel').disabled = false;
@@ -385,9 +762,26 @@
                     status.textContent = 'Tous les résultats sélectionnés sont affichés. Vous pouvez générer le PDF ou le fichier Excel.';
                 }
             }, { once: true });
-            section.append(frame);
+            paper.append(frame);
+            section.append(paper);
             reportContent.append(section);
         }
+
+        // Sommaire : défilement doux et rapport actif surligné.
+        toc.addEventListener('click', event => {
+            const link = event.target.closest('a[href^="#report-"]');
+            if (!link) return;
+            event.preventDefault();
+            document.querySelector(link.getAttribute('href'))?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+        });
+        const tocObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+            entries.filter(entry => entry.isIntersecting).forEach(entry => {
+                toc.querySelectorAll('a').forEach(link => link.classList.toggle('is-active', link.getAttribute('href') === `#${entry.target.id}`));
+            });
+        }, { rootMargin: '-35% 0px -60% 0px' }) : null;
+        new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
+            if (node.classList?.contains('report')) tocObserver?.observe(node);
+        }))).observe(reportContent, { childList: true });
 
         async function prepareFrame(frame, type) {
             const doc = frame.contentDocument;
@@ -396,6 +790,9 @@
             }
             const style = doc.createElement('style');
             style.textContent = `
+                html body .rg-appbar.rg-appbar, .rg-skip-link { display:none !important; }
+                html.rg-has-appbar body { padding-top:8px !important; }
+                html.rg-has-appbar body > * { animation:none !important; }
                 body::before, body::after, .retractable-menu, .button-group, .bottom-nav, .header-actions,
                 .toolbar, .creator, dialog, .btn-back, .close-modal, .export-actions,
                 .analysis-heading .btn-delete, .data-choice, .config-cards { display:none !important; }
@@ -469,6 +866,12 @@
                 }
             `;
             doc.head.append(style);
+            // La barre d'application de la page intégrée n'a pas sa place dans un rapport.
+            doc.querySelectorAll('.rg-appbar').forEach(bar => bar.remove());
+            doc.documentElement.classList.remove('rg-has-appbar');
+            // Un rapport reste une « feuille » claire, quel que soit le thème de l'application.
+            doc.documentElement.dataset.theme = 'light';
+            frame.contentWindow.dispatchEvent(new CustomEvent('rg-themechange', { detail: { theme: 'light' } }));
             if (type === 'synthesis') {
                 const module = new URL(frame.src).searchParams.get('module');
                 const pageHeader = doc.querySelector('.header');
@@ -596,9 +999,12 @@
                 return;
             }
             reportContent.replaceChildren();
+            toc.replaceChildren();
             document.getElementById('generate-pdf').disabled = true;
             document.getElementById('generate-excel').disabled = true;
-            document.getElementById('report-actions').classList.add('hidden');
+            // La barre d'export reste visible pendant le chargement : progression, boutons inactifs.
+            document.getElementById('report-actions').classList.remove('hidden');
+            setStep('preview');
             expectedReports = selectedModules.length - (selectedModules.includes('biberonnage') ? 1 : 0) + selectedBibReports.length;
             ['dcdc','wltc'].forEach(mode=>{if(selectedModules.includes(mode))expectedReports+=selectedValues(`${mode}-configuration`).length-1;});
             if(window.AutonomyProfiles){
@@ -652,6 +1058,7 @@
             selection.querySelector('#back-to-selection').classList.remove('hidden');
             selection.querySelector('#show-reports').classList.add('hidden');
             selection.classList.add('compact');
+            updateProgress();
             status.textContent = 'Chargement des rapports sélectionnés…';
             reports.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
@@ -805,9 +1212,11 @@
             selection.querySelector('#back-to-selection').classList.add('hidden');
             selection.querySelector('#show-reports').classList.remove('hidden');
             status.textContent = '';
+            setStep('select');
             selection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
 
+        populateHero();
         populateProfiles();
         updateOptions();
         applyPreset();
@@ -851,8 +1260,12 @@
         @media print {
             body { min-height: 0; padding: 0; background: #fff; }
             .page { max-width: none; margin: 0; }
-            .header, #selection, .report-actions { display: none !important; }
-            .reports { display: block !important; margin: 0; }
+            .syn-hero, .rg-appbar, .syn-toc, #selection, .report-actions, .report-head .report-tag, .report-skeleton { display: none !important; }
+            html.rg-has-appbar body { padding-top: 0 !important; }
+            .reports, .syn-reader, #report-content { display: block !important; margin: 0; }
+            .report-paper { margin: 0; box-shadow: none; border-radius: 0; }
+            .report-head { padding: 0; background: none; border: 0; }
+            .report-head::before { display: none; }
             .cover {
                 display: block !important; min-height: 0; height: 265mm; padding: 26mm 18mm;
                 border: 0; border-radius: 0; box-shadow: none; break-after: page;

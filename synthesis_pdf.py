@@ -9,20 +9,30 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.graphics.shapes import Drawing, Line, PolyLine, Rect, String
+from reportlab.lib.utils import simpleSplit
 from reportlab.platypus import (
     BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, PageBreak,
-    KeepTogether, LongTable, TableStyle,
+    KeepTogether, LongTable, Table, TableStyle, NextPageTemplate,
 )
+from reportlab.platypus.flowables import HRFlowable
 from reportlab.platypus.tableofcontents import TableOfContents
 from synthesis_excel import number, selected_profiles, selected_columns, dm_values
 
-INK = colors.HexColor('#17334D')
+# Identité Renault Group (design system Wattman) : graphite, gris minéral, jaune
+# réservé à l'accent. BLUE/GREEN/RED restent les couleurs des séries de données.
+GRAPHITE = colors.HexColor('#131417')
+INK = colors.HexColor('#1B1D21')
+MUTED = colors.HexColor('#67625C')
+PALE = colors.HexColor('#F8F7F5')
+RULE = colors.HexColor('#E1DDD8')
+ACCENT = colors.HexColor('#EFDF00')
+MINERAL = colors.HexColor('#9A9DA3')
 BLUE = colors.HexColor('#2466A0')
-MUTED = colors.HexColor('#607387')
-PALE = colors.HexColor('#F2F6FA')
-RULE = colors.HexColor('#DCE5EE')
 GREEN = colors.HexColor('#16836E')
 RED = colors.HexColor('#BD5450')
+MODULE_COLORS = {'dcdc': colors.HexColor('#1F5FBF'), 'wltc': colors.HexColor('#009E73'),
+                 'dm1': colors.HexColor('#D55E00'), 'dm2': colors.HexColor('#CC79A7'),
+                 'customer': colors.HexColor('#8A6D00'), 'biberonnage': colors.HexColor('#56B4E9')}
 WIDTH = A4[0] - 36 * mm
 MODULE_NAMES = {'dcdc': 'Dimensionnement DCDC', 'wltc': 'Cycles WLTC',
                 'dm1': 'Autonomie DM1', 'dm2': 'Autonomie DM2',
@@ -65,14 +75,19 @@ def quantity(value, unit='', digits=4):
 STYLES = {
     'body': ParagraphStyle('ReportBody',fontName='Helvetica',fontSize=9,leading=13,textColor=INK,spaceAfter=8),
     'small': ParagraphStyle('ReportSmall',fontName='Helvetica',fontSize=8,leading=11,textColor=MUTED,spaceAfter=6),
-    'h1': ParagraphStyle('ReportH1',fontName='Helvetica-Bold',fontSize=21,leading=26,textColor=INK,spaceBefore=6,spaceAfter=15,keepWithNext=True),
-    'h2': ParagraphStyle('ReportH2',fontName='Helvetica-Bold',fontSize=14,leading=19,textColor=BLUE,spaceBefore=14,spaceAfter=9,keepWithNext=True),
+    'h1': ParagraphStyle('ReportH1',fontName='Helvetica-Bold',fontSize=21,leading=26,textColor=GRAPHITE,spaceBefore=6,spaceAfter=6,keepWithNext=True),
+    'h2': ParagraphStyle('ReportH2',fontName='Helvetica-Bold',fontSize=14,leading=19,textColor=GRAPHITE,spaceBefore=14,spaceAfter=9,keepWithNext=True),
     'h3': ParagraphStyle('ReportH3',fontName='Helvetica-Bold',fontSize=10,leading=14,textColor=INK,spaceBefore=10,spaceAfter=7,keepWithNext=True),
     'cell': ParagraphStyle('ReportCell',fontName='Helvetica',fontSize=8,leading=11,textColor=INK,splitLongWords=True),
     'head': ParagraphStyle('ReportTableHead',fontName='Helvetica-Bold',fontSize=8,leading=11,textColor=colors.white),
     'cover': ParagraphStyle('ReportCover',fontName='Helvetica-Bold',fontSize=32,leading=38,textColor=INK,spaceAfter=18),
-    'project': ParagraphStyle('ReportProject',fontName='Helvetica',fontSize=18,leading=24,textColor=BLUE,spaceAfter=24),
+    'project': ParagraphStyle('ReportProject',fontName='Helvetica',fontSize=18,leading=24,textColor=MUTED,spaceAfter=24),
+    'kpi_label': ParagraphStyle('ReportKpiLabel',fontName='Helvetica-Bold',fontSize=7,leading=9,textColor=MUTED),
+    'kpi_value': ParagraphStyle('ReportKpiValue',fontName='Helvetica-Bold',fontSize=17,leading=21,textColor=GRAPHITE),
+    'kpi_note': ParagraphStyle('ReportKpiNote',fontName='Helvetica',fontSize=7,leading=9,textColor=MUTED),
+    'scope_title': ParagraphStyle('ReportScopeTitle',fontName='Helvetica-Bold',fontSize=9.5,leading=12,textColor=GRAPHITE),
 }
+COVER_BAND = 118 * mm
 
 
 def paragraph(text, style='body'):
@@ -85,11 +100,11 @@ def table(headers, rows, widths=None):
     result = LongTable(data,colWidths=widths or [WIDTH/len(headers)]*len(headers),
                        repeatRows=1,hAlign='LEFT',splitInRow=1)
     result.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0),INK),('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('BACKGROUND',(0,0),(-1,0),GRAPHITE),('VALIGN',(0,0),(-1,-1),'TOP'),
         ('LEFTPADDING',(0,0),(-1,-1),9),('RIGHTPADDING',(0,0),(-1,-1),9),
         ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
         ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,PALE]),
-        ('LINEBELOW',(0,0),(-1,0),.6,INK),
+        ('LINEBELOW',(0,0),(-1,0),1.2,ACCENT),
         ('LINEBELOW',(0,1),(-1,-1),.25,RULE),
     ]))
     return result
@@ -102,9 +117,11 @@ class ReportDocument(BaseDocTemplate):
                          title=f"Synthèse électrique - {plain(project.get('name') or 'Wattman')}",
                          author=plain(project.get('pilotWattman') or 'Wattman'),pageCompression=1)
         self.project = plain(project.get('name') or 'Projet Wattman')
-        self.addPageTemplates(PageTemplate('report',frames=[Frame(
-            self.leftMargin,self.bottomMargin,self.width,self.height,
-            leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0)],onPage=self.chrome,onPageEnd=self.context))
+        frame = lambda: Frame(self.leftMargin,self.bottomMargin,self.width,self.height,
+                              leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0)
+        self.addPageTemplates([
+            PageTemplate('cover',frames=[frame()],onPage=self.cover),
+            PageTemplate('report',frames=[frame()],onPage=self.chrome,onPageEnd=self.context)])
 
     def beforeDocument(self):
         self.module_title='';self.profile_title=''
@@ -118,19 +135,72 @@ class ReportDocument(BaseDocTemplate):
         canvas.drawRightString(A4[0]-18*mm,A4[1]-13*mm,label)
         canvas.restoreState()
 
-    def chrome(self, canvas, doc):
-        canvas.saveState()
-        if doc.page > 1:
-            canvas.setFillColor(MUTED);canvas.setFont('Helvetica-Bold',8)
-            canvas.drawString(18*mm,A4[1]-13*mm,'WATTMAN  /  SYNTHÈSE ÉLECTRIQUE')
-            canvas.setStrokeColor(RULE);canvas.line(18*mm,A4[1]-16*mm,A4[0]-18*mm,A4[1]-16*mm)
-        canvas.setStrokeColor(RULE);canvas.line(18*mm,15*mm,A4[0]-18*mm,15*mm)
+    @staticmethod
+    def mark(canvas, x, y, size):
+        """Marque graphique Wattman (deux lames) : ce n'est pas le logotype Renault."""
+        k = size / 24
+        for points, color in (([3,20,9.5,4,13,4,6.5,20], colors.HexColor('#F4F4F2')),
+                              ([11,20,17.5,4,21,4,14.5,20], ACCENT)):
+            path = canvas.beginPath()
+            path.moveTo(x + points[0]*k, y + (24-points[1])*k)
+            for i in range(2, 8, 2):
+                path.lineTo(x + points[i]*k, y + (24-points[i+1])*k)
+            path.close(); canvas.setFillColor(color); canvas.drawPath(path, stroke=0, fill=1)
+
+    def footer(self, canvas, doc):
+        canvas.setStrokeColor(RULE);canvas.setLineWidth(.5);canvas.line(18*mm,15*mm,A4[0]-18*mm,15*mm)
         canvas.setFillColor(MUTED);canvas.setFont('Helvetica',7)
         label=self.project
         while canvas.stringWidth(label,'Helvetica',7)>WIDTH-70:
             label=label[:-4]+'...'
         canvas.drawString(18*mm,10*mm,label)
+        canvas.setFillColor(GRAPHITE);canvas.setFont('Helvetica-Bold',7)
         canvas.drawRightString(A4[0]-18*mm,10*mm,f'Page {doc.page:02d}')
+
+    def cover(self, canvas, doc):
+        """Bandeau graphite pleine largeur, accent jaune et tracé de courant vectoriel."""
+        canvas.saveState()
+        top = A4[1]; band = COVER_BAND; left = 18*mm; right = A4[0]-18*mm
+        canvas.setFillColor(GRAPHITE); canvas.rect(0, top-band, A4[0], band, stroke=0, fill=1)
+        canvas.setStrokeColor(colors.Color(1, 1, 1, alpha=.06)); canvas.setLineWidth(.4)
+        for gx in range(0, int(A4[0]) + 1, 18):
+            canvas.line(gx, top-band, gx, top)
+        for gy in range(int(top-band), int(top) + 1, 18):
+            canvas.line(0, gy, A4[0], gy)
+        # Créneaux de réveil sur un courant de veille : signature du métier.
+        canvas.setStrokeColor(ACCENT); canvas.setLineWidth(1.4)
+        start = A4[0]*.56; base = top-band+20*mm; x = start
+        path = canvas.beginPath(); path.moveTo(x, base)
+        for width, high in ((14,0),(4,1),(22,0),(4,1),(9,0),(2,1),(30,0),(4,1),(18,0),(4,1),(40,0)):
+            y = base + (15*mm if high else 0)
+            path.lineTo(x, y); x = min(x + width*mm*.55, right); path.lineTo(x, y)
+        path.lineTo(x, base); canvas.drawPath(path, stroke=1, fill=0)
+        canvas.setStrokeColor(colors.Color(1, 1, 1, alpha=.25)); canvas.setLineWidth(.5); canvas.setDash(2, 3)
+        canvas.line(start, base, right, base); canvas.setDash()
+        canvas.setFillColor(MINERAL); canvas.setFont('Helvetica', 6.5)
+        canvas.drawRightString(right, base-4.5*mm, 'Courant de veille et réveils techniques')
+        self.mark(canvas, left, top-25*mm, 9*mm)
+        canvas.setFillColor(colors.white); canvas.setFont('Helvetica-Bold', 9)
+        canvas.drawString(left+12*mm, top-19.5*mm, 'WATTMAN')
+        canvas.setFillColor(MINERAL); canvas.setFont('Helvetica', 8)
+        canvas.drawString(left+12*mm, top-23.5*mm, 'Ingénierie électrique véhicule')
+        canvas.setFillColor(ACCENT); canvas.rect(left, top-44*mm, 22*mm, 1.6*mm, stroke=0, fill=1)
+        canvas.setFillColor(colors.white); canvas.setFont('Helvetica-Bold', 30)
+        canvas.drawString(left, top-58*mm, 'Synthèse électrique')
+        canvas.drawString(left, top-70*mm, 'et autonomie')
+        canvas.setFillColor(colors.HexColor('#DCDDDF')); canvas.setFont('Helvetica', 14)
+        for index, line in enumerate(simpleSplit(self.project, 'Helvetica', 14, A4[0]*.54 - left)[:3]):
+            canvas.drawString(left, top-83*mm - index*6*mm, line)
+        self.footer(canvas, doc)
+        canvas.restoreState()
+
+    def chrome(self, canvas, doc):
+        canvas.saveState()
+        self.mark(canvas, 18*mm, A4[1]-14.4*mm, 3.6*mm)
+        canvas.setFillColor(GRAPHITE);canvas.setFont('Helvetica-Bold',8)
+        canvas.drawString(18*mm+5*mm,A4[1]-13*mm,'WATTMAN  /  SYNTHÈSE ÉLECTRIQUE')
+        canvas.setStrokeColor(RULE);canvas.setLineWidth(.5);canvas.line(18*mm,A4[1]-16*mm,A4[0]-18*mm,A4[1]-16*mm)
+        self.footer(canvas, doc)
         canvas.restoreState()
 
     def afterFlowable(self, flowable):
@@ -182,6 +252,22 @@ def vector_chart(series, x_label, y_label, y_kind='A', height=215, bounds=None):
     return drawing
 
 
+def series_legend(series):
+    """Légende : pastille de couleur de la série, libellé et pic."""
+    def swatch(color):
+        drawing=Drawing(14,8);drawing.add(Rect(0,1,14,5,fillColor=color,strokeColor=None));return drawing
+    cells=[]
+    for item in series:
+        values=[y for _x,y in item['points'] if y is not None]
+        cells.extend([swatch(item['color']),paragraph(item['label'],'scope_title'),
+                      paragraph(f"Pic : {current(max(values),'A') if values else '-'}",'small')])
+    share=WIDTH/len(series)
+    grid=Table([cells],colWidths=[18,share*.6-18,share*.4]*len(series),hAlign='LEFT')
+    grid.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),2),('RIGHTPADDING',(0,0),(-1,-1),4),
+                              ('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),1),('LINEABOVE',(0,0),(-1,0),.5,RULE)]))
+    return grid
+
+
 class ReportBuilder:
     def __init__(self):
         self.story=[];self.sequence=0
@@ -191,6 +277,28 @@ class ReportBuilder:
         item=paragraph(text,'h1' if level==0 else 'h2')
         item.report_level=level;item.report_key=f'section-{self.sequence}'
         self.story.append(item)
+        if level==0:
+            rule=HRFlowable(width=22*mm,thickness=2.4,color=ACCENT,hAlign='LEFT',spaceBefore=0,spaceAfter=14)
+            rule.keepWithNext=True
+            self.story.append(rule)
+
+    def kpis(self,items):
+        """Bandeau de chiffres clés : libellé, valeur, précision."""
+        if not items:return
+        per_row=min(4,len(items))
+        cells=[[paragraph(label.upper(),'kpi_label'),Spacer(1,3),paragraph(value,'kpi_value'),paragraph(note,'kpi_note')]
+               for label,value,note in items]
+        rows=[cells[i:i+per_row] for i in range(0,len(cells),per_row)]
+        rows=[row+['']*(per_row-len(row)) for row in rows]
+        grid=Table(rows,colWidths=[WIDTH/per_row]*per_row,hAlign='LEFT')
+        style=[('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),8),
+               ('TOPPADDING',(0,0),(-1,-1),9),('BOTTOMPADDING',(0,0),(-1,-1),10),
+               ('BACKGROUND',(0,0),(-1,-1),PALE),('LINEABOVE',(0,0),(-1,0),2,GRAPHITE)]
+        for r,row in enumerate(rows):
+            for c,cell in enumerate(row):
+                if cell!='' and c:style.append(('LINEBEFORE',(c,r),(c,r),.5,RULE))
+        grid.setStyle(TableStyle(style))
+        self.story.append(KeepTogether([grid,Spacer(1,14)]))
 
     def section(self,title):
         self.story.append(PageBreak());self.heading(title)
@@ -224,8 +332,7 @@ class ReportBuilder:
             if not records:raise ValueError(f'Les données du profil {label} sont absentes.')
             series=[{'label':name,'color':color,'points':[(number(row['time']),number(row[field])) for row in records]}
                     for field,name,color in [('base','Base véhicule',BLUE),('upper','Upper véhicule',GREEN),('dcdcOutput','Sortie DCDC',RED)]]
-            legend=table([item['label'] for item in series],[[f"Pic : {current(max(y for _x,y in item['points']),'A')}" for item in series]])
-            legend.setStyle(TableStyle([('BACKGROUND',(i,0),(i,0),item['color']) for i,item in enumerate(series)]))
+            legend=series_legend(series)
             self.story.append(KeepTogether([paragraph(label,'h2'),vector_chart(series,'Temps (min)','Courant'),legend,Spacer(1,14)]))
 
     def dm(self,report):
@@ -237,6 +344,8 @@ class ReportBuilder:
             columns=selected_columns(profile,report['selection'])
             self.heading(profile['name'],1)
             labels=[column['scenario']['label'] for column in columns]
+            self.kpis([(f"Autonomie - {column['scenario']['label']}",quantity(column['autonomy'],'jours'),
+                        f"Batterie {quantity(column['capacity'],'Ah')} - veille {quantity(column['instantaneous'],'µA')}") for column in columns])
             specs=[('Autonomie','autonomy','jours'),('Capacité batterie','capacity','Ah'),
                    ('SOC de départ','startSoc','%'),('SOC minimal','minSoc','%'),
                    ('Énergie disponible','available','Ah'),('Courant de veille','instantaneous','µA'),
@@ -277,6 +386,7 @@ class ReportBuilder:
             columns=selected_columns(profile,report['selection'])
             self.heading(CUSTOMER_NAMES[profile['id']],1)
             labels=[column['label'] for column in columns]
+            self.kpis([(f"Autonomie - {column['label']}",quantity(column['autonomy'],'jours'),'Customer Mode') for column in columns])
             self.parameters(labels,[('Autonomie',[quantity(c['autonomy'],'jours') for c in columns])])
             for title,specs in CUSTOMER_PARAMETERS:
                 self.story.append(paragraph(title,'h3'))
@@ -294,6 +404,10 @@ class ReportBuilder:
                 configuration=(report['data'].get('configuration') or {}).get('name')
                 self.heading((f"Profil : {configuration} — " if configuration else '')+f"{profile['name']} - {days} jours",1)
                 result=profile['result'];config=profile['config']
+                self.kpis([('Biberonnages',quantity(result['bibCount'],''),f'sur {days} jours'),
+                           ('Charge restituée',quantity(result['totalRechargeAh'],'Ah'),'nominale'),
+                           ('Coût énergétique EF',quantity(result['totalCost'],'Wh'),'cumulé'),
+                           ('Consommation de veille',quantity(result['sumVeilleAh'],'Ah'),'cumulée')])
                 stats=[('Capacité batterie','capacityAh','Ah'),('SOC de départ','startSoc','%'),
                        ('Consommation de veille','sumVeilleAh','Ah'),('Pertes périodiques','totalLossL1','Ah'),
                        ('Pertes sur seuil SOC','totalLossL2','Ah'),('Charge nominale restituée','totalRechargeAh','Ah'),
@@ -348,13 +462,14 @@ def build_synthesis_pdf(payload):
     if any(len(items)>1 for key,items in grouped.items() if key not in ('biberonnage','dcdc','wltc')):
         raise ValueError('Un rapport a été sélectionné plusieurs fois.')
     project=payload.get('project') or {};builder=ReportBuilder();story=builder.story
-    story += [Spacer(1,26*mm),paragraph('WATTMAN  /  INGÉNIERIE ÉLECTRIQUE','small'),Spacer(1,10*mm),
-              paragraph('Synthèse électrique\net autonomie','cover'),paragraph(project.get('name') or 'Projet Wattman','project')]
+    # Page de garde : titre et projet sont dessinés dans le bandeau (ReportDocument.cover).
+    story += [NextPageTemplate('report'),Spacer(1,COVER_BAND-22*mm+10*mm),paragraph('Fiche projet','h2')]
     metadata=[]
     for label,key in [('Date du projet','date'),('Pilote Wattman','pilotWattman')]:
         if project.get(key):metadata.append([label,plain(project[key])])
     metadata.append(['Date du rapport',payload.get('generatedDate') or datetime.now().strftime('%d/%m/%Y')])
-    story += [table(['Projet','Informations'],metadata,[WIDTH*.32,WIDTH*.68]),Spacer(1,14*mm),paragraph('Périmètre du rapport','h2')]
+    story += [table(['Projet','Informations'],metadata,[WIDTH*.32,WIDTH*.68]),Spacer(1,8*mm),paragraph('Périmètre du rapport','h2')]
+    scope=[]
     for module in MODULE_NAMES:
         if module not in modules:continue
         items=grouped[module]
@@ -362,10 +477,19 @@ def build_synthesis_pdf(payload):
         label=MODULE_NAMES[module]+(f" - {count} profil{'s' if count>1 else ''}" if count else ' - 3 cycles' if module=='wltc' else ' - 3 profils de charge')
         if module in ('dcdc','wltc'):
             label=MODULE_NAMES[module]+f" - {len(items)} configuration{'s' if len(items)>1 else ''}, 3 {'cycles' if module=='wltc' else 'saisons'} chacune"
-        story.append(paragraph(label))
+        title,_,detail=label.partition(' - ')
+        scope.append((module,title,detail))
+    scope_table=Table([['',paragraph(title,'scope_title'),paragraph(detail,'small')] for _m,title,detail in scope],
+                      colWidths=[3*mm,WIDTH*.42,WIDTH*.58-3*mm],hAlign='LEFT')
+    scope_style=[('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(1,0),(-1,-1),9),('LEFTPADDING',(0,0),(0,-1),0),
+                 ('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),5),('LINEBELOW',(0,0),(-1,-1),.4,RULE)]
+    for index,(module,_t,_d) in enumerate(scope):
+        scope_style.append(('BACKGROUND',(0,index),(0,index),MODULE_COLORS[module]))
+    scope_table.setStyle(TableStyle(scope_style))
+    story.append(scope_table)
     story += [PageBreak(),paragraph('Sommaire','h1')]
     toc=TableOfContents();toc.levelStyles=[
-        ParagraphStyle('TOCModule',fontName='Helvetica-Bold',fontSize=10,leading=16,textColor=INK,spaceBefore=9,leftIndent=0,rightIndent=18),
+        ParagraphStyle('TOCModule',fontName='Helvetica-Bold',fontSize=10,leading=16,textColor=GRAPHITE,spaceBefore=9,leftIndent=0,rightIndent=18),
         ParagraphStyle('TOCProfile',fontName='Helvetica',fontSize=9,leading=14,textColor=MUTED,leftIndent=12,rightIndent=18)]
     story.append(toc)
     for module in MODULE_NAMES:
