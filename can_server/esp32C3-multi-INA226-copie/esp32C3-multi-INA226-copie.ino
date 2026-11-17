@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <Preferences.h>
 #include <math.h>
+#include <algorithm>
 #include <U8x8lib.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -10,7 +11,7 @@
 #include <mcp_can.h>
 #include "esp_timer.h"
 
-constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v6 | calibrated-shunt";
+constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v9 | csv-gain-filter";
 
 void printFirmwareVersion() {
   Serial.printf("[FIRMWARE] %s | build %s %s\n", FIRMWARE_VERSION, __DATE__, __TIME__);
@@ -489,42 +490,117 @@ bool inaReadRegister16(uint8_t addr, uint8_t reg, uint16_t& value) {
   return ok;
 }
 
+// The INA226 input offset depends on the conversion time and on averaging, so
+// each acquisition profile has its own zero. Profiles (shunt only, continuous,
+// worst-case conversion-time margin included):
+//   0: <=100 Hz  -> AVG 4 x 2.116 ms (9.312 ms worst case, below 10 ms)
+//   1: <=400 Hz  -> 2.116 ms
+//   2: <=1000 Hz -> 588 us
+//   3: above     -> 204 us
+constexpr uint8_t INA_PROFILE_COUNT = 4;
+// CSV channel A: mean of seven checkpoint means = 0.893113 A,
+// simultaneous Fluke = 1.006600 A. This scales the PREVIOUSLY calibrated output.
+// B has no reference dataset and must not inherit A's correction.
+constexpr float CSV_OUTPUT_SCALE[2] = {1.1270690271f, 1.0f};
+constexpr bool CURRENT_FILTER_ENABLED = true;
+constexpr uint32_t CURRENT_AVERAGE_MS = 20;
+constexpr uint8_t CURRENT_FILTER_CAPACITY = 40; // 20 ms at max supported 2000 Hz.
+struct CurrentFilter {
+  float previous[3] = {};
+  float values[CURRENT_FILTER_CAPACITY] = {};
+  double sum = 0;
+  uint8_t historyCount = 0, historyPos = 0, count = 0, pos = 0, width = 1;
+};
+CurrentFilter currentFilters[2]; // Only acquisition accesses these after start.
+
+void resetCurrentFilter(uint8_t i, uint32_t frequency) {
+  currentFilters[i] = CurrentFilter{};
+  uint32_t width = (frequency * CURRENT_AVERAGE_MS + 999) / 1000;
+  if (width < 1) width = 1;
+  if (width > CURRENT_FILTER_CAPACITY) width = CURRENT_FILTER_CAPACITY;
+  currentFilters[i].width = (uint8_t)width;
+}
+
+float filterCurrent(uint8_t i, float input) {
+  if (!CURRENT_FILTER_ENABLED) return input;
+  CurrentFilter& f = currentFilters[i];
+  f.previous[f.historyPos] = input;
+  f.historyPos = (f.historyPos + 1) % 3;
+  if (f.historyCount < 3) ++f.historyCount;
+  float sample = input;
+  if (f.historyCount == 3) {
+    const float a = f.previous[0], b = f.previous[1], c = f.previous[2];
+    sample = fmaxf(fminf(a, b), fminf(fmaxf(a, b), c));
+  }
+  if (f.count == f.width) f.sum -= f.values[f.pos];
+  else ++f.count;
+  f.values[f.pos] = sample;
+  f.sum += sample;
+  f.pos = (f.pos + 1) % f.width;
+  return (float)(f.sum / f.count); // No delay, no zero-filled startup transient.
+}
+
+constexpr uint32_t INA_PROFILE_FREQ[INA_PROFILE_COUNT] = {100, 400, 1000, 2000};
+volatile uint8_t inaActiveProfile[2] = {0, 0};
+
+uint8_t inaProfileFor(uint32_t freq) {
+  return freq <= 100 ? 0 : (freq <= 400 ? 1 : (freq <= 1000 ? 2 : 3));
+}
+
 bool configureINA226(uint8_t addr, uint32_t freq) {
-  // Shunt only, continuous. Include worst-case conversion-time margin.
-  // <=100 Hz: 4 x 1.1 ms; <=400: 2.116 ms; <=1000: 588 us; above: 204 us.
-  const uint16_t avg = freq <= 100 ? 1 : 0;
-  const uint16_t ct = freq <= 100 ? 4 : (freq <= 400 ? 5 : (freq <= 1000 ? 3 : 1));
+  const uint8_t profile = inaProfileFor(freq);
+  const uint16_t avg = profile == 0 ? 1 : 0;
+  const uint16_t ct = profile <= 1 ? 5 : (profile == 2 ? 3 : 1);
   const uint16_t config = (avg << 9) | (ct << 6) | (ct << 3) | 0b101;
   uint16_t actual = 0;
   if (!inaWriteRegister16(addr, REG_CONFIG, config)
       || !inaReadRegister16(addr, REG_CONFIG, actual)
       || (actual & 0x0FFF) != config) return false;
   delay(12); // Discard the previous configuration's conversion before starting.
+  inaActiveProfile[addr == ADDR_INA_B ? 1 : 0] = profile;
+  resetCurrentFilter(addr == ADDR_INA_B ? 1 : 0, freq);
   return true;
 }
 
 Preferences calibrationStore;
-float calibrationZero[2] = {0, 0}; // Raw ADC counts at zero current.
+// Raw ADC counts at zero current, one value per conversion profile.
+float calibrationZero[2][INA_PROFILE_COUNT] = {{0, 0, 0, 0}, {0, 0, 0, 0}};
 float calibrationGain[2] = {1, 1};
 bool calibrationHasZero[2] = {false, false};
 bool calibrationHasGain[2] = {false, false};
 volatile uint32_t inaReadErrors[2] = {0, 0};
 volatile uint32_t inaSaturations[2] = {0, 0};
 
+// v2 record: zero[4] (counts), gain, hasZero, hasGain.
+constexpr size_t CAL_RECORD_V2 = INA_PROFILE_COUNT + 3;
+const char* calibrationKeyV2(int i) { return i ? "calB-v2" : "calA-v2"; }
+
 void loadCalibration() {
   if (!calibrationStore.begin("ina-cal-v1", false)) return;
   for (int i = 0; i < 2; ++i) {
-    float record[4] = {0, 1, 0, 0};
-    // B's old record used the incorrect R100 conversion; recalibrate for R010.
-    if (calibrationStore.getBytesLength(i ? "recordB-r010" : "recordA") == sizeof(record))
-      calibrationStore.getBytes(i ? "recordB-r010" : "recordA", record, sizeof(record));
-    calibrationZero[i] = record[0]; calibrationGain[i] = record[1];
-    calibrationHasZero[i] = record[2] == 1;
-    calibrationHasGain[i] = record[3] == 1;
-    if (!isfinite(calibrationZero[i]) || fabsf(calibrationZero[i]) > 40
-        || !isfinite(calibrationGain[i]) || calibrationGain[i] < 0.8f
-        || calibrationGain[i] > 1.2f) {
-      calibrationZero[i] = 0; calibrationGain[i] = 1;
+    float v2[CAL_RECORD_V2] = {0, 0, 0, 0, 1, 0, 0};
+    if (calibrationStore.getBytesLength(calibrationKeyV2(i)) == sizeof(v2)) {
+      calibrationStore.getBytes(calibrationKeyV2(i), v2, sizeof(v2));
+    } else {
+      // Migrate the single-profile v1 record (measured at 100 Hz) to every profile.
+      // B's old record used the incorrect R100 conversion; recalibrate for R010.
+      float v1[4] = {0, 1, 0, 0};
+      if (calibrationStore.getBytesLength(i ? "recordB-r010" : "recordA") == sizeof(v1))
+        calibrationStore.getBytes(i ? "recordB-r010" : "recordA", v1, sizeof(v1));
+      for (int p = 0; p < INA_PROFILE_COUNT; ++p) v2[p] = v1[0];
+      v2[4] = v1[1]; v2[5] = v1[2]; v2[6] = v1[3];
+    }
+    bool valid = isfinite(v2[4]) && v2[4] >= 0.8f / CSV_OUTPUT_SCALE[i] && v2[4] <= 1.2f;
+    for (int p = 0; p < INA_PROFILE_COUNT; ++p) {
+      valid = valid && isfinite(v2[p]) && fabsf(v2[p]) <= 40;
+      calibrationZero[i][p] = v2[p];
+    }
+    calibrationGain[i] = v2[4];
+    calibrationHasZero[i] = v2[5] == 1;
+    calibrationHasGain[i] = v2[6] == 1;
+    if (!valid) {
+      for (int p = 0; p < INA_PROFILE_COUNT; ++p) calibrationZero[i][p] = 0;
+      calibrationGain[i] = 1;
       calibrationHasZero[i] = calibrationHasGain[i] = false;
     }
   }
@@ -539,8 +615,11 @@ bool readCalibratedCurrent(uint8_t index, int16_t& raw, float& current) {
   if (raw >= 32760 || raw <= -32760) {
     ++inaSaturations[index]; return false;
   }
-  current = (raw - calibrationZero[index]) * SHUNT_VOLTAGE_LSB_V
-      / (index ? RSHUNT_B_OHMS : RSHUNT_A_OHMS) * calibrationGain[index];
+  // I = (raw - zero[profile]) * 2.5 uV / Rshunt * gain
+  current = (raw - calibrationZero[index][inaActiveProfile[index]]) * SHUNT_VOLTAGE_LSB_V
+      / (index ? RSHUNT_B_OHMS : RSHUNT_A_OHMS) * calibrationGain[index]
+      * CSV_OUTPUT_SCALE[index];
+  current = filterCurrent(index, current);
   return true;
 }
 
@@ -976,18 +1055,152 @@ void sendAcquisitionError(int statusCode, const char* message) {
   server.send(statusCode, "application/json", String("{\"message\":\"") + message + "\"}");
 }
 
-// Calibration is allowed only while idle. No invented reference from a load setting.
+// ---------------------------------------------------------------------------
+// Offset (zero) and gain calibration. Allowed only while idle. Never automatic:
+// a real DC current must never be mistaken for sensor offset, so the firmware
+// does not auto-tare at boot nor track the zero during acquisitions.
+//
+// Robust zero estimator, per conversion profile p (raw values x_k in ADC counts):
+//   median m, MAD = median|x_k - m|, sigma_r = 1.4826 * MAD   (Gaussian-consistent)
+//   keep |x_k - m| <= 4 * sigma_r                              (spike rejection)
+//   zero_p = mean of kept samples                              (sub-LSB, noise acts as dither)
+//   SE = max(sigma_kept / sqrt(N_kept), sd(8 block means) / sqrt(8))
+//        (block term catches correlated noise, e.g. mains pickup)
+//   drift = least-squares slope * (N - 1), must stay below max(2, 3 * sigma*sqrt(12/N)) counts
+// Applied current: I = (raw - zero_p) * 2.5 uV / Rshunt * gain
+// ---------------------------------------------------------------------------
+constexpr int CAL_MAX_SAMPLES = 2000;
+constexpr int CAL_BLOCKS = 8;
+constexpr int CAL_SAMPLES[INA_PROFILE_COUNT] = {1200, 1500, 2000, 2000};
+// delay(n) waits at least n-1 ms: each period exceeds the worst-case conversion
+// time (9.312 / 2.328 / 0.647 / 0.224 ms). Total capture is about 28 s.
+constexpr uint32_t CAL_PERIOD_MS[INA_PROFILE_COUNT] = {11, 4, 2, 2};
+constexpr double CAL_MAX_OUTLIER_FRACTION = 0.05;
+constexpr double CAL_ZERO_MAX_SE_COUNTS = 1.0;      // 0.25 mA on R010, profile 0 (100 Hz)
+constexpr double CAL_FAST_ZERO_MAX_SE_COUNTS = 2.0; // faster profiles, else inherit profile 0
+int16_t calSamples[CAL_MAX_SAMPLES];  // time order
+int16_t calSorted[CAL_MAX_SAMPLES];   // sorted copy for the median
+uint16_t calDeviations[CAL_MAX_SAMPLES];
+String lastCalibrationReport[2] = {"null", "null"};
+
+struct CalCapture {
+  int n = 0, kept = 0, outliers = 0;
+  double estimate = 0, mean = 0, stdKept = 0, median = 0, sigmaRobust = 0;
+  double se = 0, drift = 0, driftLimit = 0, blockSpread = 0;
+};
+
+// Returns 0 on success, otherwise an HTTP status; `error` explains why.
+int captureRobust(uint8_t i, uint8_t profile, CalCapture& c, const char*& error) {
+  const uint8_t addr = i ? ADDR_INA_B : ADDR_INA_A;
+  if (!configureINA226(addr, INA_PROFILE_FREQ[profile])) { error = "INA configuration failed."; return 503; }
+  const int n = CAL_SAMPLES[profile];
+  double rawSum = 0;
+  for (int k = 0; k < n; ++k) {
+    delay(CAL_PERIOD_MS[profile]); // Each observation is a distinct conversion.
+    uint16_t bits;
+    if (!inaReadRegister16(addr, REG_SHUNT, bits)) { ++inaReadErrors[i]; error = "I2C failure."; return 503; }
+    const int16_t raw = (int16_t)bits;
+    if (raw >= 32760 || raw <= -32760) { ++inaSaturations[i]; error = "ADC saturated."; return 422; }
+    calSamples[k] = raw;
+    rawSum += raw;
+  }
+  c.n = n; c.mean = rawSum / n;
+
+  // Median / MAD robust scale on a sorted copy (calSamples keeps time order).
+  memcpy(calSorted, calSamples, n * sizeof(int16_t));
+  std::sort(calSorted, calSorted + n);
+  c.median = (n % 2) ? calSorted[n / 2] : 0.5 * (calSorted[n / 2 - 1] + calSorted[n / 2]);
+  for (int k = 0; k < n; ++k) calDeviations[k] = (uint16_t)fmin(65535.0, fabs(calSorted[k] - c.median));
+  std::sort(calDeviations, calDeviations + n);
+  const double mad = (n % 2) ? calDeviations[n / 2] : 0.5 * (calDeviations[n / 2 - 1] + calDeviations[n / 2]);
+  c.sigmaRobust = fmax(1.4826 * mad, 1.0); // Floor at 1 count: quantisation alone is ~0.29.
+  const double clip = 4 * c.sigmaRobust;
+
+  // Single time-ordered pass over the kept samples: clipped mean/variance,
+  // least-squares drift and block means (all immune to the rejected spikes).
+  double kMeanClip = 0, kM2 = 0, sk = 0, skk = 0, sx = 0, skx = 0;
+  double blockSums[CAL_BLOCKS] = {};
+  int blockCounts[CAL_BLOCKS] = {};
+  int kept = 0;
+  for (int k = 0; k < n; ++k) {
+    const double x = calSamples[k];
+    if (fabs(x - c.median) > clip) continue;
+    ++kept;
+    const double d = x - kMeanClip;
+    kMeanClip += d / kept;
+    kM2 += d * (x - kMeanClip);
+    sk += k; skk += (double)k * k; sx += x; skx += k * x;
+    const int b = (int)((int64_t)k * CAL_BLOCKS / n);
+    blockSums[b] += x; ++blockCounts[b];
+  }
+  c.kept = kept; c.outliers = n - kept;
+  c.estimate = kMeanClip;
+  c.stdKept = kept > 1 ? sqrt(kM2 / (kept - 1)) : 0;
+  const double sxxK = kept * skk - sk * sk;
+  c.drift = sxxK > 0 ? (kept * skx - sk * sx) / sxxK * (n - 1) : 0;
+  c.driftLimit = fmax(2.0, 3 * c.stdKept * sqrt(12.0 / (kept > 0 ? kept : 1)));
+
+  // Correlated-noise aware standard error from block means.
+  double bMean = 0, bM2 = 0, bMin = 1e9, bMax = -1e9;
+  int blocks = 0;
+  for (int b = 0; b < CAL_BLOCKS; ++b) {
+    if (!blockCounts[b]) continue;
+    const double m = blockSums[b] / blockCounts[b];
+    ++blocks;
+    const double d = m - bMean;
+    bMean += d / blocks;
+    bM2 += d * (m - bMean);
+    bMin = fmin(bMin, m); bMax = fmax(bMax, m);
+  }
+  c.blockSpread = blocks ? bMax - bMin : 0;
+  const double blockSe = blocks > 1 ? sqrt(bM2 / (blocks - 1)) / sqrt((double)blocks) : 0;
+  c.se = fmax(c.stdKept / sqrt((double)(kept > 0 ? kept : 1)), blockSe);
+
+  Serial.printf("[CAL %c P%u] N=%d zero=%.3f counts median=%.1f sigma=%.2f robust=%.2f SE=%.3f drift=%.2f/%.2f outliers=%d\n",
+                i ? 'B' : 'A', profile, n, c.estimate, c.median, c.stdKept, c.sigmaRobust,
+                c.se, c.drift, c.driftLimit, c.outliers);
+  if (kept < 2 || c.outliers > n * CAL_MAX_OUTLIER_FRACTION) { error = "Too many spikes (>5 %): check wiring/EMI."; return 422; }
+  if (fabs(c.drift) > c.driftLimit) { error = "Zero drifts during capture: wait for thermal stability."; return 422; }
+  return 0;
+}
+
+String captureJson(const CalCapture& c, double step) {
+  String json = "{\"zero_raw\":" + String(c.estimate, 4);
+  json += ",\"zero_mA\":" + String(c.estimate * step * 1000, 4);
+  json += ",\"se_mA\":" + String(c.se * step * 1000, 4);
+  json += ",\"std_mA\":" + String(c.stdKept * step * 1000, 3);
+  json += ",\"robust_sigma_mA\":" + String(c.sigmaRobust * step * 1000, 3);
+  json += ",\"drift_mA\":" + String(c.drift * step * 1000, 4);
+  json += ",\"block_spread_mA\":" + String(c.blockSpread * step * 1000, 4);
+  json += ",\"samples\":" + String(c.n) + ",\"outliers\":" + String(c.outliers) + "}";
+  return json;
+}
+
 void handleCalibrationStatus() {
-  String json = "{\"channels\":[";
+  String json = "{\"firmware\":\"" + String(FIRMWARE_VERSION) + "\",\"channels\":[";
   for (int i = 0; i < 2; ++i) {
     if (i) json += ",";
+    const double step = SHUNT_VOLTAGE_LSB_V / (i ? RSHUNT_B_OHMS : RSHUNT_A_OHMS);
     json += "{\"channel\":\"" + String(i ? "B" : "A") + "\",\"zero_raw\":";
-    json += String(calibrationZero[i], 6);
+    json += String(calibrationZero[i][0], 6); // 100 Hz profile, kept for compatibility.
+    json += ",\"zero_profiles\":[";
+    for (int p = 0; p < INA_PROFILE_COUNT; ++p) {
+      if (p) json += ",";
+      json += "{\"max_hz\":" + String(p == 3 ? 0 : INA_PROFILE_FREQ[p]);
+      json += ",\"zero_raw\":" + String(calibrationZero[i][p], 4);
+      json += ",\"zero_mA\":" + String(calibrationZero[i][p] * step * 1000, 4) + "}";
+    }
+    json += "],\"active_profile\":" + String(inaActiveProfile[i]);
     json += ",\"gain\":" + String(calibrationGain[i], 8);
+    json += ",\"csv_output_scale\":" + String(CSV_OUTPUT_SCALE[i], 8);
+    json += ",\"effective_gain\":" + String(calibrationGain[i] * CSV_OUTPUT_SCALE[i], 8);
+    json += ",\"filter_enabled\":" + jsonBool(CURRENT_FILTER_ENABLED);
+    json += ",\"filter_average_ms\":" + String(CURRENT_AVERAGE_MS);
     json += ",\"zero_calibrated\":" + jsonBool(calibrationHasZero[i]);
     json += ",\"gain_calibrated\":" + jsonBool(calibrationHasGain[i]);
     json += ",\"i2c_errors\":" + String(inaReadErrors[i]);
-    json += ",\"saturations\":" + String(inaSaturations[i]) + "}";
+    json += ",\"saturations\":" + String(inaSaturations[i]);
+    json += ",\"last_calibration\":" + lastCalibrationReport[i] + "}";
   }
   server.send(200, "application/json", json + "]}");
 }
@@ -1003,6 +1216,8 @@ void handleCalibration() {
     sendAcquisitionError(400, "Use channel=A|B and action=zero|reference|reset."); return;
   }
   const int i = channel == "B" ? 1 : 0;
+  const uint8_t addr = i ? ADDR_INA_B : ADDR_INA_A;
+  const double step = SHUNT_VOLTAGE_LSB_V / (i ? RSHUNT_B_OHMS : RSHUNT_A_OHMS);
   double reference = 0;
   if (action == "reference") {
     const String input = server.arg("reference_A");
@@ -1015,65 +1230,84 @@ void handleCalibration() {
       sendAcquisitionError(400, "Zero first; reference_A must be signed amperes, 0.05..7.5 A (R010)."); return;
     }
   }
-  float zero = calibrationZero[i], gain = calibrationGain[i];
-  double mean = 0, m2 = 0;
-  int16_t low = 32767, high = -32768;
-  if (action != "reset") {
-    const uint8_t addr = i ? ADDR_INA_B : ADDR_INA_A;
-    if (!configureINA226(addr, 100)) {
-      sendAcquisitionError(503, "INA configuration failed."); return;
-    }
-    for (int n = 1; n <= 128; ++n) {
-      delay(6); // > 4 x 1.21 ms: each observation is a new averaged conversion.
-      uint16_t bits;
-      if (!inaReadRegister16(addr, REG_SHUNT, bits)) {
-        ++inaReadErrors[i]; sendAcquisitionError(503, "I2C failure; calibration unchanged."); return;
+
+  float zero[INA_PROFILE_COUNT];
+  for (int p = 0; p < INA_PROFILE_COUNT; ++p) zero[p] = calibrationZero[i][p];
+  float gain = calibrationGain[i];
+  bool hasZero = calibrationHasZero[i], hasGain = calibrationHasGain[i];
+  String report = "null";
+
+  if (action == "zero") {
+    // Profile 0 (<=100 Hz) is mandatory; the others fall back to it if their own
+    // capture is not trustworthy (their offset difference is below that noise).
+    String profiles = "[";
+    for (int p = 0; p < INA_PROFILE_COUNT; ++p) {
+      CalCapture c;
+      const char* error = "";
+      const int status = captureRobust(i, p, c, error);
+      bool ok = status == 0;
+      if (ok && fabs(c.estimate) > 40) { ok = false; error = "Zero beyond +/-40 counts: remove current / check montage."; }
+      const double maxSe = p == 0 ? CAL_ZERO_MAX_SE_COUNTS : CAL_FAST_ZERO_MAX_SE_COUNTS;
+      if (ok && c.se > maxSe) { ok = false; error = "Mean too uncertain (noise): reduce EMI or average longer."; }
+      if (p == 0 && !ok) {
+        configureINA226(addr, 100);
+        String body = "{\"message\":\"" + String(error) + " Calibration unchanged.\",\"profile_100Hz\":";
+        body += (status == 503 || c.n == 0) ? "null" : captureJson(c, step);
+        server.send(status ? status : 422, "application/json", body + "}");
+        return;
       }
-      const int16_t raw = (int16_t)bits;
-      if (raw >= 32760 || raw <= -32760) {
-        ++inaSaturations[i]; sendAcquisitionError(422, "ADC saturated; calibration unchanged."); return;
-      }
-      if (raw < low) low = raw;
-      if (raw > high) high = raw;
-      const double delta = raw - mean;
-      mean += delta / n;
-      m2 += delta * (raw - mean);
+      zero[p] = ok ? c.estimate : zero[0];
+      if (p) profiles += ",";
+      profiles += "{\"max_hz\":" + String(p == 3 ? 0 : INA_PROFILE_FREQ[p]);
+      profiles += ",\"source\":\"" + String(ok ? "measured" : "inherited_from_100Hz") + "\"";
+      if (!ok) profiles += ",\"reason\":\"" + String(error) + "\"";
+      profiles += ",\"capture\":" + (c.n ? captureJson(c, step) : String("null")) + "}";
     }
-    const double step = SHUNT_VOLTAGE_LSB_V / (i ? RSHUNT_B_OHMS : RSHUNT_A_OHMS);
-    const double stdA = sqrt(m2 / 127) * step;
-    const double allowedStd = fmax(2 * step, fabs(reference) * 0.005);
-    if (stdA > allowedStd || (high - low) * step > 8 * allowedStd) {
-      String error = "{\"message\":\"Unstable readings; calibration unchanged\",\"raw_mean\":";
-      error += String(mean, 4) + ",\"std_A\":" + String(stdA, 8);
-      error += ",\"peak_to_peak_A\":" + String((high-low)*step, 8) + "}";
-      server.send(422, "application/json", error); return;
+    report = "{\"action\":\"zero\",\"profiles\":" + profiles + "]}";
+    gain = 1; hasZero = true; hasGain = false; // A new zero invalidates the old gain reference.
+  } else if (action == "reference") {
+    CalCapture c;
+    const char* error = "";
+    const int status = captureRobust(i, 0, c, error);
+    const double maxSe = fmax(CAL_ZERO_MAX_SE_COUNTS, fabs(reference) * 0.001 / step); // 0.1 % of reading
+    if (status == 0 && c.se > maxSe) error = "Mean too uncertain (noise): reduce EMI or average longer.";
+    if (status != 0 || c.se > maxSe) {
+      String body = "{\"message\":\"" + String(error) + " Calibration unchanged.\",\"capture\":";
+      body += c.n ? captureJson(c, step) : String("null");
+      server.send(status ? status : 422, "application/json", body + "}");
+      return;
     }
-    if (action == "zero") {
-      if (fabs(mean) > 40) {
-        sendAcquisitionError(422, "Zero too far from zero: remove current; calibration unchanged."); return;
-      }
-      zero = mean;
-      gain = 1; // New zero invalidates the old gain reference.
-    } else {
-      const double measured = (mean - zero) * step;
-      const double proposed = reference / measured;
-      if (!isfinite(proposed) || proposed < 0.8 || proposed > 1.2) {
-        sendAcquisitionError(422, "Gain outside 0.8..1.2: investigate readings/shunt before calibration."); return;
-      }
-      gain = proposed;
+    // Replace the gain using unfiltered ADC capture, including the CSV scale
+    // in the denominator so a later reference does not double-correct it.
+    const double measured = (c.estimate - zero[0]) * step * CSV_OUTPUT_SCALE[i];
+    const double proposed = reference / measured;
+    if (!isfinite(proposed) || proposed * CSV_OUTPUT_SCALE[i] < 0.8
+        || proposed * CSV_OUTPUT_SCALE[i] > 1.2) {
+      sendAcquisitionError(422, "Gain outside 0.8..1.2: investigate readings/shunt before calibration."); return;
     }
+    gain = proposed; hasGain = true;
+    report = "{\"action\":\"reference\",\"reference_A\":" + String(reference, 6)
+           + ",\"measured_A\":" + String(measured, 6) + ",\"gain\":" + String(gain, 8)
+           + ",\"capture\":" + captureJson(c, step) + "}";
   } else {
-    zero = 0; gain = 1;
+    for (int p = 0; p < INA_PROFILE_COUNT; ++p) zero[p] = 0;
+    gain = 1; hasZero = hasGain = false;
+    report = "{\"action\":\"reset\"}";
   }
+  if (action != "reset") configureINA226(addr, 100);
+
   // One versioned blob commits a complete calibration atomically.
-  const float record[4] = {zero, gain, action == "reset" ? 0.0f : 1.0f,
-                          action == "reference" ? 1.0f : 0.0f};
-  if (calibrationStore.putBytes(i ? "recordB-r010" : "recordA", record, sizeof(record)) != sizeof(record)) {
+  float record[CAL_RECORD_V2];
+  for (int p = 0; p < INA_PROFILE_COUNT; ++p) record[p] = zero[p];
+  record[4] = gain; record[5] = hasZero ? 1.0f : 0.0f; record[6] = hasGain ? 1.0f : 0.0f;
+  if (calibrationStore.putBytes(calibrationKeyV2(i), record, sizeof(record)) != sizeof(record)) {
     sendAcquisitionError(500, "Calibration could not be saved."); return;
   }
-  calibrationZero[i] = zero; calibrationGain[i] = gain;
-  calibrationHasZero[i] = record[2] == 1;
-  calibrationHasGain[i] = record[3] == 1;
+  for (int p = 0; p < INA_PROFILE_COUNT; ++p) calibrationZero[i][p] = zero[p];
+  calibrationGain[i] = gain;
+  calibrationHasZero[i] = hasZero;
+  calibrationHasGain[i] = hasGain;
+  lastCalibrationReport[i] = report;
   latestValidA = latestValidB = false;
   handleCalibrationStatus();
 }
