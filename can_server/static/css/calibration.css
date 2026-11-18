@@ -578,3 +578,9 @@ html body table.cal-heatmap.cal-heatmap th { color: var(--rg-ink-3) !important; 
 html body table.cal-heatmap .cal-hm-cell.empty { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rg-ink-3) 18%, transparent) 0 4px, transparent 4px 9px) !important; }
 .cal-hm-wrap { overflow-x: auto; overscroll-behavior-x: contain; }
 #globalKpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+
+/* Feu tricolore des valeurs mesurées / erreurs : vert conforme, orange à surveiller, rouge hors tolérance. */
+.cal-val { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cal-val.pass { color: var(--cal-ok); }
+.cal-val.warning { color: var(--cal-warn); }
+.cal-val.fail { color: var(--cal-bad); }

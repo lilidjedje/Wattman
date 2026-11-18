@@ -396,7 +396,7 @@
                             <div class="panel-title"><h2>Ce que calcule la page</h2></div>
                             <dl class="cal-defs">
                                 <dt>Complétude</dt><dd>N en base ÷ (durée × fréquence). Comparée au nombre relevé que vous saisissez.</dd>
-                                <dt>Erreur à un instant</dt><dd>E = moyenne INA sur la fenêtre − lecture Fluke. Verdict : vert si |E| ≤ limite Fluke, orange si |E| ≤ limite Fluke + limite INA226 non calibré, rouge au-delà.</dd>
+                                <dt>Erreur à un instant</dt><dd>E = moyenne INA sur la fenêtre − lecture Fluke. Tolérance T = ±0,1 % de la référence sous 500 mA, ±0,3 % de 500 à 900 mA, ±1 % de 900 mA à 1 A inclus, ±0,3 % au-delà de 1 A, sans descendre sous la limite du Fluke (on ne peut pas vérifier plus fin que la référence). Verdict : vert si |E| ≤ T, orange (à la limite) si |E| ≤ 1,5 × T, rouge au-delà.</dd>
                                 <dt>Erreur normalisée</dt><dd>Eₙ = E ÷ √(U_Fluke² + U_INA,95²). |Eₙ| ≤ 1 : les deux instruments sont compatibles.</dd>
                                 <dt>Biais (offset)</dt><dd>Moyenne des erreurs, avec U95 = 2σ/√n. À un seul niveau de courant, l’offset et le gain ne sont pas séparables.</dd>
                                 <dt>Résolution INA226</dt><dd>LSB = 2,5 µV ÷ R shunt (R010 → 250 µA/bit). Courant max = 81,92 mV ÷ R shunt (pleine échelle de la tension shunt), dissipation P = I² × R.</dd>

@@ -26,3 +26,28 @@ table td.xl-sleep-total { background-color: #FFF2CC !important; color: #0000FF !
 /* Bilan DCDC : comparaison à la sortie DCDC, activation 0/1 */
 .xl-dcdc-over { background-color: #FFC000 !important; }
 .xl-dcdc-under { background-color: #00B050 !important; }
+
+/* Feu tricolore des synthèses (ExcelColors.levelClass) : vert = bon, orange = à la limite,
+   rouge = pas bon. Spécificité renforcée : prime aussi dans les rapports intégrés de l'export. */
+html body .st-ok, html body .st-ok * { color: #15803D !important; }
+html body .st-warn, html body .st-warn * { color: #B45309 !important; }
+html body .st-bad, html body .st-bad * { color: #B91C1C !important; }
+html body :is(td, th, .customer-autonomy-card, .summary-scenario-card, .chart-peak).st-ok { background-color: #DCFCE7 !important; }
+html body :is(td, th, .customer-autonomy-card, .summary-scenario-card, .chart-peak).st-warn { background-color: #FFEDD5 !important; }
+html body :is(td, th, .customer-autonomy-card, .summary-scenario-card, .chart-peak).st-bad { background-color: #FEE2E2 !important; }
+html body :is(.customer-autonomy-card, .summary-scenario-card).st-ok { border-color: #22C55E !important; box-shadow: inset 4px 0 0 #22C55E !important; }
+html body :is(.customer-autonomy-card, .summary-scenario-card).st-warn { border-color: #F59E0B !important; box-shadow: inset 4px 0 0 #F59E0B !important; }
+html body :is(.customer-autonomy-card, .summary-scenario-card).st-bad { border-color: #EF4444 !important; box-shadow: inset 4px 0 0 #EF4444 !important; }
+html body .st-ok, html body .st-warn, html body .st-bad { font-weight: 700; }
+:root[data-theme="dark"] body .st-ok, :root[data-theme="dark"] body .st-ok * { color: #4ADE80 !important; }
+:root[data-theme="dark"] body .st-warn, :root[data-theme="dark"] body .st-warn * { color: #FBBF24 !important; }
+:root[data-theme="dark"] body .st-bad, :root[data-theme="dark"] body .st-bad * { color: #F87171 !important; }
+:root[data-theme="dark"] body :is(td, th, .customer-autonomy-card, .summary-scenario-card, .chart-peak).st-ok { background-color: rgba(34, 197, 94, .14) !important; }
+:root[data-theme="dark"] body :is(td, th, .customer-autonomy-card, .summary-scenario-card, .chart-peak).st-warn { background-color: rgba(245, 158, 11, .14) !important; }
+:root[data-theme="dark"] body :is(td, th, .customer-autonomy-card, .summary-scenario-card, .chart-peak).st-bad { background-color: rgba(239, 68, 68, .14) !important; }
+
+/* Aucun fond blanc sous le texte d'une case colorée (titres, valeurs, unités). */
+html body :is(.st-ok, .st-warn, .st-bad) * { background: transparent !important; background-color: transparent !important; }
+html body .chart-peak.st-ok { border-color: #22C55E !important; }
+html body .chart-peak.st-warn { border-color: #F59E0B !important; }
+html body .chart-peak.st-bad { border-color: #EF4444 !important; }

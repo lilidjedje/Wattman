@@ -7,9 +7,9 @@
     const UNITS = {A: 1, mA: 1e3, 'µA': 1e6};
     const DIGITS = {A: 6, mA: 3, 'µA': 1};
     const STATUS = {
-        pass: ['Conforme', 'Écart ≤ incertitude du Fluke'],
-        warning: ['À surveiller', 'Écart ≤ Fluke + limite INA226 non calibré'],
-        fail: ['Hors tolérance', 'Écart au-delà des limites'],
+        pass: ['Conforme', 'Écart ≤ tolérance (±0,1 % < 500 mA ; ±0,3 % de 500 à 900 mA ; ±1 % de 900 mA à 1 A ; ±0,3 % > 1 A ; plancher : limite Fluke)'],
+        warning: ['À la limite', 'Écart entre 1 et 1,5 × la tolérance'],
+        fail: ['Hors tolérance', 'Écart > 1,5 × la tolérance'],
         missing: ['Incomplet', 'Relevé ou données manquants'],
     };
     const state = {
@@ -920,10 +920,12 @@
                 amps(run.mean_A), amps(run.median_A), amps(run.std_A), amps(run.min_A), amps(run.max_A), amps(run.p2p_A),
                 `${amps(run.p01_A)} → ${amps(run.p99_A)}`, signed(run.drift_A_per_min), nf(3).format(run.drift_r2 ?? 0), signed(run.error_mean_A),
             ] : [`R${run.run_index}`, 'non reliée', '0', count(run.samples_reported), '—', '—', '—', '—', '—', '—', '—', '—', '—', '—', '—']));
-        table('checkpointTable', ['Répétition', 'Instant', 'Fluke', 'INA (moyenne)', 'σ fenêtre', 'Éch.', 'Erreur', 'Erreur %', 'Limite Fluke', 'Eₙ', 'Statut'],
+        table('checkpointTable', ['Répétition', 'Instant', 'Fluke', 'INA (moyenne)', 'σ fenêtre', 'Éch.', 'Erreur', 'Erreur %', 'Tolérance', 'Limite Fluke', 'Eₙ', 'Statut'],
             analysis.runs.flatMap(run => run.checkpoints.map(cp => [
-                `R${run.run_index}`, `${count(cp.t_s)} s`, amps(cp.reference_A), amps(cp.ina_mean_A), amps(cp.ina_std_A), count(cp.samples),
-                signed(cp.error_A), pct(cp.error_pct, 3), cp.reference_limit_A != null ? `±${amps(cp.reference_limit_A)}` : '—',
+                `R${run.run_index}`, `${count(cp.t_s)} s`, amps(cp.reference_A), `<span class="cal-val ${cp.status}">${amps(cp.ina_mean_A)}</span>`, amps(cp.ina_std_A), count(cp.samples),
+                `<span class="cal-val ${cp.status}">${signed(cp.error_A)}</span>`, `<span class="cal-val ${cp.status}">${pct(cp.error_pct, 3)}</span>`,
+                cp.tolerance_A != null ? `±${amps(cp.tolerance_A)} <small>(${cp.tolerance_floor === 'fluke' ? 'plancher Fluke' : `${nf(1).format(cp.tolerance_pct)} %`})</small>` : '—',
+                cp.reference_limit_A != null ? `±${amps(cp.reference_limit_A)}` : '—',
                 cp.normalized_error != null ? nf(2).format(cp.normalized_error) : '—',
                 `<span class="cal-pill ${cp.status}">${STATUS[cp.status][0]}</span>`,
             ])), true);

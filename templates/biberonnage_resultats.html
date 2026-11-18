@@ -338,7 +338,7 @@
             html += `<tr><td class="label-col">Pertes système pendant EF (Ah)</td>${result.losses.map(value => `<td class="${value ? 'pink-cell loss-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalLossL1 + result.totalLossL2)}</td></tr>`;
             html += `<tr><td class="label-col">Charge nominale EF (Ah)</td>${result.recharges.map(value => `<td class="${value ? 'pink-cell' : ''}">${value ? fmt(value, 3) : ''}</td>`).join('')}<td class="total-cell">${fmt(result.totalRechargeAh)}</td></tr>`;
             html += `<tr><td class="label-col">%SOC batterie perdus avant EF</td>${result.socLost.map((value, index) => `<td>${timeColumns[index].daysElapsed > 0 ? fmt(value) : ''}</td>`).join('')}<td class="total-cell"></td></tr>`;
-            html += `<tr><td class="label-col">%SOC batterie</td>${result.socCurrent.map((value, index) => { if (value === null) return '<td></td>'; const reset = index > 7 && Math.abs(value - result.targetSoc) < 1e-9; const excelClass = window.ExcelColors ? ExcelColors.socClass(value) : ''; return `<td class="${excelClass || (reset ? 'soc-reset' : '')}">${fmt(value)}</td>`; }).join('')}<td class="total-cell"></td></tr>`;
+            html += `<tr><td class="label-col">%SOC batterie</td>${result.socCurrent.map((value, index) => { if (value === null) return '<td></td>'; const reset = index > 7 && Math.abs(value - result.targetSoc) < 1e-9; const level = window.ExcelColors ? ExcelColors.levelClass(ExcelColors.socLevel(value, result.demandSoc)) : ''; const excelClass = window.ExcelColors ? ExcelColors.socClass(value) : ''; return `<td class="${level || excelClass || (reset ? 'soc-reset' : '')}">${fmt(value)}</td>`; }).join('')}<td class="total-cell"></td></tr>`;
             html += `<tr><td class="label-col">Énergie cumulée depuis le départ (Ah)</td>${result.cumulativeAh.map(value => `<td>${fmt(value, 4)}</td>`).join('')}<td class="total-cell">${fmt(result.sumVeilleAh)}</td></tr>`;
             return html;
         }
@@ -388,6 +388,20 @@
             setOutput(section, 'sum-recharge-wh', fmt(result.totalRechargeWh));
             setOutput(section, 'total-cost', fmt(result.totalCost));
             setOutput(section, 'bib-count', result.bibCount);
+            // Feu tricolore : part de l'énergie perdue (pertes EF) dans le coût total.
+            if (window.ExcelColors) {
+                const share = value => (result.totalCost > 0 ? value / result.totalCost * 100 : 0);
+                const paint = (names, level) => names.forEach(name => {
+                    const cell = section.querySelector(`[data-output="${name}"]`);
+                    if (!cell) return;
+                    cell.classList.remove('st-ok', 'st-warn', 'st-bad');
+                    if (level) cell.classList.add(`st-${level}`);
+                });
+                paint(['sum-loss-l1-ah', 'sum-loss-l1-wh'], ExcelColors.shareLevel(share(result.sumLossL1Wh)));
+                paint(['sum-loss-l2-ah', 'sum-loss-l2-wh'], ExcelColors.shareLevel(share(result.sumLossL2Wh)));
+                paint(['total-cost'], ExcelColors.shareLevel(share(result.sumLossL1Wh + result.sumLossL2Wh)));
+                paint(['sum-veille-ah', 'sum-veille-wh'], 'ok');
+            }
             updateCharts(analysis, section, result);
         }
 

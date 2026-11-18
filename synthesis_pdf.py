@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.graphics.shapes import Drawing, Line, PolyLine, Rect, String
+from reportlab.graphics.charts.piecharts import Pie
 from reportlab.lib.utils import simpleSplit
 from reportlab.platypus import (
     BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, PageBreak,
@@ -38,6 +39,32 @@ WIDTH = A4[0] - 36 * mm
 MODULE_NAMES = {'dcdc': 'Dimensionnement DCDC', 'wltc': 'Cycles WLTC',
                 'dm1': 'Autonomie DM1', 'dm2': 'Autonomie DM2',
                 'customer': 'Autonomie Customer Mode', 'biberonnage': 'Biberonnage'}
+# Feu tricolore (mêmes seuils que static/excel_colors.js) : bon / limite / pas bon.
+LEVEL_INK = {'ok':colors.HexColor('#15803D'),'warn':colors.HexColor('#B45309'),'bad':colors.HexColor('#B91C1C')}
+LEVEL_SOFT = {'ok':colors.HexColor('#DCFCE7'),'warn':colors.HexColor('#FFEDD5'),'bad':colors.HexColor('#FEE2E2')}
+LEVEL_LABEL = {'ok':'Conforme','warn':'À la limite','bad':'Non conforme'}
+AUTONOMY_MIN_DAYS = 30
+AUTONOMY_WARN_DAYS = AUTONOMY_MIN_DAYS * 1.1
+DCDC_WARN_RATIO = .9
+LOST_SHARE_WARN_PCT, LOST_SHARE_BAD_PCT = 20, 40
+
+
+def autonomy_level(days):
+    if days is None:return ''
+    value=number(days)
+    return 'bad' if value<AUTONOMY_MIN_DAYS else 'warn' if value<AUTONOMY_WARN_DAYS else 'ok'
+
+
+def dcdc_level(value, output):
+    if value is None or not output:return ''
+    value,output=number(value),number(output)
+    return 'bad' if value>output else 'warn' if value>=output*DCDC_WARN_RATIO else 'ok'
+
+
+def share_level(pct):
+    return 'bad' if pct>=LOST_SHARE_BAD_PCT else 'warn' if pct>=LOST_SHARE_WARN_PCT else 'ok'
+
+
 CUSTOMER_NAMES = {'Customer':'Customer', 'CustomerWO':'Customer sans Unplug', 'CustomerPIE':'Customer PIE'}
 
 
@@ -86,6 +113,12 @@ STYLES = {
     'kpi_label': ParagraphStyle('ReportKpiLabel',fontName='Helvetica-Bold',fontSize=7,leading=9,textColor=MUTED),
     'kpi_value': ParagraphStyle('ReportKpiValue',fontName='Helvetica-Bold',fontSize=17,leading=21,textColor=GRAPHITE),
     'kpi_note': ParagraphStyle('ReportKpiNote',fontName='Helvetica',fontSize=7,leading=9,textColor=MUTED),
+    'kpi_ok': ParagraphStyle('ReportKpiOk',fontName='Helvetica-Bold',fontSize=17,leading=21,textColor=LEVEL_INK['ok']),
+    'kpi_warn': ParagraphStyle('ReportKpiWarn',fontName='Helvetica-Bold',fontSize=17,leading=21,textColor=LEVEL_INK['warn']),
+    'kpi_bad': ParagraphStyle('ReportKpiBad',fontName='Helvetica-Bold',fontSize=17,leading=21,textColor=LEVEL_INK['bad']),
+    'cell_ok': ParagraphStyle('ReportCellOk',fontName='Helvetica-Bold',fontSize=8,leading=11,textColor=LEVEL_INK['ok']),
+    'cell_warn': ParagraphStyle('ReportCellWarn',fontName='Helvetica-Bold',fontSize=8,leading=11,textColor=LEVEL_INK['warn']),
+    'cell_bad': ParagraphStyle('ReportCellBad',fontName='Helvetica-Bold',fontSize=8,leading=11,textColor=LEVEL_INK['bad']),
     'scope_title': ParagraphStyle('ReportScopeTitle',fontName='Helvetica-Bold',fontSize=9.5,leading=12,textColor=GRAPHITE),
 }
 COVER_BAND = 118 * mm
@@ -258,10 +291,13 @@ def series_legend(series):
     def swatch(color):
         drawing=Drawing(14,8);drawing.add(Rect(0,1,14,5,fillColor=color,strokeColor=None));return drawing
     cells=[]
+    output=[y for item in series if item.get('limit') for _x,y in item['points'] if y is not None]
+    limit=max(output) if output else None
     for item in series:
         values=[y for _x,y in item['points'] if y is not None]
+        level='' if item.get('limit') or not values else dcdc_level(max(values),limit)
         cells.extend([swatch(item['color']),paragraph(item['label'],'scope_title'),
-                      paragraph(f"Pic : {current(max(values),'A') if values else '-'}",'small')])
+                      paragraph(f"Pic : {current(max(values),'A') if values else '-'}",f'cell_{level}' if level else 'small')])
     share=WIDTH/len(series)
     grid=Table([cells],colWidths=[18,share*.6-18,share*.4]*len(series),hAlign='LEFT')
     grid.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),2),('RIGHTPADDING',(0,0),(-1,-1),4),
@@ -287,8 +323,13 @@ class ReportBuilder:
         """Bandeau de chiffres clés : libellé, valeur, précision."""
         if not items:return
         per_row=min(4,len(items))
-        cells=[[paragraph(label.upper(),'kpi_label'),Spacer(1,3),paragraph(value,'kpi_value'),paragraph(note,'kpi_note')]
-               for label,value,note in items]
+        items=[(*item,'') if len(item)==3 else tuple(item) for item in items]
+        def note_text(note,level):
+            if not level:return note
+            return f'{LEVEL_LABEL[level]} - {note}' if note else LEVEL_LABEL[level]
+        cells=[[paragraph(label.upper(),'kpi_label'),Spacer(1,3),paragraph(value,f'kpi_{level}' if level else 'kpi_value'),
+                paragraph(note_text(note,level),'kpi_note')]
+               for label,value,note,level in items]
         rows=[cells[i:i+per_row] for i in range(0,len(cells),per_row)]
         rows=[row+['']*(per_row-len(row)) for row in rows]
         grid=Table(rows,colWidths=[WIDTH/per_row]*per_row,hAlign='LEFT')
@@ -298,8 +339,20 @@ class ReportBuilder:
         for r,row in enumerate(rows):
             for c,cell in enumerate(row):
                 if cell!='' and c:style.append(('LINEBEFORE',(c,r),(c,r),.5,RULE))
+                level=items[r*per_row+c][3] if cell!='' else ''
+                if level:style += [('BACKGROUND',(c,r),(c,r),LEVEL_SOFT[level]),('LINEABOVE',(c,r),(c,r),3,LEVEL_INK[level])]
         grid.setStyle(TableStyle(style))
         self.story.append(KeepTogether([grid,Spacer(1,14)]))
+
+    def comment(self,report,heading='Commentaire'):
+        """Commentaire saisi par l'utilisateur sous la partie, dans le PDF."""
+        text=plain((report or {}).get('comment') or '').strip()
+        if not text:return
+        box=Table([[paragraph(heading,'scope_title')],[paragraph(text[:4000],'body')]],colWidths=[WIDTH],hAlign='LEFT')
+        box.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),PALE),('LINEBEFORE',(0,0),(0,-1),3,ACCENT),
+                                 ('LEFTPADDING',(0,0),(-1,-1),12),('RIGHTPADDING',(0,0),(-1,-1),10),
+                                 ('TOPPADDING',(0,0),(-1,0),9),('BOTTOMPADDING',(0,-1),(-1,-1),4),('TOPPADDING',(0,1),(-1,1),3)]))
+        self.story += [Spacer(1,8),box,Spacer(1,10)]
 
     def section(self,title):
         self.story.append(PageBreak());self.heading(title)
@@ -331,67 +384,33 @@ class ReportBuilder:
         for key,label in profiles:
             records=(report['data'].get('synthesis') or {}).get(module,{}).get(key) or []
             if not records:raise ValueError(f'Les données du profil {label} sont absentes.')
-            series=[{'label':name,'color':color,'points':[(number(row['time']),number(row[field])) for row in records]}
+            series=[{'label':name,'color':color,'limit':field=='dcdcOutput','points':[(number(row['time']),number(row[field])) for row in records]}
                     for field,name,color in [('base','Base véhicule',BLUE),('upper','Upper véhicule',GREEN),('dcdcOutput','Sortie DCDC',RED)]]
             legend=series_legend(series)
             self.story.append(KeepTogether([paragraph(label,'h2'),vector_chart(series,'Temps (min)','Courant'),legend,Spacer(1,14)]))
+        self.comment(report)
 
     def dm(self,report):
+        """DM1 / DM2 : uniquement les jours d'autonomie obtenus, colorés (feu tricolore)."""
         configuration=(report['data'].get('configuration') or {}).get('name')
-        mode=report['module'].upper();self.section(MODULE_NAMES[report['module']]+(' — Profil : '+configuration if configuration else ''))
-        self.ecus(report['data'].get('matrixRows') or [])
-        for index,profile in enumerate(selected_profiles(report)):
-            if index:self.story.append(PageBreak())
+        self.section(MODULE_NAMES[report['module']]+(' — Profil : '+configuration if configuration else ''))
+        for profile in selected_profiles(report):
             columns=selected_columns(profile,report['selection'])
             self.heading(profile['name'],1)
-            labels=[column['scenario']['label'] for column in columns]
             self.kpis([(f"Autonomie - {column['scenario']['label']}",quantity(column['autonomy'],'jours'),
-                        f"Batterie {quantity(column['capacity'],'Ah')} - veille {quantity(column['instantaneous'],'µA')}") for column in columns])
-            specs=[('Autonomie','autonomy','jours'),('Capacité batterie','capacity','Ah'),
-                   ('SOC de départ','startSoc','%'),('SOC minimal','minSoc','%'),
-                   ('Énergie disponible','available','Ah'),('Courant de veille','instantaneous','µA'),
-                   ('Consommation journalière','dailyTotal','Ah/j')]
-            self.parameters(labels,[(label,[quantity(c[key],unit) for c in columns]) for label,key,unit in specs])
-            self.story.append(paragraph('Bilan des consommations','h3'))
-            specs=[('Énergie brute utilisable','gross','Ah'),('Endormissements véhicule','vehicleTotal','Ah'),
-                   ('Consommations forfaitaires','fixedTotal','Ah'),('Veille des ECU','sleepCurrentEnergy','Ah/j'),
-                   ('Réveils techniques','technicalWake','Ah/j'),('Alarme','alarmEnergy','Ah/j'),
-                   ('Sans e-BDU','sansEbduEnergy','Ah/j'),('TWT','twtSingleEnergy','Ah/j'),
-                   ('Vieillissement batterie','agingEnergy','Ah/j'),('Fonctions de veille ajoutées','customSleepEnergy','Ah/j')]
-            self.parameters(labels,[(label,[quantity(c[key],unit) for c in columns]) for label,key,unit in specs])
-            self.story.append(paragraph('Paramètres détaillés','h3'))
-            specs=[(15,'Nombre d’endormissements',''),(16,'Énergie par endormissement','Ah'),
-                   (19,'Cell balancing - période','min'),(20,'Cell balancing - courant','mA'),(21,'Cell balancing - durée','s'),(23,'Cell balancing - jours actifs','jours'),
-                   (26,'PCU RAM - courant','mA'),(27,'PCU RAM - durée','h'),(30,'CDC RAM - courant','mA'),(31,'CDC RAM - durée','h'),
-                   (34,'IVC3 - courant','mA'),(35,'IVC3 - durée','h'),(39,'Transport - courant','mA'),(41,'Transport - durée','jours'),
-                   (49,'Réveils techniques - période','h'),(50,'Réveils techniques - durée','s'),(51,'Réveils techniques - courant','mA'),
-                   (52,'Réveil équilibrage - durée','s'),(53,'Réveil équilibrage - courant','mA'),
-                   (64,'Alarme - courant','mA'),(67,'Sans e-BDU - courant','mA'),(71,'TWT - courant IVC','mA'),(72,'TWT - courant Powerlatch','mA'),(73,'TWT - durée','s')]
-            values=[dm_values(c) for c in columns]
-            self.parameters(labels,[(name,[quantity(v.get(row),unit) for v in values]) for row,name,unit in specs])
-            for column in columns:
-                extras=[]
-                for entry in column['fixed'].get('custom') or []:
-                    extras.append([entry.get('name') or 'Fonction ajoutée',current(entry['current'],'mA'),quantity(entry['duration'],entry.get('unit','h')),quantity(entry.get('energy'),'Ah')])
-                for entry in column.get('customSleep') or []:
-                    extras.append([entry.get('name') or 'Fonction de veille ajoutée',current(entry['current'],'mA'),'Continue',quantity(number(entry['current'])/1000*24,'Ah/j')])
-                if extras:
-                    self.story.append(paragraph(f"Fonctions ajoutées - {column['scenario']['label']}",'h3'))
-                    self.story.append(table(['Fonction','Courant','Durée','Consommation'],extras,[WIDTH*.4,WIDTH*.2,WIDTH*.2,WIDTH*.2]))
+                        f"Batterie {quantity(column['capacity'],'Ah')}",autonomy_level(column['autonomy'])) for column in columns])
+        self.comment(report)
 
     def customer(self,report):
+        """Customer Mode : uniquement les jours d'autonomie obtenus, colorés."""
         configuration=(report['data'].get('configuration') or {}).get('name')
-        self.section(MODULE_NAMES['customer']+(' — Profil : '+configuration if configuration else ''));self.ecus(report['data'].get('matrixRows') or [])
-        for index,profile in enumerate(selected_profiles(report)):
-            if index:self.story.append(PageBreak())
+        self.section(MODULE_NAMES['customer']+(' — Profil : '+configuration if configuration else ''))
+        for profile in selected_profiles(report):
             columns=selected_columns(profile,report['selection'])
             self.heading(CUSTOMER_NAMES[profile['id']],1)
-            labels=[column['label'] for column in columns]
-            self.kpis([(f"Autonomie - {column['label']}",quantity(column['autonomy'],'jours'),'Customer Mode') for column in columns])
-            self.parameters(labels,[('Autonomie',[quantity(c['autonomy'],'jours') for c in columns])])
-            for title,specs in CUSTOMER_PARAMETERS:
-                self.story.append(paragraph(title,'h3'))
-                self.parameters(labels,[(label,[quantity(number(c['rows'].get(str(row),c['rows'].get(row)))*factor if c['rows'].get(str(row),c['rows'].get(row)) is not None else None,unit) for c in columns]) for row,label,unit,factor in specs])
+            self.kpis([(f"Autonomie - {column['label']}",quantity(column['autonomy'],'jours') if column['autonomy'] is not None else 'Non calculable',
+                        'Customer Mode',autonomy_level(column['autonomy'])) for column in columns])
+        self.comment(report)
 
     def biberonnage(self,reports):
         self.section(MODULE_NAMES['biberonnage'])
@@ -404,33 +423,60 @@ class ReportBuilder:
                 first=False
                 configuration=(report['data'].get('configuration') or {}).get('name')
                 self.heading((f"Profil : {configuration} — " if configuration else '')+f"{profile['name']} - {days} jours",1)
-                result=profile['result'];config=profile['config']
-                self.kpis([('Biberonnages',quantity(result['bibCount'],''),f'sur {days} jours'),
-                           ('Charge restituée',quantity(result['totalRechargeAh'],'Ah'),'nominale'),
-                           ('Coût énergétique EF',quantity(result['totalCost'],'Wh'),'cumulé'),
-                           ('Consommation de veille',quantity(result['sumVeilleAh'],'Ah'),'cumulée')])
-                stats=[('Capacité batterie','capacityAh','Ah'),('SOC de départ','startSoc','%'),
-                       ('Consommation de veille','sumVeilleAh','Ah'),('Pertes périodiques','totalLossL1','Ah'),
-                       ('Pertes sur seuil SOC','totalLossL2','Ah'),('Charge nominale restituée','totalRechargeAh','Ah'),
-                       ('Coût énergétique EF','totalCost','Wh'),('Nombre de biberonnages','bibCount','')]
-                self.story.append(table(['Indicateur','Résultat'],[[label,quantity(result[key],unit)] for label,key,unit in stats],[WIDTH*.6,WIDTH*.4]))
-                self.story.append(Spacer(1,12))
+                result=profile['result']
+                veille_wh=number(result.get('sumVeilleWh',number(result['sumVeilleAh'])*14.5))
+                l1_wh=number(result.get('sumLossL1Wh',number(result['totalLossL1'])*14.5))
+                l2_wh=number(result.get('sumLossL2Wh',number(result['totalLossL2'])*14.5))
+                recharge_wh=number(result.get('totalRechargeWh',number(result['totalRechargeAh'])*14.5))
+                total=number(result.get('totalCost',veille_wh+l1_wh+l2_wh))
+                share=lambda wh:wh/total*100 if total>0 else 0
+                lost_level=share_level(share(l1_wh+l2_wh))
+                rows=[(['Conso de veille (12 V)',quantity(result['sumVeilleAh'],'Ah'),quantity(veille_wh,'Wh'),quantity(total,'Wh')],'ok'),
+                      (['Pertes EF périodiques',quantity(result['totalLossL1'],'Ah'),quantity(l1_wh,'Wh'),''],share_level(share(l1_wh))),
+                      (['Pertes EF sur seuil SOC',quantity(result['totalLossL2'],'Ah'),quantity(l2_wh,'Wh'),''],share_level(share(l2_wh))),
+                      (['Charge nominale restituée',quantity(result['totalRechargeAh'],'Ah'),quantity(recharge_wh,'Wh'),'Pour mémoire'],''),
+                      (['Nombre de biberonnages',quantity(result['bibCount'],''),'',''],'')]
+                data=[[paragraph(h,'head') for h in ['Indicateur','Somme Ah','Somme besoin Wh (x 14,5 V)','Coût EF (Wh)']]]
+                for r,(values,level) in enumerate(rows):
+                    cost_style=f'cell_{lost_level}' if r==0 else 'cell'
+                    data.append([paragraph(values[0],'cell')]+[paragraph(v,f'cell_{level}' if level and v else 'cell') for v in values[1:3]]
+                                +[paragraph(values[3],cost_style)])
+                grid=Table(data,colWidths=[WIDTH*.34,WIDTH*.18,WIDTH*.26,WIDTH*.22],hAlign='LEFT')
+                style=[('BACKGROUND',(0,0),(-1,0),GRAPHITE),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LINEBELOW',(0,0),(-1,0),1.2,ACCENT),
+                       ('LINEBELOW',(0,1),(-1,-1),.25,RULE),('LEFTPADDING',(0,0),(-1,-1),9),('RIGHTPADDING',(0,0),(-1,-1),9),
+                       ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+                       ('SPAN',(3,1),(3,3)),('BACKGROUND',(3,1),(3,3),LEVEL_SOFT[lost_level])]
+                for r,(values,level) in enumerate(rows,1):
+                    if level:style.append(('BACKGROUND',(1,r),(2,r),LEVEL_SOFT[level]))
+                grid.setStyle(TableStyle(style))
+                self.story.append(KeepTogether([paragraph('Bilan énergétique','h3'),grid,Spacer(1,12)]))
                 self.story.append(KeepTogether([paragraph('Évolution du SOC batterie','h3'),vector_chart([
                     {'label':'SOC batterie','color':BLUE,'points':[(number(p['x']),number(p['y'])) for p in result['socPoints']]}],
                     'Temps (jours)','SOC batterie (%)','%',225,(0,100))]))
-                self.story.append(paragraph('Paramètres de recharge','h3'))
-                params=[('Seuil de demande EF','efDemandSoc','%'),('SOC cible','targetSoc','%'),('Période de recharge','frequencyDays','jours'),
-                        ('Courant système périodique','consoL1','A'),('Durée périodique','durationL1','min'),
-                        ('Courant système sur seuil','consoL2','A'),('Durée sur seuil','durationL2','min'),
-                        ('Acceptance périodique','acceptanceL1','A'),('Acceptance sur seuil','acceptanceL2','A')]
-                self.story.append(table(['Paramètre','Valeur'],[[label,quantity(config.get(key),unit)] for label,key,unit in params],[WIDTH*.6,WIDTH*.4]))
-                inputs=profile.get('inputRows') or []
-                if inputs:
-                    self.story.append(paragraph('Fonctions retenues','h3'))
-                    self.story.append(table(['Fonction','Courant / valeur maximale'],[[row['name'],quantity(max(number(v) for v in row['values'].values()),row['unit'])] for row in inputs],[WIDTH*.65,WIDTH*.35]))
-                self.story.append(paragraph('Chronologie de consommation et de recharge','h3'))
-                rows=[[quantity(point['days'],'',1),quantity(result['socCurrent'][i],'%'),quantity(result['intervalAh'][i],'Ah'),quantity(result['losses'][i],'Ah'),quantity(result['recharges'][i],'Ah')] for i,point in enumerate(profile['timeline'])]
-                self.story.append(table(['Jour','SOC batterie','Consommation','Pertes EF','Charge nominale'],rows))
+                self.story.append(KeepTogether([paragraph('Répartition du coût EF','h3'),cost_pie(veille_wh,l1_wh+l2_wh)]))
+            self.comment(report)
+
+
+def cost_pie(veille_wh, lost_wh):
+    """Camembert vectoriel : besoin batterie 12 V / énergie perdue (comme l'écran)."""
+    total=veille_wh+lost_wh
+    drawing=Drawing(WIDTH,150)
+    if total<=0:
+        drawing.add(String(0,70,'Aucune énergie consommée.',fontName='Helvetica',fontSize=9,fillColor=MUTED))
+        return drawing
+    lost_color=colors.HexColor('#EA580C')
+    pie=Pie();pie.x=20;pie.y=10;pie.width=pie.height=130
+    pie.data=[max(veille_wh,0),max(lost_wh,0)];pie.labels=None
+    pie.slices.strokeColor=colors.white;pie.slices.strokeWidth=1.2
+    pie.slices[0].fillColor=BLUE;pie.slices[1].fillColor=lost_color
+    drawing.add(pie)
+    for index,(label,value,color) in enumerate([('Besoin Batt 12 V',veille_wh,BLUE),('Énergie perdue',lost_wh,lost_color)]):
+        y=96-index*28
+        drawing.add(Rect(180,y,12,12,fillColor=color,strokeColor=None))
+        drawing.add(String(200,y+2,f"{label} : {decimal(value/total*100,1)} % ({decimal(value,1)} Wh)",fontName='Helvetica',fontSize=10,fillColor=INK))
+    level=share_level(lost_wh/total*100)
+    drawing.add(String(180,40,f"Part d'énergie perdue : {LEVEL_LABEL[level]}",fontName='Helvetica-Bold',fontSize=10,fillColor=LEVEL_INK[level]))
+    return drawing
 
 
 def specs(rows):

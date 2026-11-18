@@ -951,7 +951,7 @@
             if (window.customerSummaryMode) {
                 const selectedIndices = new Set(window.selectedCustomerScenarios || []);
                 const selectedColumns = columns.filter((_column, index) => selectedIndices.has(index));
-                const cards = selectedColumns.map(column => `<article class="customer-autonomy-card">
+                const cards = selectedColumns.map(column => `<article class="customer-autonomy-card ${column.autonomy !== null && window.ExcelColors ? ExcelColors.levelClass(ExcelColors.autonomyLevel(column.autonomy)) : ''}">
                     <h3>${escape(column.label)}</h3>
                     <strong class="xl-autonomy-text ${column.autonomy !== null && window.ExcelColors?.isAutonomyLow(column.autonomy) ? 'xl-autonomy-low' : ''}">${column.autonomy === null ? 'Non calculable' : `${formatConfigurationNumber(column.autonomy, 1)} jours`}</strong>
                 </article>`).join('');

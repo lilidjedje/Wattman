@@ -47,6 +47,18 @@ INA226_LSB_V = 2.5e-6
 INA226_OFFSET_MAX_V = 10e-6
 INA226_GAIN_ERROR_MAX_PCT = 0.1
 
+# Tolérance de conformité exigée (cahier des charges Wattman), par plage de courant :
+# plus le courant est faible, plus l'écart relatif admis est serré.
+# (borne haute de la plage en A, écart admis en % de la référence Fluke)
+CONFORMITY_BANDS = [
+    (0.5, 0.1),           # < 500 mA : ±0,1 %
+    (0.9, 0.3),           # 500 mA à < 900 mA : ±0,3 %
+    (1.0 + 1e-9, 1.0),    # 900 mA à 1 A inclus : ±1 %
+    (float("inf"), 0.3),  # > 1 A : ±0,3 %
+]
+# « À la limite » (orange) : écart entre 1 et 1,5 fois la tolérance ; au-delà : hors tolérance.
+CONFORMITY_WARNING_FACTOR = 1.5
+
 DEFAULT_PROTOCOL = {
     "channel": "A",
     "frequency_hz": 100.0,
@@ -287,12 +299,27 @@ def checkpoint_reference(run, checkpoint):
     return finite(references.get(str(checkpoint)) if str(checkpoint) in references else references.get(checkpoint))
 
 
-def classify(error, reference_limit, ina_limit):
+def conformity_tolerance(reference_a, reference_limit=0.0):
+    """Écart maximal admis (A) pour une référence donnée.
+
+    Tolérance relative selon la plage (CONFORMITY_BANDS). On ne peut pas exiger
+    mieux que ce que la référence sait vérifier : la limite du Fluke sert de plancher.
+    """
+    magnitude = abs(reference_a or 0)
+    pct = next(pct for upper, pct in CONFORMITY_BANDS if magnitude < upper)
+    relative = magnitude * pct / 100
+    floor = abs(reference_limit or 0)
+    return {"tolerance_A": max(relative, floor), "tolerance_pct": pct,
+            "tolerance_floor": "fluke" if floor > relative else "band"}
+
+
+def classify(error, tolerance):
+    """Vert : |écart| <= tolérance ; orange : <= 1,5 x tolérance ; rouge au-delà."""
     if error is None:
         return "missing"
-    if abs(error) <= reference_limit:
+    if abs(error) <= tolerance:
         return "pass"
-    if abs(error) <= reference_limit + ina_limit:
+    if abs(error) <= tolerance * CONFORMITY_WARNING_FACTOR:
         return "warning"
     return "fail"
 
@@ -385,6 +412,7 @@ def analyse_run(conn, protocol, run):
                 ref_u = fluke_uncertainty(reference, run.get("fluke_range_A"))
                 ina_u = ina_limits(reference, protocol)
                 error = ina_mean - reference
+                tol = conformity_tolerance(reference, ref_u["limit_A"])
                 item.update({
                     "error_A": error,
                     "error_pct": 100 * error / reference if reference else None,
@@ -393,7 +421,8 @@ def analyse_run(conn, protocol, run):
                     "reference_formula": ref_u["formula"],
                     "ina_limit_A": ina_u["limit_A"],
                     "normalized_error": error / math.hypot(ref_u["limit_A"], item["ina_u95_A"]) if ref_u["limit_A"] or item["ina_u95_A"] else None,
-                    "status": classify(error, ref_u["limit_A"], ina_u["limit_A"]),
+                    **tol,
+                    "status": classify(error, tol["tolerance_A"]),
                 })
                 errors.append(error)
         item.setdefault("status", "missing")
@@ -483,7 +512,8 @@ def campaign_summary(protocol, runs):
             "points": [{"mean_A": (p["reference_A"] + p["ina_mean_A"]) / 2, "diff_A": p["error_A"],
                         "run": index, "t_s": p["t_s"]} for index, p in tagged],
         }
-        if summary["error_max_abs_A"] <= summary["reference_limit_A"]:
+        summary["tolerance_A"] = float(np.mean([p["tolerance_A"] for p in points]))
+        if summary["fail_count"] == 0 and summary["warning_count"] == 0:
             summary["verdict"] = "pass"
         elif summary["fail_count"] == 0:
             summary["verdict"] = "warning"
@@ -1123,12 +1153,13 @@ def register_calibration(app, project_id_provider, project_provider):
                              (extremes.get("min") or {}).get("reference_A"), (extremes.get("max") or {}).get("reference_A")])
         writer.writerow([])
         writer.writerow(["Canal", "Répétition", "Instant s", "Référence A", "INA moyenne A", "INA écart-type A", "Échantillons",
-                         "Erreur A", "Erreur %", "Limite Fluke A", "Limite INA226 A", "Statut"])
+                         "Erreur A", "Erreur %", "Limite Fluke A", "Limite INA226 A", "Tolérance A", "Tolérance %", "Statut"])
         for channel, run in ((c, r) for c in analysis["channels"] for r in analysis["by_channel"][c]["runs"]):
             for cp in run["checkpoints"]:
                 writer.writerow([channel, run["run_index"], cp["t_s"], cp.get("reference_A"), cp.get("ina_mean_A"),
                                  cp.get("ina_std_A"), cp.get("samples"), cp.get("error_A"), cp.get("error_pct"),
-                                 cp.get("reference_limit_A"), cp.get("ina_limit_A"), cp.get("status")])
+                                 cp.get("reference_limit_A"), cp.get("ina_limit_A"), cp.get("tolerance_A"),
+                                 cp.get("tolerance_pct"), cp.get("status")])
         filename = f"calibration_{campaign_id[:8]}.csv"
         return Response("﻿" + buffer.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f"attachment; filename={filename}"})

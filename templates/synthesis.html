@@ -541,7 +541,8 @@
 
         // Code couleur Excel (Bilan DCDC) : > sortie DCDC -> orange FFC000, < sortie DCDC -> vert 00B050.
         function dcdcClass(value) {
-            return window.ExcelColors ? ExcelColors.dcdcLoadClass(value, dcdcOutputCurrent) : '';
+            // Feu tricolore : > sortie DCDC rouge, >= 90 % orange, sinon vert.
+            return window.ExcelColors ? ExcelColors.levelClass(ExcelColors.dcdcLevel(value, dcdcOutputCurrent)) : '';
         }
 
         // ================= CALCULS & GRAPHES PARTIE 2 : ALTERNATOR =================

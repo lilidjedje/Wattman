@@ -147,7 +147,9 @@ class CalibrationTest(unittest.TestCase):
         self.assertAlmostEqual(run["effective_rate_hz"], 100, delta=0.1)
         # 400 mA range : ±(0,15 % × 0,3 A + 2 × 10 µA) = 470 µA
         self.assertAlmostEqual(run["checkpoints"][1]["reference_limit_A"], 0.00047, places=7)
-        self.assertEqual(run["checkpoints"][1]["status"], "warning")
+        # Tolérance < 500 mA : max(0,1 % x 0,3 A, limite Fluke 470 µA) = 470 µA ; 2 mA d'écart -> hors tolérance.
+        self.assertAlmostEqual(run["checkpoints"][1]["tolerance_A"], 0.00047, places=7)
+        self.assertEqual(run["checkpoints"][1]["status"], "fail")
         self.assertTrue(run["allan"])
         self.assertIn("bland_altman", summary)
         titles = [tip["title"] for tip in summary["recommendations"]]

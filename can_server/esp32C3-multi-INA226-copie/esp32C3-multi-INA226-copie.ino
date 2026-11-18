@@ -11,7 +11,7 @@
 #include <mcp_can.h>
 #include "esp_timer.h"
 
-constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v11 | full-coverage-integration | range-correction";
+constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v13 | full-coverage-integration | dual-channel-range-correction";
 
 void printFirmwareVersion() {
   Serial.printf("[FIRMWARE] %s | build %s %s\n", FIRMWARE_VERSION, __DATE__, __TIME__);
@@ -512,21 +512,36 @@ struct RangePoint { float current; float factor; };
 // INA mean 0.874071 A -> 1.031848.
 constexpr RangePoint RANGE_CORRECTION_A[] = {
   {0.874071f, 1.031848f},
+  // Preserve the v11 transfer function through 1.2 A BEFORE this table.
+  // Covers the validated ~0.9 A and ~1 A outputs, with headroom.
+  {1.200000f, 1.031848f},
+  // 2 A campaign: seven checkpoint means, Fluke 2.213300 A,
+  // v11 displayed 2.574065286 A (already includes factor 1.031848).
+  // Undo that old factor before locating the new point; do not double-correct.
+  {2.4946167320f, 0.8872304798f},
 };
 constexpr size_t RANGE_CORRECTION_A_COUNT = sizeof(RANGE_CORRECTION_A) / sizeof(RANGE_CORRECTION_A[0]);
+// Same range engine for B. Identity until B has its own reference campaign:
+// A's empirical errors must not be transferred to a different sensor.
+constexpr RangePoint RANGE_CORRECTION_B[] = {
+  {0.0f, 1.0f},
+};
+constexpr size_t RANGE_CORRECTION_B_COUNT = sizeof(RANGE_CORRECTION_B) / sizeof(RANGE_CORRECTION_B[0]);
 
 float rangeCorrection(uint8_t i, float current) {
-  if (i != 0 || RANGE_CORRECTION_A_COUNT == 0) return 1.0f;
+  if (i > 1) return 1.0f;
   const float x = fabsf(current);
-  const RangePoint* p = RANGE_CORRECTION_A;
+  const RangePoint* p = i ? RANGE_CORRECTION_B : RANGE_CORRECTION_A;
+  const size_t count = i ? RANGE_CORRECTION_B_COUNT : RANGE_CORRECTION_A_COUNT;
+  if (count == 0) return 1.0f;
   if (x <= p[0].current) return p[0].factor;
-  for (size_t k = 1; k < RANGE_CORRECTION_A_COUNT; ++k) {
+  for (size_t k = 1; k < count; ++k) {
     if (x <= p[k].current) {
       const float t = (x - p[k - 1].current) / (p[k].current - p[k - 1].current);
       return p[k - 1].factor + t * (p[k].factor - p[k - 1].factor);
     }
   }
-  return p[RANGE_CORRECTION_A_COUNT - 1].factor;
+  return p[count - 1].factor;
 }
 constexpr bool CURRENT_FILTER_ENABLED = true;
 constexpr uint32_t CURRENT_AVERAGE_MS = 20;
