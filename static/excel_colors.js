@@ -114,7 +114,8 @@
     }
 
     function autonomyCell(content, days = content) {
-        return `<td class="${autonomyClass(days)}">${content}</td>`;
+        const level = autonomyLevel(days);
+        return `<td class="${autonomyClass(days)}${level ? ` st-${level}` : ''}">${content}</td>`;
     }
 
     function socClass(soc) {
@@ -166,11 +167,53 @@
             : mix(COLORS.scaleMid, COLORS.scaleHigh, clamped / 0.1);
     }
 
+    // ------------------------------------------------------------------
+    // Feu tricolore des synthèses : 'ok' (vert), 'warn' (orange, à la
+    // limite), 'bad' (rouge). Seuils centralisés ici et repris par le PDF
+    // (synthesis_pdf.py, mêmes valeurs).
+    // ------------------------------------------------------------------
+    const LEVEL_THRESHOLDS = Object.freeze({
+        autonomyWarnDays: AUTONOMY_THRESHOLD_DAYS * 1.1, // 30 -> 33 jours
+        dcdcWarnRatio: 0.9,                              // >= 90 % de la sortie DCDC
+        socWarnPoints: 5,                                // <= seuil EF + 5 points de SOC
+        lostShareWarnPct: 20, lostShareBadPct: 40        // part d'énergie perdue (biberonnage)
+    });
+
+    function autonomyLevel(days) {
+        const value = toNumber(days);
+        if (!Number.isFinite(value)) return '';
+        if (value < AUTONOMY_THRESHOLD_DAYS) return 'bad';
+        return value < LEVEL_THRESHOLDS.autonomyWarnDays ? 'warn' : 'ok';
+    }
+
+    function dcdcLevel(value, output) {
+        const number = toNumber(value), limit = toNumber(output);
+        if (!Number.isFinite(number) || !Number.isFinite(limit) || limit <= 0) return '';
+        if (number > limit) return 'bad';
+        return number >= limit * LEVEL_THRESHOLDS.dcdcWarnRatio ? 'warn' : 'ok';
+    }
+
+    function socLevel(soc, demandSoc) {
+        const value = toNumber(soc), demand = toNumber(demandSoc);
+        if (!Number.isFinite(value) || !Number.isFinite(demand)) return '';
+        if (value <= demand + 1e-9) return 'bad';
+        return value <= demand + LEVEL_THRESHOLDS.socWarnPoints ? 'warn' : 'ok';
+    }
+
+    function shareLevel(pct, warn = LEVEL_THRESHOLDS.lostShareWarnPct, bad = LEVEL_THRESHOLDS.lostShareBadPct) {
+        const value = toNumber(pct);
+        if (!Number.isFinite(value)) return '';
+        return value >= bad ? 'bad' : value >= warn ? 'warn' : 'ok';
+    }
+
+    const levelClass = level => (level ? `st-${level}` : '');
+
     global.ExcelColors = Object.freeze({
-        COLORS, AUTONOMY_THRESHOLD_DAYS, ROW_CLASSES, DM_ROW_CLASSES,
+        COLORS, AUTONOMY_THRESHOLD_DAYS, ROW_CLASSES, DM_ROW_CLASSES, LEVEL_THRESHOLDS,
         toNumber, rowClass, addClassToCells, decorateRow,
         isAutonomyLow, autonomyClass, autonomyCell,
-        socClass, energyNeedClass, dcdcLoadClass, activationClass, balanceColor
+        socClass, energyNeedClass, dcdcLoadClass, activationClass, balanceColor,
+        autonomyLevel, dcdcLevel, socLevel, shareLevel, levelClass
     });
 })(typeof window !== 'undefined' ? window : globalThis);
 

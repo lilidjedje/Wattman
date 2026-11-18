@@ -274,6 +274,18 @@
         .report-tag { padding: 3px 8px; border-radius: 6px; background: var(--c); color: #fff; font: 800 .68rem var(--rg-font-mono); letter-spacing: .06em; text-transform: uppercase; }
         .report .report-title { margin: 0; padding: 0; color: var(--rg-ink); background: none; border: 0; font: 700 1.02rem/1.3 var(--rg-font-brand); }
         .report-paper { position: relative; margin: 14px; border-radius: 8px; background: #fff; box-shadow: 0 0 0 1px rgba(11,12,14,.06), 0 10px 30px -18px rgba(11,12,14,.4); overflow: hidden; }
+        /* Commentaire de l'utilisateur sous chaque partie : enregistré automatiquement, repris dans le PDF. */
+        .report-comment { display: grid; gap: 7px; margin: 0 14px 14px; padding: 12px 14px; border-radius: 10px;
+            background: color-mix(in srgb, var(--c) 6%, var(--rg-surface)); border: 1px solid color-mix(in srgb, var(--c) 28%, var(--rg-line)); }
+        .report-comment-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .report-comment-head label { display: inline-flex; align-items: center; gap: 8px; color: var(--rg-ink); font: 700 .82rem/1.2 var(--rg-font-brand); cursor: text; }
+        .report-comment-head label::before { content: ""; width: 4px; height: 14px; border-radius: 3px; background: var(--c); }
+        .report-comment-state { color: var(--rg-ink-3); font: 600 .72rem/1 var(--rg-font-sans); opacity: 0; transition: opacity 200ms ease; }
+        .report-comment-state.is-visible { opacity: 1; }
+        .report-comment textarea { width: 100%; min-height: 64px; resize: vertical; margin: 0; padding: 9px 11px; border-radius: 8px;
+            border: 1px solid var(--rg-line); background: var(--rg-surface); color: var(--rg-ink); font: 500 .9rem/1.45 var(--rg-font-sans); field-sizing: content; }
+        .report-comment textarea:focus { outline: none; border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+        .report-comment textarea::placeholder { color: var(--rg-ink-3); }
         iframe { display: block; width: 100%; min-height: 120px; border: 0; background: white; overflow: hidden; transition: opacity 360ms ease; }
         .report.is-loading iframe { opacity: 0; min-height: 380px; }
         .report-skeleton { display: none; position: absolute; inset: 0; padding: 22px; gap: 14px; grid-template-rows: 22px 180px 14px 14px 14px; }
@@ -763,8 +775,38 @@
                 }
             }, { once: true });
             paper.append(frame);
-            section.append(paper);
+            section.append(paper, createReportComment(module, title, index));
             reportContent.append(section);
+        }
+
+        // Commentaire libre sous chaque partie, mémorisé par projet et par rapport.
+        function commentKey(module, title) {
+            const project = (JSON.parse(localStorage.getItem('activeProject') || 'null') || {}).name || 'sans-projet';
+            return `synthesisComment:${project}:${module}:${title}`;
+        }
+        function createReportComment(module, title, index) {
+            const box = document.createElement('div');
+            box.className = 'report-comment';
+            const id = `report-comment-${index + 1}`;
+            box.innerHTML = `<div class="report-comment-head"><label for="${id}">Commentaire</label><span class="report-comment-state" aria-live="polite"></span></div>
+                <textarea id="${id}" rows="2" placeholder="Ajoutez une remarque, une conclusion ou une action pour cette partie : elle sera reprise dans le PDF."></textarea>`;
+            const area = box.querySelector('textarea');
+            const state = box.querySelector('.report-comment-state');
+            const key = commentKey(module, title);
+            try { area.value = localStorage.getItem(key) || ''; } catch { /* stockage indisponible */ }
+            let timer = null;
+            area.addEventListener('input', () => {
+                clearTimeout(timer);
+                timer = setTimeout(() => {
+                    try {
+                        if (area.value.trim()) localStorage.setItem(key, area.value); else localStorage.removeItem(key);
+                        state.textContent = 'Enregistré';
+                    } catch { state.textContent = 'Non enregistré'; }
+                    state.classList.add('is-visible');
+                    setTimeout(() => state.classList.remove('is-visible'), 1400);
+                }, 350);
+            });
+            return box;
         }
 
         // Sommaire : défilement doux et rapport actif surligné.
@@ -919,9 +961,14 @@
                         const metrics = getChartPeakMetrics(chart.data.datasets);
                         const peaks = doc.createElement('div');
                         peaks.className = 'chart-peak-values';
+                        // Feu tricolore : pic de consommation comparé à la sortie DCDC.
+                        const isOutput = metric => /dcdc|sortie|output/i.test(metric.label);
+                        const output = metrics.find(isOutput)?.value;
+                        const colors = frame.contentWindow.ExcelColors || window.ExcelColors;
                         metrics.forEach(metric => {
                             const badge = doc.createElement('span');
-                            badge.className = 'chart-peak';
+                            const level = !isOutput(metric) && colors && output ? colors.dcdcLevel(metric.value, output) : '';
+                            badge.className = `chart-peak${level ? ` st-${level}` : ''}`;
                             badge.append(`${metric.label} — pic : `);
                             const value = doc.createElement('strong');
                             value.textContent = CurrentUnits.format(metric.value,'A');
@@ -1141,6 +1188,7 @@
                         ? getExcelMatrixRows(frame, section.dataset.module === 'customer' ? 'Customer Mode' : section.dataset.module.toUpperCase()) : []
                 } : null,
                 text: root.innerText.trim(),
+                comment: section.querySelector('.report-comment textarea')?.value.trim() || '',
                 tables
             };
         }
@@ -1270,6 +1318,9 @@
             html.rg-has-appbar body { padding-top: 0 !important; }
             .reports, .syn-reader, #report-content { display: block !important; margin: 0; }
             .report-paper { margin: 0; box-shadow: none; border-radius: 0; }
+            .report-comment { margin: 4mm 0 0; break-inside: avoid; }
+            .report-comment textarea { border: 0; padding: 0; resize: none; background: none; }
+            .report-comment:has(textarea:placeholder-shown) { display: none !important; }
             .report-head { padding: 0; background: none; border: 0; }
             .report-head::before { display: none; }
             .cover {

@@ -62,6 +62,7 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `btn-menu btn-${item.kind}`;
+            button.dataset.href = item.href;
             button.textContent = item.label;
             button.addEventListener('click', () => { window.location.href = item.href; });
             content.appendChild(button);
@@ -77,6 +78,8 @@
             bar.appendChild(wrapper);
             document.body.prepend(bar);
         }
+        // Barre Wattman présente : le sommaire est intégré à la barre du haut.
+        if (window.RGUI?.dockSummary?.(wrapper)) return;
         document.addEventListener('click', event => { if (details.open && !wrapper.contains(event.target)) details.open = false; });
         document.addEventListener('keydown', event => { if (event.key === 'Escape' && details.open) { details.open = false; summary.focus(); } });
     }

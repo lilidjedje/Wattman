@@ -45,9 +45,9 @@ restoreDefaultSelections(defaults);
 assert.deepEqual(defaults.map(checkbox => checkbox.checked), [true, false, true]);
 assert.match(html, /id="restore-defaults">Restaurer la configuration de base<\/button>/);
 assert.match(html, /restoreDefaultSelections\(tbody\.querySelectorAll\('input\[data-selection\]'\)\)/);
-assert.match(html, /class="selection-column"[^>]*>H<\/th>/);
-assert.match(html, /class="current-column"[^>]*>Homologation Current<\/th>/);
-assert.match(html, /class="selection-column"[^>]*>S<\/th>/);
-assert.match(html, /class="current-column"[^>]*>Dark Current<\/th>/);
+assert.match(html, /class="sc-th h selection-column"[^>]*><span class="sc-col-all">H<input/);
+assert.match(html, /class="sc-th h current-column"[^>]*><button[^>]*>Homologation Current<\/button><\/th>/);
+assert.match(html, /class="sc-th s selection-column"[^>]*><span class="sc-col-all">S<input/);
+assert.match(html, /class="sc-th s current-column"[^>]*><button[^>]*>Dark Current<\/button><\/th>/);
 
 console.log('Component current formatting and dedicated selection/current columns verified.');

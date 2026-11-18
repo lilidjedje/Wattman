@@ -4,49 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sélection des Composants</title>
-    <style>
-        :root { --navy: #1f4e78; --canvas: #edf3f7; --primary: #2563eb; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: "Segoe UI", Tahoma, sans-serif; background: var(--canvas); padding: 30px 20px; color: #1e293b; }
-        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
-        h1 { color: var(--navy); margin-bottom: 8px; font-size: 1.8rem; }
-        p { color: #64748b; margin-bottom: 24px; }
-        
-        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
-        .toolbar-selection-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
-        .select-all-wrap { display: flex; align-items: center; gap: 8px; font-weight: 600; color: #475569; cursor: pointer; }
-        .restore-defaults { padding: 8px 12px; border: 1px solid #bac8dd; border-radius: 7px; color: #20304a; background: #e8eef7; font: inherit; font-weight: 650; cursor: pointer; }
-        .restore-defaults:hover { background: #dce5f2; }
-
-        .table-wrap { overflow-x: auto; margin-bottom: 24px; border: 1px solid #cbd5e1; border-radius: 8px; max-height: 55vh; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; font-size: 0.95rem; }
-        th, td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }
-        th { background: #f8fafc; color: var(--navy); font-weight: 700; position: sticky; top: 0; z-index: 10; }
-        th:first-child, td:first-child { width: 42%; }
-        th.selection-column, td.selection-column { width: 9%; text-align: center; }
-        th.current-column, td.current-column { width: 20%; text-align: right; white-space: nowrap; }
-        td.selection-column { padding-left: 8px; padding-right: 8px; }
-        td.current-column { font-variant-numeric: tabular-nums; }
-        tr:hover { background: #f1f5f9; }
-        body.preserve-table-colors .table-wrap { color: #1e293b !important; background: #fff !important; border-color: #cbd5e1 !important; }
-        body.preserve-table-colors table,
-        body.preserve-table-colors table tbody,
-        body.preserve-table-colors table tr,
-        body.preserve-table-colors table td { color: #1e293b !important; background: #fff !important; }
-        body.preserve-table-colors table th { color: #1f4e78 !important; background: #f8fafc !important; }
-        body.preserve-table-colors table tbody tr:hover,
-        body.preserve-table-colors table tbody tr:hover td { background: #f1f5f9 !important; }
-        input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
-        
-        .badge-h { padding: 3px 8px; border-radius: 4px; background: #e0e7ff; color: #3730a3; font-weight: bold; font-size: 0.85rem; }
-        .badge-s { padding: 3px 8px; border-radius: 4px; background: #fef3c7; color: #92400e; font-weight: bold; font-size: 0.85rem; }
-
-        .actions { display: flex; justify-content: flex-end; gap: 12px; }
-        .btn { padding: 11px 24px; border: 0; border-radius: 8px; font-weight: 700; cursor: pointer; font: inherit; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: #1d4ed8; }
-        .btn-secondary { background: #e2e8f0; color: #334155; }
-    </style>
     <link rel="stylesheet" href="{{ url_for('static', filename='industrial-theme.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='modern-ui.css') }}">
     <script src="/static/current_units.js"></script>
@@ -55,37 +12,285 @@
     <link rel="stylesheet" href="/static/design-system/tokens.css">
     <link rel="stylesheet" href="/static/design-system/components.css">
     <script src="/static/design-system/rg-ui.js"></script>
-    <script src="/static/design-system/rg-grid.js" defer></script>
+    <style>
+        /* Couleurs logiques : H = homologation (flux d'énergie, bleu électrique),
+           S = dark current / veille (nuit, violet). Jaune = accent de marque. */
+        :root {
+            --sc-h: #1f7cf2; --sc-h-soft: rgba(31, 124, 242, .12); --sc-h-glow: rgba(31, 124, 242, .45);
+            --sc-s: #8b5cf6; --sc-s-soft: rgba(139, 92, 246, .12); --sc-s-glow: rgba(139, 92, 246, .45);
+            --sc-warn: #c2410c;
+            --sc-panel: var(--rg-surface); --sc-panel-2: var(--rg-surface-2); --sc-line: var(--rg-line);
+            --sc-ink: var(--rg-ink); --sc-ink-2: var(--rg-ink-2); --sc-ink-3: var(--rg-ink-3);
+            --sc-row-hover: rgba(11, 12, 14, .035);
+        }
+        :root[data-theme="dark"] {
+            --sc-h: #4c9dff; --sc-h-soft: rgba(76, 157, 255, .14);
+            --sc-s: #a98bff; --sc-s-soft: rgba(169, 139, 255, .14);
+            --sc-warn: #ff9b6a; --sc-row-hover: rgba(255, 255, 255, .04);
+        }
+        html body > main.sc-page.sc-page { box-sizing: border-box !important; width: 100% !important; max-width: 1280px !important; min-height: 0; margin: 0 auto !important; padding: 8px 20px 110px !important; }
+
+        /* ---------- En-tête illustré ---------- */
+        html body .sc-hero {
+            position: relative; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr); align-items: center; gap: 24px;
+            min-height: 210px; padding: 28px 32px; border-radius: var(--rg-radius-lg); overflow: hidden; isolation: isolate;
+            color: #f4f2ef; background:
+                radial-gradient(90% 120% at 100% 0%, rgba(139, 92, 246, .32), transparent 55%),
+                radial-gradient(80% 110% at 70% 100%, rgba(31, 124, 242, .30), transparent 60%),
+                radial-gradient(60% 80% at 0% 0%, rgba(239, 223, 0, .12), transparent 60%),
+                linear-gradient(120deg, #0d0d10, #17151d 55%, #0f1016);
+            box-shadow: 0 30px 60px -40px rgba(11, 12, 14, .8), inset 0 0 0 1px rgba(255, 255, 255, .06);
+        }
+        html body .sc-hero::before {
+            content: ""; position: absolute; inset: 0; z-index: -1; opacity: .5;
+            background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+            background-size: 28px 28px; mask-image: linear-gradient(90deg, transparent, #000 45%, #000);
+        }
+        html body .sc-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px !important; color: rgba(244, 242, 239, .62) !important; font: 700 .72rem/1 var(--rg-font-sans) !important; letter-spacing: .16em; text-transform: uppercase; }
+        html body .sc-eyebrow::before { content: ""; width: 18px; height: 2px; background: var(--rg-yellow); box-shadow: 0 0 10px rgba(239, 223, 0, .8); }
+        html body .sc-hero h1#page-title { margin: 0 0 10px !important; color: #fff !important; font: 800 clamp(1.9rem, 3.4vw, 2.7rem)/1.05 var(--rg-font-brand) !important; letter-spacing: -.02em; }
+        html body .sc-hero h1#page-title .sc-accent { background: linear-gradient(90deg, #8fc2ff, #c8b4ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        html body .sc-hero p.sc-lead { max-width: 560px; margin: 0 !important; color: rgba(244, 242, 239, .72) !important; font: 500 .95rem/1.55 var(--rg-font-sans) !important; }
+        html body .sc-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+        html body .sc-legend span { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; color: #f4f2ef !important; background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); font: 650 .76rem/1 var(--rg-font-sans) !important; }
+        html body .sc-legend i { width: 8px; height: 8px; border-radius: 50%; }
+        html body .sc-legend .h i { background: #4c9dff; box-shadow: 0 0 10px #4c9dff; }
+        html body .sc-legend .s i { background: #a98bff; box-shadow: 0 0 10px #a98bff; }
+        .sc-network { width: 100%; height: auto; max-height: 200px; overflow: visible; }
+        .sc-network .flow { fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 3 9; animation: sc-flow 1.6s linear infinite; }
+        .sc-network .flow.h { stroke: #4c9dff; filter: drop-shadow(0 0 3px rgba(76,157,255,.9)); }
+        .sc-network .flow.s { stroke: #a98bff; animation-duration: 3.2s; filter: drop-shadow(0 0 3px rgba(169,139,255,.9)); }
+        .sc-network .flow.off { stroke: rgba(255,255,255,.14); animation: none; filter: none; }
+        .sc-network .chip rect { fill: #1b1a22; stroke: rgba(255,255,255,.22); }
+        .sc-network .chip.on-h rect { stroke: #4c9dff; }
+        .sc-network .chip.on-s rect { stroke: #a98bff; }
+        .sc-network .pin { stroke: rgba(255,255,255,.35); stroke-width: 1; }
+        .sc-network text { fill: rgba(244,242,239,.7); font: 700 7px var(--rg-font-mono); letter-spacing: .08em; }
+        .sc-network .core { fill: url(#sc-core); stroke: rgba(239,223,0,.8); }
+        .sc-network .halo { fill: none; stroke: rgba(239,223,0,.35); animation: sc-halo 2.8s ease-out infinite; transform-origin: 200px 100px; }
+        @keyframes sc-flow { to { stroke-dashoffset: -24; } }
+        @keyframes sc-halo { from { transform: scale(.9); opacity: .9; } to { transform: scale(1.5); opacity: 0; } }
+        :root[data-motion="reduced"] .sc-network * { animation: none !important; }
+        @media (prefers-reduced-motion: reduce) { .sc-network * { animation: none !important; } }
+
+        /* ---------- Indicateurs ---------- */
+        html body .sc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+        html body .sc-kpi {
+            position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 14px; padding: 16px 18px;
+            border-radius: var(--rg-radius-md); background: var(--sc-panel); box-shadow: inset 0 0 0 1px var(--sc-line), var(--rg-shadow-1); overflow: hidden;
+        }
+        html body .sc-kpi::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--k); box-shadow: 0 0 14px var(--k); }
+        html body .sc-kpi.h { --k: var(--sc-h); } html body .sc-kpi.s { --k: var(--sc-s); }
+        html body .sc-kpi small { display: block; margin: 0 0 6px !important; color: var(--sc-ink-3) !important; font: 700 .68rem/1 var(--rg-font-sans) !important; letter-spacing: .12em; text-transform: uppercase; }
+        html body .sc-kpi strong { display: block; color: var(--sc-ink) !important; font: 800 1.45rem/1.05 var(--rg-font-brand) !important; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+        html body .sc-kpi em { display: block; margin-top: 4px; color: var(--sc-ink-3) !important; font: 500 .76rem/1.2 var(--rg-font-sans) !important; font-style: normal; }
+        .sc-ring { width: 46px; height: 46px; transform: rotate(-90deg); }
+        .sc-ring circle { fill: none; stroke-width: 5; }
+        .sc-ring .track { stroke: var(--sc-line); }
+        .sc-ring .val { stroke: var(--k); stroke-linecap: round; stroke-dasharray: 113.1; transition: stroke-dashoffset .5s var(--rg-ease-out); filter: drop-shadow(0 0 3px var(--k)); }
+        html body .sc-kpi-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; color: var(--k); background: color-mix(in srgb, var(--k) 12%, transparent); }
+        html body .sc-kpi-icon svg { width: 22px; height: 22px; }
+
+        /* ---------- Barre d'outils ---------- */
+        html body .sc-tools {
+            position: sticky; top: calc(var(--rg-appbar-h, 56px) + 8px); z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+            padding: 10px; margin-bottom: 12px; border-radius: var(--rg-radius-md);
+            background: color-mix(in srgb, var(--sc-panel) 88%, transparent); backdrop-filter: blur(12px);
+            box-shadow: inset 0 0 0 1px var(--sc-line), 0 14px 30px -24px rgba(0,0,0,.6);
+        }
+        html body .sc-search { position: relative; flex: 1 1 240px; min-width: 200px; }
+        html body .sc-search svg { position: absolute; left: 11px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%); color: var(--sc-ink-3); pointer-events: none; }
+        html body .sc-search input#sc-search { width: 100% !important; height: 38px !important; padding: 0 34px 0 34px !important; border-radius: 8px !important; font-size: .9rem !important; }
+        html body .sc-search kbd { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); padding: 2px 6px; border-radius: 4px; color: var(--sc-ink-3); background: var(--sc-panel-2); box-shadow: inset 0 0 0 1px var(--sc-line); font: 600 .7rem/1.2 var(--rg-font-mono); }
+        html body .sc-filters { display: inline-flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--sc-panel-2); box-shadow: inset 0 0 0 1px var(--sc-line); }
+        html body .sc-filters button.sc-filter {
+            display: inline-flex !important; align-items: center !important; gap: 6px; height: 32px !important; min-height: 0 !important; padding: 0 11px !important; margin: 0 !important;
+            color: var(--sc-ink-2) !important; background: transparent !important; border: 0 !important; border-radius: 7px !important; box-shadow: none !important;
+            font: 650 .8rem/1 var(--rg-font-sans) !important; text-transform: none !important; letter-spacing: 0 !important; white-space: nowrap; transform: none !important;
+            transition: background .18s ease, color .18s ease !important;
+        }
+        html body .sc-filters button.sc-filter:hover { color: var(--sc-ink) !important; background: var(--sc-row-hover) !important; }
+        html body .sc-filters button.sc-filter[aria-pressed="true"] { color: var(--sc-ink) !important; background: var(--sc-panel) !important; box-shadow: 0 1px 2px rgba(0,0,0,.12), inset 0 0 0 1px var(--sc-line) !important; }
+        html body .sc-filters .sc-dot { width: 7px; height: 7px; border-radius: 50%; }
+        html body .sc-filters .sc-count { min-width: 20px; padding: 2px 5px; border-radius: 999px; color: var(--sc-ink-3); background: var(--sc-row-hover); font: 700 .68rem/1 var(--rg-font-mono); text-align: center; }
+        html body .sc-tools-end { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+        html body label.select-all-wrap { display: inline-flex !important; align-items: center; gap: 8px; margin: 0 !important; color: var(--sc-ink-2) !important; font: 650 .82rem/1 var(--rg-font-sans) !important; cursor: pointer; white-space: nowrap; }
+        html body label.select-all-wrap input { width: 17px; height: 17px; accent-color: var(--rg-yellow); cursor: pointer; }
+        html body button.restore-defaults#restore-defaults {
+            display: inline-flex !important; align-items: center !important; gap: 7px; height: 38px !important; min-height: 0 !important; padding: 0 13px !important; margin: 0 !important;
+            color: var(--sc-ink) !important; background: var(--sc-panel) !important; border: 1px solid var(--sc-line) !important; border-radius: 8px !important; box-shadow: none !important;
+            font: 700 .8rem/1 var(--rg-font-sans) !important; text-transform: none !important; letter-spacing: 0 !important;
+        }
+        html body button.restore-defaults#restore-defaults:hover { border-color: var(--sc-warn) !important; color: var(--sc-warn) !important; }
+        html body button.restore-defaults svg { width: 15px; height: 15px; }
+        html body #counter { flex-basis: 100%; margin: 0 2px !important; color: var(--sc-ink-3) !important; font: 600 .74rem/1 var(--rg-font-mono) !important; letter-spacing: .02em; }
+
+        /* ---------- Tableau ---------- */
+        html body .sc-table-shell { position: relative; border-radius: var(--rg-radius-md); background: var(--sc-panel); box-shadow: inset 0 0 0 1px var(--sc-line), var(--rg-shadow-1); overflow: hidden; }
+        html body .sc-scroll { max-height: calc(100vh - 300px); min-height: 280px; overflow: auto; scrollbar-width: thin; }
+        html body table.sc-table.sc-table { background: transparent !important; border: 0 !important; margin: 0 !important; }
+        html body table.sc-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 500 .9rem/1.35 var(--rg-font-sans) !important; color: var(--sc-ink); }
+        html body table.sc-table col.c-name { width: 40%; } html body table.sc-table col.c-sel { width: 92px; } html body table.sc-table col.c-cur { width: 21%; }
+        html body table.sc-table thead th.sc-th {
+            position: sticky; top: 0; z-index: 5; height: 50px; padding: 0 16px !important; text-align: left;
+            color: var(--sc-ink-3) !important; background: color-mix(in srgb, var(--sc-panel-2) 94%, transparent) !important; backdrop-filter: blur(8px);
+            border: 0 !important; border-left: 0 !important; border-right: 0 !important; border-bottom: 1px solid var(--sc-line) !important;
+            font: 750 .7rem/1 var(--rg-font-sans) !important; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap;
+        }
+        html body table.sc-table thead th.sc-th.h { box-shadow: inset 0 3px 0 var(--sc-h); color: var(--sc-h) !important; }
+        html body table.sc-table thead th.sc-th.s { box-shadow: inset 0 3px 0 var(--sc-s); color: var(--sc-s) !important; }
+        html body table.sc-table thead th.selection-column { text-align: center; }
+        html body table.sc-table thead th.current-column { text-align: right; }
+        html body table.sc-table button.sc-sort {
+            display: inline-flex !important; align-items: center !important; gap: 6px; height: auto !important; min-height: 0 !important; padding: 6px 4px !important; margin: 0 !important;
+            color: inherit !important; background: none !important; border: 0 !important; box-shadow: none !important; font: inherit !important; letter-spacing: inherit !important; text-transform: inherit !important; cursor: pointer; transform: none !important;
+        }
+        html body table.sc-table button.sc-sort::after { content: "↕"; opacity: .35; font-size: .8rem; letter-spacing: 0; }
+        html body table.sc-table th[aria-sort="ascending"] button.sc-sort::after { content: "↑"; opacity: 1; }
+        html body table.sc-table th[aria-sort="descending"] button.sc-sort::after { content: "↓"; opacity: 1; }
+        html body table.sc-table .sc-col-all { display: inline-flex; flex-direction: column; align-items: center; gap: 5px; }
+        html body table.sc-table .sc-col-all input { width: 15px; height: 15px; accent-color: currentColor; cursor: pointer; }
+        html body table.sc-table tbody td {
+            padding: 11px 16px !important; color: var(--sc-ink) !important; background: transparent !important;
+            border: 0 !important; border-bottom: 1px solid var(--sc-line) !important; vertical-align: middle;
+        }
+        html body table.sc-table tbody tr { background: transparent !important; transition: background .18s ease; }
+        html body table.sc-table tbody tr:hover td { background: var(--sc-row-hover) !important; }
+        html body table.sc-table tbody tr.is-h td:first-child { box-shadow: inset 3px 0 0 var(--sc-h); }
+        html body table.sc-table tbody tr.is-s td:first-child { box-shadow: inset 3px 0 0 var(--sc-s); }
+        html body table.sc-table tbody tr.is-h.is-s td:first-child { box-shadow: inset 3px 0 0 var(--sc-h), inset 6px 0 0 var(--sc-s); }
+        html body table.sc-table tbody tr.is-off td { color: var(--sc-ink-3) !important; }
+        html body table.sc-table tbody tr.sc-flash td { animation: sc-flash .7s ease-out; }
+        @keyframes sc-flash { from { background: rgba(239, 223, 0, .16); } }
+        html body table.sc-table .sc-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        html body table.sc-table .sc-name strong { overflow: hidden; color: inherit !important; font: 650 .88rem/1.3 var(--rg-font-sans) !important; text-overflow: ellipsis; }
+        html body table.sc-table .sc-name mark { background: rgba(239, 223, 0, .45); color: inherit; border-radius: 2px; padding: 0 1px; }
+        html body table.sc-table .sc-cat { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; font: 800 .68rem/1 var(--rg-font-mono); }
+        html body table.sc-table .sc-cat.h { color: var(--sc-h); background: var(--sc-h-soft); }
+        html body table.sc-table .sc-cat.s { color: var(--sc-s); background: var(--sc-s-soft); }
+        html body table.sc-table .sc-cat.x { color: var(--sc-ink-3); background: var(--sc-row-hover); }
+        html body table.sc-table .sc-modified { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--rg-yellow); box-shadow: 0 0 8px rgba(239,223,0,.9); }
+        html body table.sc-table small.sc-warning { display: block; margin-top: 3px; color: var(--sc-warn) !important; font: 600 .74rem/1.3 var(--rg-font-sans) !important; }
+        html body table.sc-table td.selection-column { text-align: center; padding-left: 6px !important; padding-right: 6px !important; }
+        /* Interrupteurs : la case à cocher native est conservée (logique, clavier, lecteurs d'écran) */
+        html body table.sc-table input.sc-switch {
+            appearance: none; -webkit-appearance: none; position: relative; display: inline-block; width: 40px; height: 22px; margin: 0; border-radius: 999px; cursor: pointer;
+            background: var(--sc-line) !important; border: 0 !important; padding: 0 !important; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); transition: background .22s ease, box-shadow .22s ease; vertical-align: middle;
+        }
+        html body table.sc-table input.sc-switch::after {
+            content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .26s cubic-bezier(.3, 1.4, .5, 1);
+        }
+        html body table.sc-table input.sc-switch:checked::after { transform: translateX(18px); }
+        html body table.sc-table input.sc-switch[data-selection="H"]:checked { background: var(--sc-h) !important; box-shadow: 0 0 12px -2px var(--sc-h); }
+        html body table.sc-table input.sc-switch[data-selection="S"]:checked { background: var(--sc-s) !important; box-shadow: 0 0 12px -2px var(--sc-s); }
+        html body table.sc-table input.sc-switch:focus-visible { outline: 2px solid var(--rg-yellow); outline-offset: 2px; }
+        html body table.sc-table td.current-column { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; cursor: pointer; }
+        html body table.sc-table .sc-cur { display: grid; justify-items: end; gap: 5px; }
+        html body table.sc-table .sc-cur-val { font: 700 .88rem/1 var(--rg-font-mono) !important; }
+        html body table.sc-table .sc-bar { width: 100%; max-width: 160px; height: 4px; border-radius: 4px; background: var(--sc-row-hover); overflow: hidden; }
+        html body table.sc-table .sc-bar i { display: block; height: 100%; width: var(--w, 0%); margin-left: auto; border-radius: inherit; background: linear-gradient(90deg, transparent, var(--c)); transition: width .45s var(--rg-ease-out); }
+        html body table.sc-table td[data-current-selection="H"] { --c: var(--sc-h); }
+        html body table.sc-table td[data-current-selection="S"] { --c: var(--sc-s); }
+        html body table.sc-table td.is-empty .sc-cur-val { color: var(--sc-ink-3); font-weight: 500 !important; }
+        html body table.sc-table td.is-empty .sc-bar i { width: 0; }
+        html body .sc-empty { display: none; padding: 48px 20px; text-align: center; color: var(--sc-ink-3); font: 600 .9rem/1.4 var(--rg-font-sans); }
+        html body .sc-empty.is-visible { display: block; }
+
+        /* ---------- Actions ---------- */
+        html body .sc-actions {
+            position: fixed; left: 50%; bottom: 18px; z-index: 30; display: flex; align-items: center; gap: 10px; padding: 8px; transform: translateX(-50%);
+            border-radius: 14px; background: rgba(14, 14, 18, .86); backdrop-filter: blur(14px);
+            box-shadow: 0 20px 40px -18px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.1);
+        }
+        html body .sc-actions-summary { padding: 0 10px; color: rgba(244,242,239,.72) !important; font: 600 .78rem/1.2 var(--rg-font-sans) !important; white-space: nowrap; }
+        html body .sc-actions-summary b { color: #8fc2ff; } html body .sc-actions-summary b + b { color: #c8b4ff; }
+        html body .sc-actions button.btn {
+            height: 42px !important; min-height: 0 !important; padding: 0 18px !important; margin: 0 !important; border-radius: 10px !important;
+            font: 750 .86rem/1 var(--rg-font-brand) !important; text-transform: none !important; letter-spacing: .01em !important;
+        }
+        html body .sc-actions button.btn-secondary { color: #f4f2ef !important; background: rgba(255,255,255,.06) !important; border: 1px solid rgba(255,255,255,.14) !important; box-shadow: none !important; }
+        html body .sc-actions button.btn-primary { color: var(--rg-yellow-ink) !important; background: var(--rg-yellow) !important; border: 0 !important; box-shadow: 0 0 24px -6px rgba(239,223,0,.8) !important; }
+        html body .sc-actions button.btn-primary:hover { filter: brightness(1.06); }
+
+        @media (max-width: 980px) {
+            html body .sc-hero { grid-template-columns: 1fr; } .sc-network { display: none; }
+            html body .sc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            html body .sc-actions-summary { display: none; }
+        }
+        @media (max-width: 640px) { html body .sc-kpis { grid-template-columns: 1fr; } html body table.sc-table col.c-name { width: 200px; } html body table.sc-table { min-width: 680px; } }
+    </style>
 </head>
 <body class="preserve-table-colors">
-    <main class="container">
-        <h1 id="page-title">Sélection des composants</h1>
-        <div class="toolbar">
-            <div class="toolbar-selection-actions">
-                <label class="select-all-wrap">
-                    <input type="checkbox" id="select-all" checked> Tout sélectionner / Tout désélectionner
-                </label>
+    <main class="sc-page">
+        <section class="sc-hero" aria-labelledby="page-title">
+            <div>
+                <p class="sc-eyebrow">Architecture électrique · <span id="sc-project">Projet</span></p>
+                <h1 id="page-title">Sélection des composants</h1>
+                <p class="sc-lead">Choisissez les ECU retenus pour le <strong style="color:#8fc2ff">dimensionnement homologation</strong> et pour le <strong style="color:#c8b4ff">courant de veille</strong>. Chaque changement est enregistré immédiatement dans le projet.</p>
+                <div class="sc-legend"><span class="h"><i></i>H · Homologation</span><span class="s"><i></i>S · Dark Current</span></div>
+            </div>
+            <svg class="sc-network" viewBox="0 0 400 200" aria-hidden="true">
+                <defs><radialGradient id="sc-core"><stop offset="0" stop-color="#fff59a"/><stop offset=".55" stop-color="#efdf00"/><stop offset="1" stop-color="#6b6200"/></radialGradient></defs>
+                <g id="sc-net"></g>
+                <circle class="halo" cx="200" cy="100" r="22"/>
+                <circle class="core" cx="200" cy="100" r="18"/>
+                <path d="M195 92h10v16h-10z M197 89h6" fill="none" stroke="#1a1700" stroke-width="1.6"/>
+            </svg>
+        </section>
+
+        <section class="sc-kpis" aria-label="Synthèse de la sélection">
+            <div class="sc-kpi h"><svg class="sc-ring" viewBox="0 0 46 46"><circle class="track" cx="23" cy="23" r="18"/><circle class="val" id="sc-ring-h" cx="23" cy="23" r="18" style="stroke-dashoffset:113.1"/></svg>
+                <div><small>Homologation</small><strong id="sc-count-h">0 / 0</strong><em>ECU retenus</em></div></div>
+            <div class="sc-kpi h"><span class="sc-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12z"/></svg></span>
+                <div><small>Courant homologation</small><strong id="sc-sum-h">0 A</strong><em>Somme des ECU H</em></div></div>
+            <div class="sc-kpi s"><svg class="sc-ring" viewBox="0 0 46 46"><circle class="track" cx="23" cy="23" r="18"/><circle class="val" id="sc-ring-s" cx="23" cy="23" r="18" style="stroke-dashoffset:113.1"/></svg>
+                <div><small>Dark Current</small><strong id="sc-count-s">0 / 0</strong><em>ECU en veille</em></div></div>
+            <div class="sc-kpi s"><span class="sc-kpi-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></span>
+                <div><small>Courant de veille</small><strong id="sc-sum-s">0 µA</strong><em>Somme des ECU S</em></div></div>
+        </section>
+
+        <div class="sc-tools toolbar-selection-actions" role="toolbar" aria-label="Filtrer et modifier la sélection">
+            <div class="sc-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="sc-search" placeholder="Rechercher un ECU…" aria-label="Rechercher un ECU" autocomplete="off">
+                <kbd>/</kbd>
+            </div>
+            <div class="sc-filters" role="group" aria-label="Filtre">
+                <button type="button" class="sc-filter" data-filter="all" aria-pressed="true">Tous <span class="sc-count" data-count="all">0</span></button>
+                <button type="button" class="sc-filter" data-filter="H" aria-pressed="false"><span class="sc-dot" style="background:var(--sc-h)"></span>H <span class="sc-count" data-count="H">0</span></button>
+                <button type="button" class="sc-filter" data-filter="S" aria-pressed="false"><span class="sc-dot" style="background:var(--sc-s)"></span>S <span class="sc-count" data-count="S">0</span></button>
+                <button type="button" class="sc-filter" data-filter="off" aria-pressed="false">Hors sélection <span class="sc-count" data-count="off">0</span></button>
+                <button type="button" class="sc-filter" data-filter="modified" aria-pressed="false"><span class="sc-dot" style="background:var(--rg-yellow)"></span>Modifiés <span class="sc-count" data-count="modified">0</span></button>
+            </div>
+            <div class="sc-tools-end">
+                <label class="select-all-wrap"><input type="checkbox" id="select-all" checked> Tout sélectionner</label>
                 <button class="restore-defaults" type="button" id="restore-defaults">Restaurer la configuration de base</button>
             </div>
-            <span id="counter" style="font-weight: 600; color: #475569;"></span>
+            <span id="counter"></span>
         </div>
 
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th id="col-name">Device/ECU Name</th>
-                        <th class="selection-column" scope="col" title="Inclure dans Homologation" aria-label="Inclure dans Homologation">H</th>
-                        <th class="current-column" scope="col">Homologation Current</th>
-                        <th class="selection-column" scope="col" title="Inclure dans Dark Current" aria-label="Inclure dans Dark Current">S</th>
-                        <th class="current-column" scope="col">Dark Current</th>
-                    </tr>
-                </thead>
-                <tbody id="component-tbody"></tbody>
-            </table>
+        <div class="sc-table-shell">
+            <div class="sc-scroll">
+                <table class="sc-table" data-rg-grid="off">
+                    <colgroup><col class="c-name"><col class="c-sel"><col class="c-cur"><col class="c-sel"><col class="c-cur"></colgroup>
+                    <thead>
+                        <tr>
+                            <th class="sc-th" id="col-name" scope="col" aria-sort="none"><button type="button" class="sc-sort" data-sort="name">Device / ECU</button></th>
+                            <th class="sc-th h selection-column" scope="col" title="Inclure dans Homologation"><span class="sc-col-all">H<input type="checkbox" id="sc-all-H" aria-label="Basculer H pour les lignes affichées"></span></th>
+                            <th class="sc-th h current-column" scope="col" aria-sort="none"><button type="button" class="sc-sort" data-sort="H">Homologation Current</button></th>
+                            <th class="sc-th s selection-column" scope="col" title="Inclure dans Dark Current"><span class="sc-col-all">S<input type="checkbox" id="sc-all-S" aria-label="Basculer S pour les lignes affichées"></span></th>
+                            <th class="sc-th s current-column" scope="col" aria-sort="none"><button type="button" class="sc-sort" data-sort="S">Dark Current</button></th>
+                        </tr>
+                    </thead>
+                    <tbody id="component-tbody"></tbody>
+                </table>
+                <div class="sc-empty" id="sc-empty">Aucun ECU ne correspond à ce filtre.</div>
+            </div>
         </div>
 
-        <div class="actions">
+        <div class="sc-actions actions">
+            <span class="sc-actions-summary" id="sc-actions-summary"></span>
             <button class="btn btn-secondary" type="button" id="back-button">← Retour</button>
             <button class="btn btn-primary" type="button" id="save-selection">Enregistrer et continuer →</button>
         </div>
@@ -94,7 +299,7 @@
     <script src="/static/project_storage.js"></script>
     <script>
         const excelData = JSON.parse(sessionStorage.getItem('excelData') || '{}');
-        
+
         const titleEl = document.getElementById('page-title');
         const tbody = document.getElementById('component-tbody');
         const selectAllCheckbox = document.getElementById('select-all');
@@ -113,7 +318,11 @@
             history.back();
         });
 
-        titleEl.textContent = 'Sélection des composants';
+        titleEl.innerHTML = 'Sélection des <span class="sc-accent">composants</span>';
+        try {
+            const project = JSON.parse(localStorage.getItem('activeProject') || '{}');
+            if (project && project.name) document.getElementById('sc-project').textContent = project.name;
+        } catch { /* stockage indisponible */ }
 
         const sheet = excelData['Device List'] || excelData['ECU List'] || Object.values(excelData)[0];
         const storedHKeys = sessionStorage.getItem('selectedDeviceKeys');
@@ -135,6 +344,7 @@
             const selectedTotal = all.filter((checkbox) => checkbox.checked).length;
             selectAllCheckbox.checked = all.length > 0 && selectedTotal === all.length;
             selectAllCheckbox.indeterminate = selectedTotal > 0 && selectedTotal < all.length;
+            updateDashboard();
         }
 
         function rowValue(row, ...names) {
@@ -189,7 +399,10 @@
         }
 
         function updateCurrentCell(currentCell, checkbox) {
-            currentCell.textContent = checkbox.checked ? currentCell.dataset.value : '-';
+            const shown = checkbox.checked ? currentCell.dataset.value : '-';
+            const target = currentCell.querySelector?.('.sc-cur-val') || currentCell;
+            target.textContent = shown;
+            currentCell.classList?.toggle('is-empty', !checkbox.checked);
         }
 
         function restoreDefaultSelections(checkboxes) {
@@ -209,6 +422,14 @@
                 const checkbox = row.querySelector(`input[data-selection="${currentCell.dataset.currentSelection}"]`);
                 if (checkbox) updateCurrentCell(currentCell, checkbox);
             });
+            const h = row.querySelector('input[data-selection="H"]');
+            const s = row.querySelector('input[data-selection="S"]');
+            row.classList.toggle('is-h', !!h?.checked);
+            row.classList.toggle('is-s', !!s?.checked);
+            row.classList.toggle('is-off', !h?.checked && !s?.checked);
+            const modified = [h, s].some(cb => cb && String(cb.checked) !== cb.dataset.defaultChecked);
+            row.dataset.modified = String(modified);
+            row.querySelector('.sc-modified').hidden = !modified;
         }
 
         if (sheet && sheet.data) {
@@ -217,13 +438,12 @@
                 const cat = String(rowValue(row, 'current_category', 'Current Category') || '').trim().toUpperCase();
                 const name = rowName(row);
                 if (!name) return;
-                const homologationRaw = rowValue(row, 'Current (A)', 'Homologation Current (A)');
                 const darkMilliampRaw = rowValue(row, 'Sleep Current (mA)', 'DM1 Current (mA)', 'Homologation Current (mA)');
-                const darkAmpRaw = rowValue(row, 'Current (A)', 'Homologation Current (A)');
                 const sourceColumn = cat === 'S' && darkMilliampRaw !== '' ? ['Sleep Current (mA)','DM1 Current (mA)','Homologation Current (mA)'].find(key=>row[key]!=null) : row['Current (A)']!=null?'Current (A)':'Homologation Current (A)';
                 const reading = WattmanCurrent.read(row,sourceColumn || 'Current (A)',cat);
-                const homologationCurrent = formatCurrent(WattmanCurrent.read(row,row['Current (A)']!=null?'Current (A)':'Homologation Current (A)','H').amperes, 'A');
-                const darkCurrent = formatCurrent(reading.microamps, '\u00b5A');
+                const homologationReading = WattmanCurrent.read(row,row['Current (A)']!=null?'Current (A)':'Homologation Current (A)','H');
+                const homologationCurrent = formatCurrent(homologationReading.amperes, 'A');
+                const darkCurrent = formatCurrent(reading.microamps, 'µA');
                 const key = `${rowIndex}_${name}`;
                 const isKnownKey = knownKeys?.has(key);
                 const homologationChecked = isKnownKey && selectedHSets.H !== null
@@ -234,21 +454,37 @@
                     : cat === 'S';
 
                 const tr = document.createElement('tr');
+                tr.dataset.name = name.toLocaleLowerCase('fr');
+                tr.dataset.order = String(rowIndex);
                 const nameCell = document.createElement('td');
+                const nameWrap = document.createElement('div');
+                nameWrap.className = 'sc-name';
+                const badge = document.createElement('span');
+                badge.className = `sc-cat ${cat === 'H' ? 'h' : cat === 'S' ? 's' : 'x'}`;
+                badge.textContent = cat === 'H' || cat === 'S' ? cat : '–';
+                badge.title = cat === 'H' ? 'Catégorie par défaut : Homologation' : cat === 'S' ? 'Catégorie par défaut : Dark Current' : 'Sans catégorie par défaut';
                 const nameLabel = document.createElement('strong');
                 nameLabel.textContent = name;
-                nameCell.appendChild(nameLabel);
+                nameLabel.title = name;
+                const modifiedDot = document.createElement('span');
+                modifiedDot.className = 'sc-modified';
+                modifiedDot.title = 'Différent de la configuration de base';
+                modifiedDot.hidden = true;
+                nameWrap.append(badge, nameLabel, modifiedDot);
+                nameCell.appendChild(nameWrap);
                 if(reading.suspicious) {
-                    const warning=document.createElement('small');warning.textContent=' ⚠ '+reading.reason;
-                    warning.style.cssText='display:block;color:#a4262c;font-weight:600';nameCell.append(warning);
+                    const warning=document.createElement('small');warning.className='sc-warning';warning.textContent='⚠ '+reading.reason;
+                    nameCell.append(warning);
                 }
                 tr.appendChild(nameCell);
 
-                [['H', homologationChecked], ['S', darkChecked]].forEach(([selection, checked]) => {
+                [['H', homologationChecked, homologationReading.amperes], ['S', darkChecked, reading.microamps]].forEach(([selection, checked, numeric]) => {
                     const cell = document.createElement('td');
                     cell.className = 'selection-column';
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
+                    checkbox.className = 'sc-switch';
+                    checkbox.setAttribute('role', 'switch');
                     checkbox.dataset.key = key;
                     checkbox.dataset.selection = selection;
                     checkbox.dataset.defaultChecked = String(selection === 'H' ? cat === 'H' : cat === 'S');
@@ -261,12 +497,151 @@
                     currentCell.className = 'current-column';
                     currentCell.dataset.currentSelection = selection;
                     currentCell.dataset.value = selection === 'H' ? homologationCurrent : darkCurrent;
+                    const number = Number(numeric);
+                    currentCell.dataset.num = Number.isFinite(number) ? String(number) : '';
+                    currentCell.title = `Cliquer pour ${selection === 'H' ? 'inclure / exclure en Homologation' : 'inclure / exclure en Dark Current'}`;
+                    currentCell.innerHTML = '<div class="sc-cur"><span class="sc-cur-val"></span><span class="sc-bar"><i></i></span></div>';
                     tr.appendChild(currentCell);
                 });
                 updateRowCurrentCells(tr);
                 tbody.appendChild(tr);
             });
         }
+
+        // Barres proportionnelles (échelle racine pour garder visibles les petits courants).
+        ['H', 'S'].forEach(selection => {
+            const cells = [...tbody.querySelectorAll(`td[data-current-selection="${selection}"]`)];
+            const max = Math.max(0, ...cells.map(cell => Math.abs(Number(cell.dataset.num) || 0)));
+            cells.forEach(cell => {
+                const value = Math.abs(Number(cell.dataset.num) || 0);
+                cell.querySelector('.sc-bar i').style.setProperty('--w', max > 0 ? `${Math.max(3, Math.sqrt(value / max) * 100)}%` : '0%');
+            });
+        });
+
+        // ---------------------------------------------------------- Tableau de bord
+        const ringLength = 113.1;
+        function sumSelected(selection) {
+            return [...tbody.querySelectorAll(`input[data-selection="${selection}"]:checked`)]
+                .reduce((total, checkbox) => total + (Number(checkbox.closest('tr').querySelector(`td[data-current-selection="${selection}"]`).dataset.num) || 0), 0);
+        }
+        function updateDashboard() {
+            const counts = {};
+            ['H', 'S'].forEach(selection => {
+                const all = tbody.querySelectorAll(`input[data-selection="${selection}"]`);
+                const on = tbody.querySelectorAll(`input[data-selection="${selection}"]:checked`);
+                counts[selection] = on.length;
+                document.getElementById(`sc-count-${selection.toLowerCase()}`).textContent = `${on.length} / ${all.length}`;
+                document.getElementById(`sc-ring-${selection.toLowerCase()}`).style.strokeDashoffset = String(ringLength * (1 - (all.length ? on.length / all.length : 0)));
+            });
+            document.getElementById('sc-sum-h').textContent = formatCurrent(sumSelected('H'), 'A');
+            document.getElementById('sc-sum-s').textContent = formatCurrent(sumSelected('S'), 'µA');
+            document.getElementById('sc-actions-summary').innerHTML = `<b>${counts.H} H</b> · <b>${counts.S} S</b> retenus`;
+            const rows = [...tbody.rows];
+            const filterCounts = {
+                all: rows.length,
+                H: rows.filter(r => r.classList.contains('is-h')).length,
+                S: rows.filter(r => r.classList.contains('is-s')).length,
+                off: rows.filter(r => r.classList.contains('is-off')).length,
+                modified: rows.filter(r => r.dataset.modified === 'true').length
+            };
+            document.querySelectorAll('[data-count]').forEach(el => { el.textContent = filterCounts[el.dataset.count]; });
+            updateNetwork(rows);
+            applyView();
+        }
+
+        // Illustration : un ECU par branche, allumé selon la sélection (12 premiers).
+        const net = document.getElementById('sc-net');
+        function updateNetwork(rows) {
+            const sample = rows.slice(0, 12);
+            const n = Math.max(sample.length, 1);
+            net.innerHTML = sample.map((row, i) => {
+                const side = i % 2 ? 1 : -1;
+                const k = Math.floor(i / 2), per = Math.ceil(n / 2);
+                const y = 22 + (per > 1 ? k * (156 / (per - 1)) : 78);
+                const x = 200 + side * (110 + (k % 2) * 46);
+                const cls = row.classList.contains('is-h') ? 'h' : row.classList.contains('is-s') ? 's' : 'off';
+                const mid = 200 + side * 52;
+                const label = row.dataset.name.replace(/[^a-z0-9]/gi, '').slice(0, 4).toUpperCase();
+                return `<path class="flow ${cls}" d="M${200 + side * 18} 100 C${mid} 100 ${mid} ${y} ${x - side * 20} ${y}"/>`
+                    + `<g class="chip ${cls === 'off' ? '' : 'on-' + cls}"><line class="pin" x1="${x - 14}" y1="${y - 10}" x2="${x - 14}" y2="${y - 13}"/><line class="pin" x1="${x + 14}" y1="${y - 10}" x2="${x + 14}" y2="${y - 13}"/><rect x="${x - 20}" y="${y - 10}" width="40" height="20" rx="4"/><text x="${x}" y="${y + 2.5}" text-anchor="middle">${label}</text></g>`;
+            }).join('');
+        }
+
+        // ---------------------------------------------------------- Filtre, recherche, tri
+        let activeFilter = 'all';
+        let sortState = { key: null, dir: 0 };
+        const searchInput = document.getElementById('sc-search');
+        const escapeHtml = text => text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        function visibleRows() { return [...tbody.rows].filter(row => !row.hidden); }
+        function applyView() {
+            const query = searchInput.value.trim().toLocaleLowerCase('fr');
+            let shown = 0;
+            [...tbody.rows].forEach(row => {
+                const matchesFilter = activeFilter === 'all'
+                    || (activeFilter === 'H' && row.classList.contains('is-h'))
+                    || (activeFilter === 'S' && row.classList.contains('is-s'))
+                    || (activeFilter === 'off' && row.classList.contains('is-off'))
+                    || (activeFilter === 'modified' && row.dataset.modified === 'true');
+                const matchesQuery = !query || row.dataset.name.includes(query);
+                row.hidden = !(matchesFilter && matchesQuery);
+                if (!row.hidden) shown++;
+                const label = row.querySelector('.sc-name strong');
+                const text = label.title;
+                const at = query ? text.toLocaleLowerCase('fr').indexOf(query) : -1;
+                label.innerHTML = at >= 0
+                    ? `${escapeHtml(text.slice(0, at))}<mark>${escapeHtml(text.slice(at, at + query.length))}</mark>${escapeHtml(text.slice(at + query.length))}`
+                    : escapeHtml(text);
+            });
+            document.getElementById('sc-empty').classList.toggle('is-visible', shown === 0);
+            ['H', 'S'].forEach(selection => {
+                const boxes = visibleRows().map(row => row.querySelector(`input[data-selection="${selection}"]`));
+                const on = boxes.filter(cb => cb.checked).length;
+                const header = document.getElementById(`sc-all-${selection}`);
+                header.checked = boxes.length > 0 && on === boxes.length;
+                header.indeterminate = on > 0 && on < boxes.length;
+                header.disabled = boxes.length === 0;
+            });
+        }
+        searchInput.addEventListener('input', applyView);
+        document.addEventListener('keydown', event => {
+            if (event.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) { event.preventDefault(); searchInput.focus(); }
+            if (event.key === 'Escape' && document.activeElement === searchInput) { searchInput.value = ''; applyView(); }
+        });
+        document.querySelectorAll('.sc-filter').forEach(button => button.addEventListener('click', () => {
+            activeFilter = button.dataset.filter;
+            document.querySelectorAll('.sc-filter').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+            applyView();
+        }));
+        document.querySelectorAll('.sc-sort').forEach(button => button.addEventListener('click', () => {
+            const key = button.dataset.sort;
+            sortState = { key, dir: sortState.key === key ? (sortState.dir === 1 ? -1 : sortState.dir === -1 ? 0 : 1) : 1 };
+            document.querySelectorAll('.sc-sort').forEach(b => b.closest('th').setAttribute('aria-sort',
+                b === button && sortState.dir ? (sortState.dir === 1 ? 'ascending' : 'descending') : 'none'));
+            const collator = new Intl.Collator('fr', { numeric: true, sensitivity: 'base' });
+            const value = row => key === 'name' ? row.dataset.name : Number(row.querySelector(`td[data-current-selection="${key}"]`).dataset.num) || 0;
+            const rows = [...tbody.rows].sort((a, b) => {
+                if (!sortState.dir) return Number(a.dataset.order) - Number(b.dataset.order);
+                const result = key === 'name' ? collator.compare(value(a), value(b)) : value(a) - value(b);
+                return result * sortState.dir || Number(a.dataset.order) - Number(b.dataset.order);
+            });
+            tbody.append(...rows);
+        }));
+        ['H', 'S'].forEach(selection => document.getElementById(`sc-all-${selection}`).addEventListener('change', event => {
+            visibleRows().forEach(row => {
+                row.querySelector(`input[data-selection="${selection}"]`).checked = event.target.checked;
+                updateRowCurrentCells(row);
+            });
+            updateCounter();
+            saveSelection();
+        }));
+        // Clic sur un courant : bascule l'interrupteur correspondant.
+        tbody.addEventListener('click', event => {
+            const cell = event.target.closest('td[data-current-selection]');
+            if (!cell) return;
+            const checkbox = cell.closest('tr').querySelector(`input[data-selection="${cell.dataset.currentSelection}"]`);
+            checkbox.checked = !checkbox.checked;
+            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+        });
 
         updateCounter();
 
@@ -298,7 +673,11 @@
         }
         tbody.addEventListener('change', event => {
             const checkbox = event.target.closest('input[data-selection]');
-            if (checkbox) updateRowCurrentCells(checkbox.closest('tr'));
+            if (checkbox) {
+                const row = checkbox.closest('tr');
+                updateRowCurrentCells(row);
+                row.classList.remove('sc-flash'); void row.offsetWidth; row.classList.add('sc-flash');
+            }
             updateCounter();
             saveSelection();
         });
@@ -306,7 +685,7 @@
         document.getElementById('save-selection').addEventListener('click', () => {
             const checkboxes = tbody.querySelectorAll('input[type="checkbox"]');
             const newSelectedKeys = { H: [], S: [] };
-            
+
             checkboxes.forEach(cb => {
                 if (cb.checked) {
                     const selection = cb.getAttribute('data-selection');

@@ -432,7 +432,7 @@
                         <tr><th colspan="3"></th><th class="ev-header" colspan="2">EV</th></tr>
                         <tr><th colspan="3"></th>${cols.map(c => `<th class="battery-header">${c.scenario.battery} ${format(c.capacity, c.capacity % 1 ? 1 : 0)}Ah</th>`).join('')}</tr>
                         <tr><th colspan="3"></th>${cols.map(c => `<th class="scenario-header">${c.scenario.label}</th>`).join('')}</tr>
-                        <tr class="autonomy-row"><th colspan="3">Autonomie ${mode}</th>${cols.map(c => `<th class="${window.ExcelColors ? ExcelColors.autonomyClass(c.autonomy) : ''}"><span class="autonomy-value">${format(c.autonomy, 1)} jours</span></th>`).join('')}</tr>
+                        <tr class="autonomy-row"><th colspan="3">Autonomie ${mode}</th>${cols.map(c => `<th class="${window.ExcelColors ? ExcelColors.autonomyClass(c.autonomy) + ' ' + ExcelColors.levelClass(ExcelColors.autonomyLevel(c.autonomy)) : ''}"><span class="autonomy-value">${format(c.autonomy, 1)} jours</span></th>`).join('')}</tr>
                     </thead>
                     <tbody>
                         ${row('Batterie', 'pale-yellow', '', 'Capacité batterie', cols.map(c => ({ value: c.capacity, unit: 'Ah', digits: c.capacity % 1 ? 1 : 0 })), { rowspan: 4, fnRowspan: 4 })}
@@ -497,7 +497,8 @@
             host.innerHTML = profiles.map(profile => {
                 const cards = scenarios.map(scenario => {
                     const result = computeColumn(activeSubMode, scenario, n(profile.capacity));
-                    return `<article class="summary-scenario-card">
+                    const level = window.ExcelColors ? ExcelColors.levelClass(ExcelColors.autonomyLevel(result.autonomy)) : '';
+                    return `<article class="summary-scenario-card ${level}">
                         <h3>${escapeHtml(scenario.label)}</h3>
                         <strong class="xl-autonomy-text ${window.ExcelColors?.isAutonomyLow(result.autonomy) ? 'xl-autonomy-low' : ''}">${format(result.autonomy, 1)} <small>jours</small></strong>
                     </article>`;
