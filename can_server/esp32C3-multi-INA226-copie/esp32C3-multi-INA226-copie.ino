@@ -11,7 +11,7 @@
 #include <mcp_can.h>
 #include "esp_timer.h"
 
-constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v9 | csv-gain-filter";
+constexpr const char* FIRMWARE_VERSION = "esp32C3-multi-INA226 | dual-display-v11 | full-coverage-integration | range-correction";
 
 void printFirmwareVersion() {
   Serial.printf("[FIRMWARE] %s | build %s %s\n", FIRMWARE_VERSION, __DATE__, __TIME__);
@@ -493,7 +493,7 @@ bool inaReadRegister16(uint8_t addr, uint8_t reg, uint16_t& value) {
 // The INA226 input offset depends on the conversion time and on averaging, so
 // each acquisition profile has its own zero. Profiles (shunt only, continuous,
 // worst-case conversion-time margin included):
-//   0: <=100 Hz  -> AVG 4 x 2.116 ms (9.312 ms worst case, below 10 ms)
+//   0: <=100 Hz  -> AVG x CT block filling ~90 % of the period (chooseIntegration)
 //   1: <=400 Hz  -> 2.116 ms
 //   2: <=1000 Hz -> 588 us
 //   3: above     -> 204 us
@@ -502,6 +502,32 @@ constexpr uint8_t INA_PROFILE_COUNT = 4;
 // simultaneous Fluke = 1.006600 A. This scales the PREVIOUSLY calibrated output.
 // B has no reference dataset and must not inherit A's correction.
 constexpr float CSV_OUTPUT_SCALE[2] = {1.1270690271f, 1.0f};
+// Per-range correction, applied on top of the output above (channel A only).
+// Each point = {INA current shown WITHOUT this table [A], factor = Fluke / INA}.
+// The factor is interpolated linearly in |I| between points and held constant
+// outside them. Add one point per measured range (below 500 mA target 0.1 %,
+// above 0.3 %). Only add points from a campaign whose reading is stable.
+struct RangePoint { float current; float factor; };
+// 2026-11-18, ~900 mA campaign (R1, 11 windows): Fluke mean 0.901909 A,
+// INA mean 0.874071 A -> 1.031848.
+constexpr RangePoint RANGE_CORRECTION_A[] = {
+  {0.874071f, 1.031848f},
+};
+constexpr size_t RANGE_CORRECTION_A_COUNT = sizeof(RANGE_CORRECTION_A) / sizeof(RANGE_CORRECTION_A[0]);
+
+float rangeCorrection(uint8_t i, float current) {
+  if (i != 0 || RANGE_CORRECTION_A_COUNT == 0) return 1.0f;
+  const float x = fabsf(current);
+  const RangePoint* p = RANGE_CORRECTION_A;
+  if (x <= p[0].current) return p[0].factor;
+  for (size_t k = 1; k < RANGE_CORRECTION_A_COUNT; ++k) {
+    if (x <= p[k].current) {
+      const float t = (x - p[k - 1].current) / (p[k].current - p[k - 1].current);
+      return p[k - 1].factor + t * (p[k].factor - p[k - 1].factor);
+    }
+  }
+  return p[RANGE_CORRECTION_A_COUNT - 1].factor;
+}
 constexpr bool CURRENT_FILTER_ENABLED = true;
 constexpr uint32_t CURRENT_AVERAGE_MS = 20;
 constexpr uint8_t CURRENT_FILTER_CAPACITY = 40; // 20 ms at max supported 2000 Hz.
@@ -547,16 +573,41 @@ uint8_t inaProfileFor(uint32_t freq) {
   return freq <= 100 ? 0 : (freq <= 400 ? 1 : (freq <= 1000 ? 2 : 3));
 }
 
+// Full-coverage integration for profile 0 (<= 100 Hz). Each read returns the
+// mean of one INA block (AVG x CT). A block covering ~90 % of the sampling period
+// (typical timing, ~99 % at the +10 % worst case) cancels the load ripple at
+// every multiple of the sampling frequency: exactly the components that alias to
+// near-DC drift. The old fixed 4 x 2.116 ms block covered only ~42 % at 50 Hz.
+// 100 Hz -> 64 x 140 us = 8.96 ms ; 50 Hz -> 128 x 140 us = 17.9 ms.
+constexpr uint16_t INA_CT_US[8] = {140, 204, 332, 588, 1100, 2116, 4156, 8244};
+constexpr uint16_t INA_AVG_N[8] = {1, 4, 16, 64, 128, 256, 512, 1024};
+uint32_t chooseIntegration(uint32_t freq, uint16_t& avgCode, uint16_t& ctCode) {
+  const uint32_t target = (uint32_t)(900000ULL / (freq ? freq : 1)); // 90 % of period, us
+  uint32_t best = 0;
+  avgCode = 1; ctCode = 5;
+  for (uint16_t a = 0; a < 8; ++a)
+    for (uint16_t c = 0; c < 8; ++c) {
+      const uint32_t block = (uint32_t)INA_AVG_N[a] * INA_CT_US[c];
+      if (block <= target && (block > best || (block == best && a > avgCode))) {
+        best = block; avgCode = a; ctCode = c;
+      }
+    }
+  return best;
+}
+
 bool configureINA226(uint8_t addr, uint32_t freq) {
   const uint8_t profile = inaProfileFor(freq);
-  const uint16_t avg = profile == 0 ? 1 : 0;
-  const uint16_t ct = profile <= 1 ? 5 : (profile == 2 ? 3 : 1);
+  uint16_t avg = profile == 0 ? 1 : 0;
+  uint16_t ct = profile <= 1 ? 5 : (profile == 2 ? 3 : 1);
+  uint32_t blockUs = (uint32_t)INA_AVG_N[avg] * INA_CT_US[ct];
+  if (profile == 0) blockUs = chooseIntegration(freq, avg, ct);
   const uint16_t config = (avg << 9) | (ct << 6) | (ct << 3) | 0b101;
   uint16_t actual = 0;
   if (!inaWriteRegister16(addr, REG_CONFIG, config)
       || !inaReadRegister16(addr, REG_CONFIG, actual)
       || (actual & 0x0FFF) != config) return false;
-  delay(12); // Discard the previous configuration's conversion before starting.
+  // Discard the previous configuration's conversion: wait one worst-case block.
+  delay(max<uint32_t>(12, blockUs * 11 / 10000 + 2));
   inaActiveProfile[addr == ADDR_INA_B ? 1 : 0] = profile;
   resetCurrentFilter(addr == ADDR_INA_B ? 1 : 0, freq);
   return true;
@@ -619,6 +670,7 @@ bool readCalibratedCurrent(uint8_t index, int16_t& raw, float& current) {
   current = (raw - calibrationZero[index][inaActiveProfile[index]]) * SHUNT_VOLTAGE_LSB_V
       / (index ? RSHUNT_B_OHMS : RSHUNT_A_OHMS) * calibrationGain[index]
       * CSV_OUTPUT_SCALE[index];
+  current *= rangeCorrection(index, current);
   current = filterCurrent(index, current);
   return true;
 }
@@ -1279,7 +1331,8 @@ void handleCalibration() {
     }
     // Replace the gain using unfiltered ADC capture, including the CSV scale
     // in the denominator so a later reference does not double-correct it.
-    const double measured = (c.estimate - zero[0]) * step * CSV_OUTPUT_SCALE[i];
+    double measured = (c.estimate - zero[0]) * step * CSV_OUTPUT_SCALE[i];
+    measured *= rangeCorrection(i, (float)measured); // Same chain as readCalibratedCurrent.
     const double proposed = reference / measured;
     if (!isfinite(proposed) || proposed * CSV_OUTPUT_SCALE[i] < 0.8
         || proposed * CSV_OUTPUT_SCALE[i] > 1.2) {
